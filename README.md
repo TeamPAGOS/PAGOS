@@ -4,6 +4,7 @@
 ## Installation
 
 Use the package manager [pip](https://pip.pypa.io/en/stable/) to install PAGOS.
+PyPi link [here](https://pypi.org/project/pagos/).
 
 ```bash
 pip install pagos
