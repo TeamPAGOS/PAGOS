@@ -1,0 +1,9 @@
+*.png
+*.tab
+*.pyc
+*.pdf
+data/
+dist/
+tests/
+launch.json
+__pycache__/

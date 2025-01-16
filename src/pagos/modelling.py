@@ -21,6 +21,8 @@ from pagos._pretty_gas_wrappers import oneormoregases
 
 class GasExchangeModel:
     def __init__(self, model_function, default_units_in, default_units_out, jacobian=None, jacobian_units=None):
+        # force default units into tuple:
+        default_units_in = tuple(default_units_in)
         # set instance variables
         # if default_units_in argument did not include None at the start for the gas parameter, add this in here
         self._model_function_in = model_function
@@ -277,6 +279,7 @@ class GasExchangeModel:
             obs_tracerdata_in_row = np.array([data_obs[arg_tracer_labels[t]][r] for t in tracers_used])
             obs_tracerdata_errs_in_row = np.array([data_errs[arg_tracer_labels[t]][r] for t in tracers_used])
             obs_tracerdata_units_in_row = np.array([data_units[arg_tracer_labels[t]][r] for t in tracers_used])
+
             # OLD CODE
             '''
             obs_tracerdata_in_row = np.array([_snv(data[arg_tracer_labels[t]][r]) for t in tracers_used])
@@ -302,10 +305,10 @@ class GasExchangeModel:
             obs_tracerdata_units_in_row = [obs_tracerdata_units_in_row[i] for i in range(len(obs_tracerdata_units_in_row)) if i not in nan_indices_in_data]
             valid_tracers_used = [tracers_used[i] for i in range(len(tracers_used)) if i not in nan_indices_in_data]
                 
-            mzer = Minimizer(objfunc, all_params, fcn_args=(valid_tracers_used, obs_tracerdata_in_row, obs_tracerdata_errs_in_row, obs_tracerdata_units_in_row))
-            M = mzer.leastsq(Dfun=jacfunc, col_deriv=0, factor=0.001)
+            #mzer = Minimizer(objfunc, all_params, fcn_args=(valid_tracers_used, obs_tracerdata_in_row, obs_tracerdata_errs_in_row, obs_tracerdata_units_in_row))
+            #M = mzer.leastsq(Dfun=jacfunc, col_deriv=0, factor=0.001)
             #M = mzer.least_squares(jac=jacfunc) # APPEARS NOT TO WORK
-            #M = minimize(objfunc, all_params, args=(valid_tracers_used, obs_tracerdata_in_row, obs_tracerdata_errs_in_row, obs_tracerdata_units_in_row), method='leastsq', nan_policy='omit', Dfun=jacfunc)
+            M = minimize(objfunc, all_params, args=(valid_tracers_used, obs_tracerdata_in_row, obs_tracerdata_errs_in_row, obs_tracerdata_units_in_row), method='leastsq', nan_policy='propagate', Dfun=jacfunc)
             optimised_params = M.params
             result_chisqr, result_redchi, result_aic, result_bic = M.chisqr, M.redchi, M.aic, M.bic
             optimised_param_quants_and_statistics = {}
@@ -323,6 +326,8 @@ class GasExchangeModel:
             output_list.append(optimised_param_quants_and_statistics)
         
         output_dataframe = pd.DataFrame(output_list)
+        # match indices of output_dataframe to the input DataFrame
+        output_dataframe.index = data.index
         if not fitted_only_out:
             output_dataframe = data.join(output_dataframe)
 
@@ -404,91 +409,82 @@ def _convertandgetmag_jac(modelled_jac, tracer_units):
 
 def _prepare_data(data:pd.DataFrame, obs_labels:list):
     data_headers = data.columns.values.tolist()
-    lendata = len(data)
+    data_indices = data.index.tolist()
 
     # parse observations
     # regex pattern for tracers in column headings
-    pattern = r'\b(' + '|'.join(obs_labels) + r')\b'
+    pattern = r'(?:\b|_)(' + '|'.join(obs_labels) + r')(?=\b|_)'
 
     # filter columns that match the pattern, case insensitive
     selected_columns = [dh for dh in data_headers if re.search(pattern, dh, re.IGNORECASE)]
+    selco_patterns = [re.search(pattern, dh, re.IGNORECASE)[0] for dh in data_headers if re.search(pattern, dh, re.IGNORECASE)]
 
     # parse errors and units
     # define the regex patterns for errors and units on observations
-    error_pattern = r'\b(err|errs|error|errors|uncertainty|uncertainties|sigma|sigmas|err\.|err\.s)\b'
-    unit_pattern = r'\b(unit|units|dim|dims|dimension|dimensions|dim\.|dim\.s)\b'
+    error_pattern = r'(?:\b|_)(err|errs|error|errors|uncertainty|uncertainties|sigma|sigmas|err\.|err\.s)(?=\b|_)'
+    unit_pattern = r'(?:\b|_)(unit|units|dim|dims|dimension|dimensions|dim\.|dim\.s)(?=\b|_)'
 
     obs_col_names = []
-    err_col_names = []
+    err_col_names = []  
     unit_col_names = []
+    base_tracer_names = []
 
-    # iterate over the column names with tracer information
-    for col in selected_columns:
-        # check if the name matches an error pattern
-        if re.search(error_pattern, col, re.IGNORECASE):
-            # if it's an error column, try to find the corresponding observation column
-            # remove 'err' or similar keywords from the current column name
-            base_name = re.sub(error_pattern, '', col, flags=re.IGNORECASE).strip()
-            if base_name in selected_columns:
-                obs_col_names.append(base_name)
-                err_col_names.append(col)
-            else:
-                # if no corresponding observation is found, throw a warning
-                raise Warning(f"The column '{col}' has been parsed as an error/uncertainty, but has no corresponding measurement. It has been ignored.")
-        else:
-            # if it's an observation column, check if it has a corresponding error column
-            base_name = col
-            error_col = None
-            # search for the error column corresponding to this observation
-            for err_col in selected_columns:
-                if re.search(error_pattern, err_col, re.IGNORECASE):
-                    # check if the base observation name appears in the error column
-                    if base_name in err_col:
-                        error_col = err_col
-                        break
-            if error_col:
-                # if it does have a corresponding error, ignore it
-                continue
-            else:
-                # if no corresponding error column exists, append with None as the error
-                obs_col_names.append(base_name)
-                err_col_names.append(None)
-        
-        # third parsing step for units
-        # check if there is a corresponding column for units using the unit regex pattern
-        unit_col = None
-        for unit_candidate in selected_columns:
-            if re.search(unit_pattern, unit_candidate, re.IGNORECASE):
-                if base_name in unit_candidate:
-                    unit_col = unit_candidate
+    to_skip = []
+    for i in range(len(selected_columns)):
+        col = selected_columns[i]
+        # if the column heading does not correspond to an error or unit error pattern, assume it is the concentration
+        if not re.search(error_pattern, col, re.IGNORECASE) and not re.search(error_pattern, col, re.IGNORECASE) and i not in to_skip:
+            base_tracer = selco_patterns[i]
+            base_tracer_names.append(base_tracer)
+            obs_col_names.append(col)
+            # check for corresponding errors and units in the columns
+            err_found, unit_found = False, False
+            for _col in selected_columns:
+                if base_tracer in _col and re.search(error_pattern, _col, re.IGNORECASE):
+                    err_col_names.append(_col)
+                    err_found = True
                     break
-        if unit_col:
-            unit_col_names.append(unit_col)
-        else:
-            # if no corresponding unit column is found, append None as the unit
-            unit_col_names.append(None)
+            for _col in selected_columns:
+                if base_tracer in _col and re.search(unit_pattern, _col, re.IGNORECASE):
+                    unit_col_names.append(_col)
+                    unit_found = True
+                    break
+            # make sure we don't overcount occurences if the user put in two versions (e.g. He (cc/g) and He (mol/L))
+            for j in range(len(selected_columns)):
+                if base_tracer in selected_columns[j]:
+                    to_skip.append(j)
+        
+            # TODO add None-append if an error or unit is not found
+            if not err_found:
+                err_col_names.append(None)
+            if not unit_found:
+                unit_col_names.append(None)
 
     obs_out = {}
     errs_out = {}
     units_out = {}
     # construct observations and errors DataFrames to output
-    for ocn, ecn, ucn in zip(obs_col_names, err_col_names, unit_col_names):
+    for ocn, ecn, ucn, btn in zip(obs_col_names, err_col_names, unit_col_names, base_tracer_names):
         # if the observations contain unit data, extract only the nominal values
-        obs_out[ocn] = np.array([_snv(data[ocn][r]) for r in range(lendata)])
+        obs_out[btn] = np.array([_snv(data[ocn][r]) for r in data_indices])
         # if the errors were given in a separate column, just take these values
         if ecn is not None:
-            errs_out[ocn] = data[ecn]
+            errs_out[btn] = data[ecn]
         # if they weren't, try to extract them from the observations columns, and pad with None if necessary
         else:
-            errs_out[ocn] = np.array([_ssd(data[ocn][r]) for r in range(lendata)])
+            errs_out[btn] = np.array([_ssd(data[ocn][r]) for r in data_indices])
         # if the units were given in a separate column, just take these values
         if ucn is not None:
-            units_out[ocn] = data[ucn]
+            units_out[btn] = data[ucn]
         # if they weren't, try to extract them from the observations columns, and pad with None if necessary
         else:
-            units_out[ocn] = np.array([_sgu(data[ocn][r]) for r in range(lendata)])
+            units_out[btn] = np.array([_sgu(data[ocn][r]) for r in data_indices])
     obs_out = pd.DataFrame(obs_out)
     errs_out = pd.DataFrame(errs_out)
     units_out = pd.DataFrame(units_out)
+    # make sure indices of obs/errs/units dataframes start at zero
+    obs_out = obs_out.reset_index()
+    errs_out = errs_out.reset_index()
+    units_out = units_out.reset_index()
     # output the DataFrames
     return obs_out, errs_out, units_out
