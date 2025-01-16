@@ -1,6 +1,6 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.2
 Name: pagos
-Version: 0.2.1
+Version: 0.2.4
 Summary: Python Analysis of Groundwater and Ocean Samples
 Author-email: Stanley Scott and Chiara Hubner <sscott@iup.uni-heidelberg.de>
 Project-URL: Homepage, https://github.com/TeamPAGOS/PAGOS
@@ -9,6 +9,15 @@ Classifier: License :: OSI Approved :: BSD License
 Classifier: Operating System :: OS Independent
 Requires-Python: >=3.12
 Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: lmfit==1.2.2
+Requires-Dist: matplotlib==3.8.2
+Requires-Dist: numpy==1.26.2
+Requires-Dist: pandas==2.1.3
+Requires-Dist: Pint==0.24.4
+Requires-Dist: tqdm==4.66.2
+Requires-Dist: uncertainties==3.1.7
+Requires-Dist: wrapt==1.16.0
 
 # PAGOS
 **P**ython **A**nalysis of **G**roundwater and **O**cean **S**amples (PAGOS) is a Python toolkit for creating and testing hydrological gas exchange models. Datasets from field campaigns containing data for a number of gas tracers can be used to optimise the parameters of gas exchange models, expressed as Python functions. These can be PAGOS' built-in models or user-defined.
@@ -16,6 +25,7 @@ Description-Content-Type: text/markdown
 ## Installation
 
 Use the package manager [pip](https://pip.pypa.io/en/stable/) to install PAGOS.
+PyPi link [here](https://pypi.org/project/pagos/).
 
 ```bash
 pip install pagos

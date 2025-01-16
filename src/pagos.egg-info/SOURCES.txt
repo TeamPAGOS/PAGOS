@@ -1,3 +1,4 @@
+LICENSE
 README.md
 pyproject.toml
 src/pagos/__init__.py
@@ -12,12 +13,5 @@ src/pagos/water.py
 src/pagos.egg-info/PKG-INFO
 src/pagos.egg-info/SOURCES.txt
 src/pagos.egg-info/dependency_links.txt
+src/pagos.egg-info/requires.txt
 src/pagos.egg-info/top_level.txt
-src/pagos/Old modules - delete later/builtin_modelsOLD.py
-src/pagos/Old modules - delete later/constantsOLD.py
-src/pagos/Old modules - delete later/gasOLD.py
-src/pagos/Old modules - delete later/modellingOLD.py
-src/pagos/Old modules - delete later/waterOLD.py
-tests/test_HE.py
-tests/test_PANGA.py
-tests/testing.py
