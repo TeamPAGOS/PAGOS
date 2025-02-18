@@ -3,7 +3,6 @@ Here is a tutorial on how to fit gas exchange models in PAGOS.
 """
 
 # Importing
-from printlines import printlines
 from pagos import gas as pgas
 from pagos.modelling import GasExchangeModel
 from pagos import Q

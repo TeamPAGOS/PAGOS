@@ -20,9 +20,33 @@ from pagos._pretty_gas_wrappers import oneormoregases
 
 
 class GasExchangeModel:
-    def __init__(self, model_function, default_units_in, default_units_out, jacobian=None, jacobian_units=None):
+    """
+    Object that holds a function representing a gas exchange model and its methods, including
+    fitting to data and forward-modelling given an input.
+    """
+    def __init__(self, model_function:Callable, default_units_in:tuple[str, ...], default_units_out:str, jacobian:Callable=None, jacobian_units:str=None):
+        """
+        :param model_function: function represented in the GasExchangeModel object.
+        :type model_function: Callable
+        :param default_units_in: strings specifying the units of the input arguments to `model_function` that will be **assumed** if none are given.
+        Must be in the same order as the arguments to `model_function`.
+        :type default_units_in: tuple[str, ...]
+        :param default_units_out: single string specifying which units to **convert** the output of `model_function` to.
+        Note that conversion happens **after** calculation.
+        :type default_units_out: str
+        :param jacobian: function returning a numpy array of derivatives of `model_function` with respect to its parameters, i.e. a jacobian matrix.
+        Defaults to None.
+        :type jacobian: Callable, optional
+        :param jacobian_units: strings specifying which units to **convert** the output of the `jacobian` to.
+        Note that this has **no effect** on the `fit` method.
+        Defaults to None
+        :type jacobian_units: tuple[str, ...], optional
+        """
         # force default units into tuple:
-        default_units_in = tuple(default_units_in)
+        if default_units_in == None or type(default_units_in) == str:
+            default_units_in = (default_units_in,)
+        else:
+            default_units_in = tuple(default_units_in)
         # set instance variables
         # if default_units_in argument did not include None at the start for the gas parameter, add this in here
         self._model_function_in = model_function
@@ -30,16 +54,25 @@ class GasExchangeModel:
         self.default_units_out = default_units_out
         self.model_arguments = inspect.getfullargspec(self._model_function_in).args
         self.default_units_in_dict = {key:val for key, val in zip(self.model_arguments, self.default_units_in)}
+
         self._jacobian_in = jacobian
         self.jacobian_units = jacobian_units
+
         # the function and jacobian that will run if the user does not specify units_in or units_out when calling run()
         self.model_function = _u.wraps(self.default_units_out, self.default_units_in, strict=False)(self._model_function_in)
         self.model_func_sig = signature(self.model_function)
         if self._jacobian_in is None:
             self.runjac = None
         else:
-            self.model_jacobian = _u.wraps(self.jacobian_units, self.default_units_in, strict=False)(self._jacobian_in)
-            self.model_jac_sig = signature(self.model_jacobian)
+            if self.jacobian_units is None:
+                self.jacobian_units = tuple([default_units_out if dui == '' else default_units_out + '/(' + dui + ')' for dui in default_units_in]) #NOTE maybe there is a better way to do this
+                self.model_jacobian = _u.wraps(self.jacobian_units, self.default_units_in, strict=False)(self._jacobian_in)
+                self.model_jac_sig = signature(self.model_jacobian)
+            elif all((_u.Unit(default_units_out) / _u.Unit(ju)).is_compatible_with(_u.Unit(dui)) for dui, ju in zip(default_units_in, jacobian_units)):
+                self.model_jacobian = _u.wraps(self.jacobian_units, self.default_units_in, strict=False)(self._jacobian_in)
+                self.model_jac_sig = signature(self.model_jacobian)
+            else:
+                raise ValueError('Jacobian output units are incommensurable with the model function input and output units.\nShould follow dim[jacobian_i] = dim[output] / dim[input_i].')
     
 
     def run(self, *args_to_model_func, units_in='default', units_out='default', **kwargs_to_model_func):
@@ -47,11 +80,13 @@ class GasExchangeModel:
         if units_in == 'default':
             units_in = self.default_units_in_dict
         elif type(units_in) != dict:
+            print('NOT DEFAULT NOT DICT')
             # set the units_in - append a None value to the units_in tuple for the "units" of the gas argument if this has not already been done by the user
             units_in = self._check_units_list_against_sig(self._model_function_in, units_in)
             # if units are provided in the form of an array instead of a dict, make it a dict
             units_in = {k:u for k, u in zip(self.model_func_sig.parameters, units_in)}
         else:
+            print('NOT DEFAULT + DICT')
             units_in = self._check_units_dict_against_sig(self._model_function_in, units_in)
         args_to_model_func = self._convert_or_make_quants_list(args_to_model_func, units_in)
         kwargs_to_model_func = self._convert_or_make_quants_dict(kwargs_to_model_func, units_in)
@@ -78,9 +113,9 @@ class GasExchangeModel:
         kwargs_to_jac_func = self._convert_or_make_quants_dict(kwargs_to_jac_func, units_in)
         
 
-        result = self.model_jacobian(*args_to_jac_func, **kwargs_to_jac_func) 
+        result = list(self.model_jacobian(*args_to_jac_func, **kwargs_to_jac_func)) # TODO have to wrap this in list(), I think due to pint wraps() handling arrays... could this lead to performance slowdown via redundant casting?
         if units_out != 'default':
-            result = _sto(result, units_out, strict=False)
+            result = _sto(result, units_out, strict=False, possit=(0, 1))   #possit keyword makes _sto iterate over result and units_out simultaneously, see core.py > _possibly_iterable
         return result
     
 
@@ -118,27 +153,25 @@ class GasExchangeModel:
         
     
     def fit(self, data:pd.DataFrame, to_fit:Iterable[str], init_guess:Iterable[float], tracers_used:Iterable[str], custom_labels:dict=None, constraints:dict=None, **kwargs) -> pd.DataFrame:   # TODO init_guess is currently only a 1D list, perhaps should be allowed to take a second dimension the same length as data?
-         # input to objective function: all parameters (fitted and set), tracers to calculate, observed data and their errors, parameter and tracer units
+        # TODO DOCSTRING
+        # input to objective function: all parameters (fitted and set), tracers to calculate, observed data and their errors, parameter and tracer units
         def objfunc(parameters, tracers, observed_data, observed_errors, tracer_units):
             # separation of parameter names and values
             parameter_names = list(parameters.valuesdict().keys())
             parameter_values = list(parameters.valuesdict().values())
             paramsdict = {parameter_names[i]:parameter_values[i] for i in range(len(parameter_names))}
-            """# re-assemble Quantity objects that were disassembled for usage in lmfit Parameter instances
-            if any(not _uae(parameter_units[p], self.default_units_in_dict[p]) for p in parameter_units.keys()):
-                for p in parameter_units.keys():
-                    if not _uae(parameter_units[p], self.default_units_in_dict[p]):
-                        paramsdict[p] = _Q(paramsdict[p], parameter_units[p])""" # TODO DELETE ME?
+            
             modelled_data = self.run(tracers, **paramsdict)
+
             # perform conversion of units of result if necessary
             if hasattr(modelled_data, 'units'):
                 modelled_data = _convertandgetmag(modelled_data, tracer_units)
             
             # if there is an error associated with every observation, weight by the errors
             if all(e is not None for e in observed_errors): #OLD CODE, if a problem arises here, check if reverting back to this fixes it: if observed_errors is not None:
-                return (observed_data - modelled_data) / observed_errors
+                return (modelled_data - observed_data) / observed_errors
             else:
-                return observed_data - modelled_data
+                return modelled_data - observed_data
         
 
         def jacfunc(parameters, tracers, observed_data, observed_errors, tracer_units):
@@ -146,11 +179,6 @@ class GasExchangeModel:
             parameter_names = list(parameters.valuesdict().keys())
             parameter_values = list(parameters.valuesdict().values())
             paramsdict = {parameter_names[i]:parameter_values[i] for i in range(len(parameter_names))}
-            """# re-assemble Quantity objects that were disassembled for usage in lmfit Parameter instances
-            if any(not _uae(parameter_units[p], self.default_units_in_dict[p]) for p in parameter_units.keys()):
-                for p in parameter_units.keys():
-                    if not _uae(parameter_units[p], self.default_units_in_dict[p]):
-                        paramsdict[p] = _Q(paramsdict[p], parameter_units[p])""" # TODO DELETE ME?
 
             modelled_jac = self.runjac(tracers, **paramsdict)
 
@@ -164,7 +192,7 @@ class GasExchangeModel:
                 Ji = modelled_jac[i]
                 if (isinstance(Ji, Iterable) and not isinstance(Ji, Quantity)) or (isinstance(Ji, Quantity) and isinstance(Ji.magnitude, Iterable)):
                     if len(Ji) != ntracers:
-                        raise ValueError('There is an element (index %s) of the jacobian with length %s. It must be either length 1 or %s' % (i, len(Ji), ntracers))
+                        raise ValueError('There is an element (index %s) of the jacobian with length %s. It must have length %s' % (i, len(Ji), ntracers))
                     else:
                         jac_cut_to_fit[c] = Ji
                 else:
@@ -180,7 +208,8 @@ class GasExchangeModel:
                 jac_cut_to_fit = [_convertandgetmag(Ji, tracer_units) if hasattr(Ji, 'units') 
                                   else _convertandgetmag(_Q([Jij.magnitude for Jij in Ji], Ji[0].units), tracer_units)
                                   for Ji in jac_cut_to_fit]
-            
+            jac_cut_to_fit = np.array(jac_cut_to_fit)
+            jac_cut_to_fit = jac_cut_to_fit / observed_errors
             return np.array(jac_cut_to_fit).transpose()
     
         model_arg_names = self.model_arguments
@@ -189,19 +218,15 @@ class GasExchangeModel:
         fitted_only_out = False
         nrows = range(len(data))
 
+        # convert tracers_used to list
+        if type(tracers_used) == np.ndarray:
+            tracers_used = tracers_used.tolist()
+
         dont_fit_these_args = [a for a in model_arg_names if a not in to_fit]
         if custom_labels is None:
             arg_tracer_labels = {x:x for x in tracers_used + dont_fit_these_args}
         else:
             arg_tracer_labels = {x:(custom_labels[x] if x in custom_labels else x) for x in tracers_used + dont_fit_these_args}
-        # OLD CODE
-        '''
-        if arg_tracer_labels == None:
-            # default behaviour for no input in tracer labels: take the user-given
-            # names of the tracers used and the set names of the args of modelfunc
-            # which are not to be fit.
-            dont_fit_these_args = [a for a in model_arg_names if a not in to_fit]
-            arg_tracer_labels = {x:x for x in tracers_used + dont_fit_these_args}'''
 
         # keyword argument handling
         for k in kwargs.keys():
@@ -217,14 +242,6 @@ class GasExchangeModel:
         
         # prepare data for fit
         data_obs, data_errs, data_units = _prepare_data(data, list(arg_tracer_labels.values()))
-        # OLD CODE
-        '''# checking for errors on tracers TODO this is still quite primitive, can be made more powerful
-        if all(t + ' err' in data_headers for t in tracers_used):
-            errs_present_as_col, errstructure = True, 'right'
-        elif all('err ' + t in data_headers for t in tracers_used):
-            errs_present_as_col, errstructure = True, 'left'
-        else:
-            errs_present_as_col = False'''
 
         # fit procedure for every row
         for r in nrows:
@@ -232,9 +249,8 @@ class GasExchangeModel:
             # lmfit's Parameter class cannot hold uncertainty/unit information that Pint Quantity objects can,
             # therefore we disassemble those objects into their magnitudes and units and then reassemble them
             # in the objective function (see also above).
-            #param_units = {}    # dictionary of units of parameters to be used internally  # TODO DELETE ME?
             all_params = Parameters()
-            model_sig_as_list = list(self.model_func_sig.parameters)
+            model_sig_as_list = list(self.model_func_sig.parameters) # TODO DELETE ME
             for i in range(len(to_fit)):
                 # convert units of the initial guess to the default_units_in of the function, so we can save on speed
                 p = to_fit[i]
@@ -257,8 +273,6 @@ class GasExchangeModel:
                     all_params.add(p, value=igi, vary=True, min=min_, max=max_)
                 else:
                     all_params.add(p, value=igi, vary=True)
-                #param_units[p] = u TODO DELETE ME?
-
 
             # parameters set by observation initialised here
             # similar logic regarding unit dissassembly applies here (see above)  
@@ -275,31 +289,27 @@ class GasExchangeModel:
                         v = v.nominal_value
                     all_params.add(a, value=v, vary=False)
             
-            # prepare the data for the minimisation process
-            obs_tracerdata_in_row = np.array([data_obs[arg_tracer_labels[t]][r] for t in tracers_used])
-            obs_tracerdata_errs_in_row = np.array([data_errs[arg_tracer_labels[t]][r] for t in tracers_used])
+            # prepare the data for the minimisation process - astype + tolist functions turn non-numeric values into np.nan
+            obs_tracerdata_in_row = np.array([data_obs[arg_tracer_labels[t]][r] for t in tracers_used]).astype(np.float64).tolist()  # TODO: more testing to see if these astype statements break anything
+            obs_tracerdata_errs_in_row = np.array([data_errs[arg_tracer_labels[t]][r] for t in tracers_used]).astype(np.float64).tolist()
             obs_tracerdata_units_in_row = np.array([data_units[arg_tracer_labels[t]][r] for t in tracers_used])
-
-            # OLD CODE
-            '''
-            obs_tracerdata_in_row = np.array([_snv(data[arg_tracer_labels[t]][r]) for t in tracers_used])
-            if errs_present_as_col:
-                if errstructure == 'right':
-                    obs_tracerdata_errs_in_row = np.array([_snv(data[arg_tracer_labels[t] + ' err'][r]) for t in tracers_used])
-                elif errstructure == 'left':
-                    obs_tracerdata_errs_in_row = np.array([_snv(data['err ' + arg_tracer_labels[t]][r]) for t in tracers_used])
-            else:
-                obs_tracerdata_errs_in_row = np.array([_ssd(data[arg_tracer_labels[t]][r]) for t in tracers_used])
-            obs_tracerdata_units_in_row = np.array([_sgu(data[arg_tracer_labels[t]][r]) for t in tracers_used])'''#
 
             # set Jacobian to None if none was provided in the model
             if self.runjac is None:
                 jacfunc = None
             
             # remove nan values in row for fitting TODO can probably be made more efficient
+            # get the indices of nan-values in tracer data and their errors. If all the errors are
+            # nan, we assume the user wants to proceed ignoring errors
             nan_indices_in_tracerdata = np.argwhere(np.isnan(obs_tracerdata_in_row)).flatten()
-            nan_indices_in_errordata = np.argwhere(np.isnan(obs_tracerdata_errs_in_row)).flatten()
-            nan_indices_in_data = np.union1d(nan_indices_in_tracerdata, nan_indices_in_errordata)
+            _errordata_isnan = np.isnan(obs_tracerdata_errs_in_row)
+            if all(b == True for b in _errordata_isnan) == True:
+                nan_indices_in_data = nan_indices_in_tracerdata
+                obs_tracerdata_errs_in_row = np.full(len(_errordata_isnan), None)
+            else:
+                nan_indices_in_errordata = np.argwhere(_errordata_isnan).flatten()
+                nan_indices_in_data = np.union1d(nan_indices_in_tracerdata, nan_indices_in_errordata)
+            # final mask removing nan-values from tracerdata values/errs/units arrays
             obs_tracerdata_in_row = [obs_tracerdata_in_row[i] for i in range(len(obs_tracerdata_in_row)) if i not in nan_indices_in_data]
             obs_tracerdata_errs_in_row = [obs_tracerdata_errs_in_row[i] for i in range(len(obs_tracerdata_errs_in_row)) if i not in nan_indices_in_data]
             obs_tracerdata_units_in_row = [obs_tracerdata_units_in_row[i] for i in range(len(obs_tracerdata_units_in_row)) if i not in nan_indices_in_data]
@@ -308,7 +318,7 @@ class GasExchangeModel:
             #mzer = Minimizer(objfunc, all_params, fcn_args=(valid_tracers_used, obs_tracerdata_in_row, obs_tracerdata_errs_in_row, obs_tracerdata_units_in_row))
             #M = mzer.leastsq(Dfun=jacfunc, col_deriv=0, factor=0.001)
             #M = mzer.least_squares(jac=jacfunc) # APPEARS NOT TO WORK
-            M = minimize(objfunc, all_params, args=(valid_tracers_used, obs_tracerdata_in_row, obs_tracerdata_errs_in_row, obs_tracerdata_units_in_row), method='leastsq', nan_policy='propagate', Dfun=jacfunc)
+            M = minimize(objfunc, all_params, args=(valid_tracers_used, obs_tracerdata_in_row, obs_tracerdata_errs_in_row, obs_tracerdata_units_in_row), method='leastsq', nan_policy='omit', Dfun=jacfunc)
             optimised_params = M.params
             result_chisqr, result_redchi, result_aic, result_bic = M.chisqr, M.redchi, M.aic, M.bic
             optimised_param_quants_and_statistics = {}

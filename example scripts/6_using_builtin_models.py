@@ -2,6 +2,7 @@
 Here is a tutorial on how to employ the gas exchange models already built-in to PAGOS.
 """
 
+# Importing
 from pagos import Q
 import pandas as pd
 
@@ -26,7 +27,7 @@ ua_model = pbim.ua
 UAModel = GasExchangeModel(ua_model, ('degC', 'permille', 'atm', 'cc/g'), 'cc/g')
 
 # We can now use this model exactly as we did in the previous sections, the difference here being
-# only that we didn't have to define the model function ourselvs. Neat!
+# only that we didn't have to define the model function ourselves. Neat!
 
 pangadata = pd.read_csv('example scripts/Example Data/Complete_Input_Data_Samples_Belgium.CSV', sep=',')
 fit_UA = UAModel.fit(pangadata,                                             # the data as a Pandas DataFrame

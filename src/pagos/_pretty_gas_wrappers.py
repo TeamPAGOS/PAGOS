@@ -29,32 +29,15 @@ def oneormoregases(func, instance:object, args, kwargs) -> Callable:
         if type(gas) == str:
             return func(gas, *_args, **_kwargs)
         else:
-            ret = np.array([func(g, *_args, **_kwargs) for g in gas], dtype=object) # TODO exception thrown if dtype argument not included: perhaps investigate this further?
+            ret = np.array([func(g, *_args, **_kwargs) for g in gas], dtype=object) # TODO exception thrown if dtype argument not included: investigate this further!
             # if ret has structure like [Quantity(val1, unit), Quantity(val2, unit), Quantity(val3, unit), ...]
             # change to Quantity([val1, val2, val3, ...], unit), which makes further calculations easier later
             if [type(elt) for elt in ret] == [_u.Quantity for elt in ret]:  #\
                 if len(set([elt.units for elt in ret])) == 1:               #/ -- these check for above-mentioned structure 
                     ret = _u.Quantity([elt.magnitude for elt in ret], ret[0].units)
+            # if ret contains float values, change them to numpy float64, so that they can be
+            # handled in functions such as np.exp()
+            elif all(type(elt) == float for elt in ret):
+                ret = ret.astype(np.float64)
             return ret
     return _execute(*args, **kwargs)
-    
-
-# OLD CODE
-'''def oneormoregases(func):
-    """Wraps function with a gas argument so that an list of gases can be passed instead.
-
-    :param func: Function to wrap.
-    :type func: function
-    """
-    def wrapper_oomt(gas, *args, **kwargs):
-        if type(gas) == str:
-            return func(gas, *args, **kwargs)
-        else:
-            ret = np.array([func(g, *args, **kwargs) for g in gas], dtype=object) # TODO exception thrown if dtype argument not included: perhaps investigate this further?
-            # if ret has structure like [Quantity(val1, unit), Quantity(val2, unit), Quantity(val3, unit), ...]
-            # change to Quantity([val1, val2, val3, ...], unit), which makes further calculations easier later
-            if [type(elt) for elt in ret] == [_u.Quantity for elt in ret]:  #\
-                if len(set([elt.units for elt in ret])) == 1:               #/ -- these check for above-mentioned structure 
-                    ret = _u.Quantity([elt.magnitude for elt in ret], ret[0].units)
-            return ret
-    return wrapper_oomt'''

@@ -19,7 +19,7 @@ THE UNIT REGISTRY u
 
 This is the object from which ALL units within PAGOS and with which PAGOS should
 interact will come from. If the user defines another UnitRegistry v in their program, and then
-attempts to use PAGOS, it will fail and throw: "ValueError: Cannot operate with Quantity and 
+attempts to use PAGOS, it will fail and throw: "ValueError: Cannot operate with Quantity and
 Quantity of different registries."
 """
 u = UnitRegistry()
@@ -30,58 +30,115 @@ DECORATORS
 # TODO add optional keyword that suppresses the _possibly_iterable functionality
 @wrapt.decorator # wrapt decorator used so that function argument specification is preserved (see https://github.com/GrahamDumpleton/wrapt/blob/develop/blog/01-how-you-implemented-your-python-decorator-is-wrong.md)
 def _possibly_iterable(func, instance:object, args, kwargs) -> Callable:
-    """Decorator that can make a function operate on iterables.
-    I.e. f(x) >>> y -becomes-> f([x1, x2, x3]) >>> [y1, y2, y3].
+    """Decorator that can make a function operate on iterables as\\
+    f(*x\u1d62*) >>> \u03b1*\u2c7c* \u23af\u23afmake args labelled w/ *k* iterable\u23af\u23af\u25BA f(*x\u1d62*\u03b4*\u1d62\u2096* + *x\u1d62*(1 − \u03b4*\u1d62\u2096*)) >>> \u03b1*\u2c7c\u2096*\\
+    I.e.:\\
+    f(x) >>> \u03b1 \u23af\u23af\u23af\u25BA f([x1, x2, x3]) >>> [\u03b11, \u03b12, \u03b13]\\
+    f(x, y, z) >>> \u03b1 \u23af\u23af\u23af\u25BA f([x1, x2, x3], y, z) >>> [\u03b11, \u03b12, \u03b13]\\
+    f(x, y, z) >>> \u03b1, \u03b2 \u23af\u23af\u23af\u25BA f([x1, x2, x3], y, z) >>> [\u03b11, \u03b12, \u03b13], [\u03b21, \u03b22, \u03b23]\\
+    f(x, y, z) >>> \u03b1 \u23af\u23af`possit==1`\u23af\u23af\u25BA f(x, [y1, y2, y3], z) >>> [\u03b11, \u03b12, \u03b13]\\
+    f(x, y, z) >>> \u03b1 \u23af\u23af`possit==(0, 1)`\u23af\u23af\u25BA f([x1, x2, x3], [y1, y2, y3], z) >>> [\u03b11, \u03b12, \u03b13]
 
     :param func: Function that should be made iterable.
     :type func: function
     :param instance: Necessary placeholder in wrapt
     :type instance: object
-    :param args: arguments passed to func
-    :param kwargs: keyword arguments passed to func
-    :type kwargs: Callable
+    :param args: Arguments passed to func
+    :type args: Any
+    :param kwargs: Keyword arguments passed to `func` - can contain keyword `possit=...` which determines which of the arguments of `func` are allowed to be iterable.
+    Note that this can be tuple; e.g. `possit=(0, 2)` means the 1st and 3rd arguments to `func` may be iterable; `possit=('A', 'C') ` means the kwargs `A` and `C` may be iterable.
+    :type kwargs: Any
     """
     # determination of argument to func which is possibly iterable. Defaults to first argument.
     if 'possit' in kwargs:
         possitkey = kwargs['possit']
+        kwargs_to_func = {k:kwargs[k] for k in kwargs if k != 'possit'}
     else:
         possitkey = 0
-    # different behaviour if the possibly iterable argument is in function's args or kwargs.
+        kwargs_to_func = kwargs
+    # different behaviour if the possibly iterable argument(s) is(are) in function's args or kwargs.
+    # NOTE: so far mixed behaviour is not allowed - either the iterable arguments must all be args or all kwargs.
     if type(possitkey) == int:
         possit = args[possitkey]
+        isiterable = _is_iterable_quant_safe(possit)
         def return_array():
             retarr = []
             for x in possit:
-                newargs = tuple([x]) + tuple(a for a in args if a is not possit)
-                retarr.append(func(*newargs, **kwargs))
-            return retarr
-    else:
+                newargs = list(args)
+                newargs[possitkey] = x
+                retarr.append(func(*newargs, **kwargs_to_func))
+            return _tidy_iterable(retarr)
+    
+    elif type(possitkey) == tuple and all(type(p) == int for p in possitkey):
+        possit_array = [args[p] for p in possitkey]
+        isiterable = all(_is_iterable_quant_safe(possit) for possit in possit_array)
+        def return_array():
+            retarr = []
+            for i in range(len(possit_array[0])):
+                newargs = list(args)
+                for j in possitkey:         # TODO is this really the best way to do this? Embedded for loops may slow down code
+                    newargs[j] = args[j][i]
+                retarr.append(func(*newargs, **kwargs_to_func))
+            return _tidy_iterable(retarr)
+    
+    elif type(possitkey) == str:
         possit = kwargs[possitkey]
+        isiterable = _is_iterable_quant_safe(possit)
         def return_array():
             retarr = []
             for x in possit:
-                newkwargs = tuple([x]) + tuple(kwargs[k] for k in kwargs if k is not possitkey)
+                newkwargs = kwargs_to_func
+                newkwargs[possitkey] = x
                 retarr.append(func(*args, **newkwargs))
-            return retarr
-    # Quantity objects are iterable, so some janky if-statements are needed here.
-    # Returns unchanged function if possibly iterable argument is in fact singular,
-    # and returns the array-form of the function if it is in fact iterable. 
-    if isinstance(possit, Iterable):
-        if isinstance(possit, Quantity):
-            if isinstance(possit.magnitude, Iterable):
-                return return_array()
-            else:
-                return func(*args, **kwargs)
-        else:
-            return return_array()
+            return _tidy_iterable(retarr)
+    
+    elif type(possitkey) == tuple and all(type(p) == str for p in possitkey):
+        possit_array = [kwargs[p] for p in possitkey]
+        isiterable = all(_is_iterable_quant_safe(possit) for possit in possit_array)
+        def return_array():
+            retarr = []
+            for i in range(len(possit_array[0])):
+                newkwargs = kwargs_to_func
+                for j in possitkey:
+                    newkwargs[j] = kwargs[j][i]
+                retarr.append(func(*args, **newkwargs))
+            return _tidy_iterable(retarr)
+    
     else:
-        return func(*args, **kwargs)
+        raise TypeError('possit must be an integer, tuple of integers, string or tuple of strings. \n\
+                        WARNING: This should not have been triggered by the user! If this error has shown up, there is a bug in the code caused by incorrect use of pagos.core._possibly_iterable().')
+    # Quantity objects are iterable, so this deals with the relevant cases
+    if isiterable:
+        return return_array()
+    else:
+        return func(*args, **kwargs_to_func)
 
 
 
 """
 FUNCTIONS
 """
+def _is_iterable_quant_safe(possit) -> bool:
+    """Singular `Quantity` objects are instances of `Iterable`, so this function returns `False` if the
+    argument is a non-`Iterable` or `Quantity` with non-`Iterable` magnitude, and `True` otherwise.
+
+    :param possit: Possibly iterable argument
+    :type possit: Any
+    :return: `False` if `possit` is non-`Iterable` or `Quantity` with non-`Iterable` magnitude, `True` otherwise.
+    :rtype: bool
+    """
+    if isinstance(possit, Iterable):
+        if isinstance(possit, Quantity):
+            if isinstance(possit.magnitude, Iterable):  # Q([x1, x2, ...], units)
+                return True
+            else:                                       # Q(x, units)
+                return False
+        else:                                           # [x1, x2, ...]
+            return True
+    else:                                               # x
+        return False
+
+
 def safeexp(x:Quantity|Iterable[Quantity]) -> Quantity|Iterable[Quantity]:
     """Safe exponentiation function. Makes sure input to an exponential is dimensionless before
     performing exponentiation.
@@ -231,6 +288,7 @@ def sgu(x):
     else:
         return None
     
+
 def units_are_equal(units1, units2):
     if type(units1) == type(units2) == str or type(units1) == type(units2) == None:
         if units1 == units2:
@@ -243,6 +301,24 @@ def units_are_equal(units1, units2):
         return True
     else:
         return False
+    
+
+def _tidy_iterable(it:Iterable) -> Iterable:
+    """Tidy up `[Q(x1, unit), Q(x2, unit), ...]` as `Q([x1, x2, ...], unit)`.
+    Will perform no such conversion if units are not the same (i.e. `[Q(x1, u1), Q(x2, u2), ...]` where `ui != uj`).
+
+    :param it: Iterable `[Q(x1, u1), Q(x2, u2), ...]`
+    :type it: Iterable
+    :return: `Q([x1, x2, ...], u)` if `ui == u` for all `i`, else `it`
+    :rtype: Iterable
+    """
+    if all(isinstance(elt, Quantity) for elt in it):
+        units0 = it[0].units
+        if all(elt.units == units0 for elt in it):
+            stripped = np.array([elt.magnitude for elt in it])
+            return u.Quantity(stripped, units0)
+    return it
+
 
 def Q(val:float, unit:str|Unit, err:float=None) -> Quantity:
     """Shorthand function for making a pint Quantity object with an uncertainties ufloat for a
