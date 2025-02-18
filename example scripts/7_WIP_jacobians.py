@@ -3,8 +3,6 @@ Here is a tutorial on the implementation of Jacobian matrices in models in PAGOS
 """
 
 # Importing
-import sys # DELETE ME
-sys.path.insert(0, 'C:/Users/scopi/source/repos/PAGOS/PAGOS/src') # DELETE ME
 from pagos.gas import ice, abn, calc_Ceq, calc_dCeq_dT, calc_dCeq_dS, calc_dCeq_dp
 from pagos.modelling import GasExchangeModel
 from pagos import Q

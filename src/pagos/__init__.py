@@ -25,7 +25,7 @@ Notes on units and the UnitRegistry `u`:
     myq1 = pagos.Q(9.0, u.kg, 0.2)
 """
 
-__version__ = '0.2.1'
+__version__ = '0.3.0'
 __author__ = 'Stanley Scott and Chiara-Marlen Hubner'
 
 # for ease of use, these could change later
