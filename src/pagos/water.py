@@ -8,14 +8,11 @@ from pint import Quantity
 from collections.abc import Iterable
 import numpy as np
 
-from pagos.core import u as _u
-import pagos.core as _core
-from pagos import constants as gcon
-from pagos import constants as gconPU
+from pagos.core import u as _u, wraptpint
+from pagos.constants import GILL_82_COEFFS
 
-# TODO strict here or not?
 # TODO should there be some option to not return the unit?
-@_u.wraps('kg/m^3', ('degC', 'permille'), strict=False)
+@wraptpint('kg/m^3', ('degC', 'permille'), strict=False)
 def calc_dens(T:float|Quantity, S:float|Quantity) -> Quantity:
     """Calculate density of seawater at given temperature and salinity, according to Gill 1982.\\
     **Default input units** --- `T`:°C, `S`:‰\\
@@ -28,7 +25,7 @@ def calc_dens(T:float|Quantity, S:float|Quantity) -> Quantity:
     :return: Calculated density
     :rtype: Quantity
     """
-    a0, a1, a2, a3, a4, a5, b0, b1, b2, b3, b4, c0, c1, c2, d0 = gconPU.GILL_82_COEFFS.values()
+    a0, a1, a2, a3, a4, a5, b0, b1, b2, b3, b4, c0, c1, c2, d0 = GILL_82_COEFFS.values()
 
     rho0 = a0 + a1*T + a2*T**2 + a3*T**3 + a4*T**4 + a5*T**5
     ret = rho0 + S*(b0 + b1*T + b2*T**2 + b3*T**3 + b4*T**4) + \
@@ -37,7 +34,7 @@ def calc_dens(T:float|Quantity, S:float|Quantity) -> Quantity:
     return ret
 
 
-@_u.wraps('mbar', 'degC', strict=False)
+@wraptpint('mbar', 'degC', strict=False)
 def calc_vappres(T:float|Quantity) -> Quantity:
     """Calculate water vapour pressure over seawater at given temperature, according to Dyck and Peschke 1995.\\
     **Default input units** --- `T`:°C\\
@@ -52,7 +49,7 @@ def calc_vappres(T:float|Quantity) -> Quantity:
     return pv
 
 
-@_u.wraps('m^2/s', ('degC', 'permille'), strict=False)
+@wraptpint('m^2/s', ('degC', 'permille'), strict=False)
 def calc_kinvisc(T:float|Quantity, S:float|Quantity) -> Quantity:
     """Calculate kinematic viscosity of seawater at given temperature and salinity, according to Sharqawy 2010.\\
     **Default input units** --- `T`:°C, `S`:‰\\
@@ -66,7 +63,7 @@ def calc_kinvisc(T:float|Quantity, S:float|Quantity) -> Quantity:
     :rtype: Quantity
     """
     # Density of the water
-    rho = calc_dens(T, S).magnitude # kg/m3, take magnitude for speed # TODO if calc_dens() gets an option to return magnitude, use that instead of extracting it here
+    rho = calc_dens(T, S, magnitude=True) # kg/m3, take magnitude for speed # TODO if calc_dens() gets an option to return magnitude, use that instead of extracting it here
     # Adapt salinity to reference composition salinity in kg/kg (Sharqawy 2010)
     S_R = 1.00472*S / 1000 # permille -> kg/kg
     # Viscosity calculated following Sharqawy 2010
@@ -81,7 +78,7 @@ def calc_kinvisc(T:float|Quantity, S:float|Quantity) -> Quantity:
     return nu_sw
 
 
-@_u.wraps('kg/m^3/K', ('degC', 'permille'), strict=False)
+@wraptpint('kg/m^3/K', ('degC', 'permille'), strict=False)
 def calc_dens_Tderiv(T:float|Quantity, S:float|Quantity) -> Quantity:
     """Calculate temperature-derivative of the density (dρ/dT) of seawater at given temperature and salinity, according to Gill 1982.\\
     **Default input units** --- `T`:°C, `S`:‰\\
@@ -94,14 +91,14 @@ def calc_dens_Tderiv(T:float|Quantity, S:float|Quantity) -> Quantity:
     :return: Calculated dρ/dT
     :rtype: Quantity
     """
-    a0, a1, a2, a3, a4, a5, b0, b1, b2, b3, b4, c0, c1, c2, d0 = gconPU.GILL_82_COEFFS.values()
+    a0, a1, a2, a3, a4, a5, b0, b1, b2, b3, b4, c0, c1, c2, d0 = GILL_82_COEFFS.values()
     drhodT = a1 + 2*a2*T + 3*a3*T**2 + 4*a4*T**3 + 5*a5*T**4 + \
              S*(b1 + 2*b2*T + 3*b3*T**2 + 4*b4*T**3) + \
              S**(3/2)*(c1 + 2*c2*T)
     return drhodT
 
 
-@_u.wraps('kg/m^3/permille', ('degC', 'permille'), strict=False)
+@wraptpint('kg/m^3/permille', ('degC', 'permille'), strict=False)
 def calc_dens_Sderiv(T:float|Quantity, S:float|Quantity) -> Quantity:
     """Calculate salinity-derivative of the density (dρ/dS) of seawater at given temperature and salinity, according to Gill 1982.\\
     **Default input units** --- `T`:°C, `S`:‰\\
@@ -114,14 +111,14 @@ def calc_dens_Sderiv(T:float|Quantity, S:float|Quantity) -> Quantity:
     :return: Calculated dρ/dS
     :rtype: Quantity
     """
-    a0, a1, a2, a3, a4, a5, b0, b1, b2, b3, b4, c0, c1, c2, d0 = gconPU.GILL_82_COEFFS.values()
+    a0, a1, a2, a3, a4, a5, b0, b1, b2, b3, b4, c0, c1, c2, d0 = GILL_82_COEFFS.values()
     drhodS = b0 + b1*T + b2*T**2 + b3*T**3 + b4*T**4 + \
              3/2 * S**(1/2) * (c0 + c1*T + c2*T**2) + \
              2 * d0 * S
     return drhodS
 
 
-@_u.wraps('mbar/K', 'degC', strict=False)
+@wraptpint('mbar/K', 'degC', strict=False)
 def calc_vappres_Tderiv(T:float|Quantity) -> Quantity:
     """Calculate temperature-derivative of water vapour pressure (de/dT) over seawater at given temperature, according to Dyck and Peschke 1995.\\
     **Default input units** --- `T`:°C\\
@@ -132,6 +129,6 @@ def calc_vappres_Tderiv(T:float|Quantity) -> Quantity:
     :return: Calculated de/dT
     :rtype: Quantity
     """
-    pv = calc_vappres(T).magnitude
+    pv = calc_vappres(T, magnitude=True)
     dpv_dT = pv * np.log(10) * 11078.38810722 / (1 + 239.7)**2
     return dpv_dT

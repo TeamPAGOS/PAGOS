@@ -51,7 +51,7 @@ ua_model = pbim.ua
 def ua_jacobian(gas, T, S, p, A):       # <- note that the signature of the jacobian must be IDENTICAL to that of the fitted function, even if some parameters are not used
     jT = calc_dCeq_dT(gas, T, S, p)     # <- here we make use of the derivative calculator for equilibrium concentration provided by PAGOS
     jS = calc_dCeq_dS(gas, T, S, p)
-    jp = calc_dCeq_dp(gas, T, S, p)
+    jp = 0
     jA = abn(gas)
     return np.array([jT, jS, jp, jA])   # <- a list/array of derivatives w.r.t. parameters should be returned
 # IMPORTANT: this Jacobian is actually that of the model function, NOT of the residual. All
@@ -62,17 +62,28 @@ def ua_jacobian(gas, T, S, p, A):       # <- note that the signature of the jaco
 UAModel = GasExchangeModel(ua_model, ('degC', 'permille', 'atm', 'cc/g'), 'cc/g',
                            jacobian=ua_jacobian)
 
-# We can run this model exactly as we did before:
+# Running the Jacobian function can be done as we the model function.
+# Here we evaluate the Jacobian at T = 10 °C, S = 30 permille, p = 1 atm, A = 5e-4 cc/g for Neon:
+# (Compare this to the model function running in 4_creating_and_running_models.py)
+myJacResult1 = UAModel.runjac(['Ne', 'Ar', 'Kr'], 10, 30, 1, 5e-4) # no given units, default units assumed
+myJacResult2 = UAModel.runjac(['Ne', 'Ar', 'Kr'], Q(283.15, 'K'), Q(30, 'permille'), 1, 5e-4) # non-default units included, default unit of degC overridden
+print('Jacobian with no given units:')
+print(myJacResult1, '\n')
+print('Jacobian result with overriden units:')
+print(myJacResult1, '\n')
+print('Are the two jacobians equal?:', all(b == True for b in [False not in np.equal(q1, q2) for q1, q2 in zip(myJacResult1, myJacResult2)]), '\n')
+
+# We can also run this model exactly as we did before, where this time the user-defined Jacobian is used for the fitting routine:
 pangadata = pd.read_csv('example scripts/Example Data/Complete_Input_Data_Samples_Belgium.CSV', sep=',')
 fit_UA = UAModel.fit(pangadata,                                             # the data as a Pandas DataFrame
                      to_fit=['T', 'A'],                                     # the arguments of the model we would like to fit
-                     init_guess=[1, 1e-5],                       # the initial guesses for the parameters to be fit
+                     init_guess=[1, 1e-5],                                  # the initial guesses for the parameters to be fit
                      tracers_used=['Ne', 'Ar', 'Kr', 'Xe'],                 # the tracers used for the fitting procedure
                      tqdm_bar=True)                                         # whether to display a progress bar
 
 # And we can compare the result to one obtained without the Jacobian:
 UAModel_no_jacobian = GasExchangeModel(ua_model, ('degC', 'permille', 'atm', 'cc/g'), 'cc/g')
-fit_UA_no_jacobian = UAModel_no_jacobian.fit(pangadata, to_fit=['T', 'A'], init_guess=[Q(1, 'degC'), 1e-5],
+fit_UA_no_jacobian = UAModel_no_jacobian.fit(pangadata, to_fit=['T', 'A'], init_guess=[1, 1e-5],
                                              tracers_used=['Ne', 'Ar', 'Kr', 'Xe'], tqdm_bar=True)
 
 print(fit_UA.compare(fit_UA_no_jacobian))

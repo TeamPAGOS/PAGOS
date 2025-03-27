@@ -1,16 +1,18 @@
 """
 Useful constants for the PAGOS package, all as Quantity objects.
 """
-from pagos.core import u as _u
+from pint import UnitRegistry, Context
 
 """
 PHYSICAL CONSTANTS
 
-These are generic quantities that will be used throughout the PAGOS package. They are
-Quantity objects, so have a magnitude and unit.
+These are generic quantities that will be used throughout the PAGOS package. They do not include
+their units in the definition, i.e. they are not Quantity objects.
 """
 # Triple point of water (K)
 TPW = 273.15
+# Molar mass of water (g/mol)
+MMW = 18.016
 # Absolute zero (°C)
 ABZ = -273.15
 # Atmospheric pressure (Pa)
@@ -71,6 +73,9 @@ ABUNDANCES = dict(He=5.24E-6, Ne=18.18E-6, Ar=0.934E-2, Kr=1.14E-6, Xe=0.087E-6,
 MOLAR_VOLUMES = dict(He=22425.8703182828, Ne=22424.8703182828, Ar=22392.5703182828, Kr=22352.8703182828, Xe=22256.9703182828,
                      SF6=22075.5738997, CFC11=23807, CFC12=21844,
                      N2=22403.8633496)
+
+# molar masses of the gases (g/mol)
+MOLAR_MASSES = dict(He=4.002602, Ne=20.1797, Ar=39.948, Kr=83.798, Xe=131.293, SF6=146.06, CFC11=137.37, CFC12=120.91, N2=28.0134)
 
 # coefficients from Jenkins et al. 2019 solubility formula for noble gases
 NG_JENKINS_19_COEFFS = dict(

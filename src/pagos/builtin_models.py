@@ -60,8 +60,8 @@ def pr(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quanti
     :return: Concentration of gas(es) calculated with the model
     :rtype: Quantity | Iterable[Quantity]
     """
-    kinvisc = calc_kinvisc(T, S).magnitude
-    schmidt = calc_Sc(gas, T, S).magnitude
+    kinvisc = calc_kinvisc(T, S, magnitude=True)
+    schmidt = calc_Sc(gas, T, S, magnitude=True)
     diff = kinvisc/schmidt
     diffNe = kinvisc/calc_Sc('Ne', T, S)
     return calc_Ceq(gas, T, S, p) + A * abn(gas)  * np.exp(-FPR * (diff/diffNe)**beta)
@@ -96,8 +96,8 @@ def pr(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quanti
     :return: Concentration of gas(es) calculated with the model
     :rtype: Quantity | Iterable[Quantity]
     """
-    kinvisc = calc_kinvisc(T, S).magnitude
-    schmidt = calc_Sc(gas, T, S).magnitude
+    kinvisc = calc_kinvisc(T, S, magnitude=True)
+    schmidt = calc_Sc(gas, T, S, magnitude=True)
     diff = kinvisc/schmidt
     diffNe = kinvisc/calc_Sc('Ne', T, S)
     return (calc_Ceq(gas, T, S, p) + A * abn(gas))  * np.exp(-FPD * (diff/diffNe)**beta)

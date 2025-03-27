@@ -8,13 +8,13 @@ from pint import Unit
 from uncertainties import unumpy as unp
 from collections.abc import Iterable
 
-from pagos._pretty_gas_wrappers import *
-from pagos.core import u as _u
-import pagos.core as _core
-import pagos.constants as _con
-from pagos import water as _water
+from pagos.core import u as _u, sto as _sto, _possibly_iterable, wraptpint
+from pagos.constants import NOBLEGASES, STABLETRANSIENTGASES, BIOLOGICALGASES
+from pagos.constants import NG_JENKINS_19_COEFFS, WANNINKHOF_92_COEFFS, EYRING_36_COEFFS, CFC_WARNERWEISS_85_COEFFS, SF6_BULLISTER_02_COEFFS, ArNeN2_HAMMEEMERSON_04
+from pagos.constants import ABUNDANCES, MOLAR_VOLUMES, MOLAR_MASSES, ICE_FRACTIONATION_COEFFS, MGC, TPW, PAT, MMW
+from pagos.water import calc_dens, calc_dens_Tderiv, calc_dens_Sderiv, calc_kinvisc, calc_vappres, calc_vappres_Tderiv
 
-@oneormoregases # TODO should we really have this @ here?? For instance, the schmidt number calculation can take in multiple gases, but processes each one individually - removing the need for this...
+
 def hasgasprop(gas:str|Iterable[str], condition:str|list[str]) -> bool|list[bool]: #want to use union type but needs python 3.10 or newer for specification str|list
     """
     Returns True if the gas fulfils the condition specified by arguments condition and specific.
@@ -27,12 +27,12 @@ def hasgasprop(gas:str|Iterable[str], condition:str|list[str]) -> bool|list[bool
         Truth value of the condition.
     """
     if condition in ['isnoble', 'isng']:
-        if gas in _con.NOBLEGASES:
+        if gas in NOBLEGASES:
             return True
         else:
             return False
     if condition in ['isstabletransient', 'isst']:
-        if gas in _con.STABLETRANSIENTGASES:
+        if gas in STABLETRANSIENTGASES:
             return True
         else:
             return False
@@ -42,7 +42,7 @@ def hasgasprop(gas:str|Iterable[str], condition:str|list[str]) -> bool|list[bool
 """
 GETTERS
 """
-@oneormoregases
+@_possibly_iterable
 def jkc(gas:str|Iterable[str]) -> dict[float]|Iterable[dict[float]]:
     """Get a dictionary of the Jenkins 2019 solubility equation coefficients of the gas:
     {A1, A2, A3, A4, B1, B2, B3, C1}.
@@ -53,13 +53,13 @@ def jkc(gas:str|Iterable[str]) -> dict[float]|Iterable[dict[float]]:
     :return: Dictionary of gas's Jenkins coefficients.
     :rtype: dict[float]|Iterable[dict[float]]
     """    
-    if hasgasprop(gas, 'isnoble'):
-        return _con.NG_JENKINS_19_COEFFS[gas]
-    else:
-        raise AttributeError("Only noble gases have the attribute jkc. This gas (%s) does not have the property "
-                                "\"noble\"." % (gas))
+    try:
+        return NG_JENKINS_19_COEFFS[gas]
+    except:
+        print("Only noble gases have Jenkins coefficients.")
 
-@oneormoregases
+
+@_possibly_iterable
 def wkc(gas:str|Iterable[str]) -> dict[float]|Iterable[dict[float]]:
     """Get a dictionary of the Wanninkhof 1992 Schmidt number equation coefficients of the
     gas: {A, B, C, D}.
@@ -71,9 +71,13 @@ def wkc(gas:str|Iterable[str]) -> dict[float]|Iterable[dict[float]]:
     :return: Dictionary of gas's Wanninkhof coefficients.
     :rtype: dict[float]|Iterable[dict[float]]
     """
-    return _con.WANNINKHOF_92_COEFFS[gas] #TODO implement exception for gases without Wanningkof coeffs
+    try:
+        return WANNINKHOF_92_COEFFS[gas]
+    except:
+        print("Only noble gases, CFCs, SF6 and N2 have Wanningkhof coefficients.")
 
-@oneormoregases
+
+@_possibly_iterable
 def erc(gas:str|Iterable[str]) -> dict[float]|Iterable[dict[float]]:
     """Get a dictionary of the Eyring 1936 coeffs {A, Ea} for the diffusivity. Noble gas
     coefficients from Jähne 1987, except argon, interpolated from Wanninkhof 1992. N2 is
@@ -83,10 +87,14 @@ def erc(gas:str|Iterable[str]) -> dict[float]|Iterable[dict[float]]:
     :type gas: str | Iterable[str]
     :return: Dictionary of gas's Eyring coefficients.
     :rtype: dict[float]|Iterable[dict[float]]
-    """    
-    return _con.EYRING_36_COEFFS[gas] #TODO implement exception for gases without Eyring coeffs
+    """
+    try:
+        return EYRING_36_COEFFS[gas]
+    except:
+        print("Only noble gases and N2 have Eyring coefficients.")
 
-@oneormoregases
+
+@_possibly_iterable
 def mv(gas:str|Iterable[str]) -> float|Iterable[float]:
     """Get the molar volume of the given gas at STP in cm3/mol.
 
@@ -94,10 +102,29 @@ def mv(gas:str|Iterable[str]) -> float|Iterable[float]:
     :type gas: str | Iterable[str]
     :return: STP molar volume of given gas in cm3/mol.
     :rtype: float|Iterable[float]
-    """    
-    return _con.MOLAR_VOLUMES[gas] #TODO implement exception for gases without molar volumes
+    """
+    try:
+        return MOLAR_VOLUMES[gas]
+    except:
+        print("The given gas does not have a corresponding molar volume in PAGOS.")
 
-@oneormoregases
+
+@_possibly_iterable
+def mm(gas:str|Iterable[str]) -> float|Iterable[float]:
+    """Get the molar mass of the given gas in g/mol.
+
+    :param gas: Gas whose molar mass is to be returned.
+    :type gas: str | Iterable[str]
+    :return: Molar mass of given gas in g/mol.
+    :rtype: float|Iterable[float]
+    """
+    try:
+        return MOLAR_MASSES[gas]
+    except:
+        print("The given gas does not have a corresponding molar mass in PAGOS.")
+
+
+@_possibly_iterable
 def wwc(gas:str|Iterable[str]) -> dict[float]|Iterable[dict[float]]:
     """Get a dictionary of the Warner and Weiss 1985 equation coefficients of the gas:
     {a1, a2, a3, a4, b1, b2, b3}.
@@ -106,10 +133,14 @@ def wwc(gas:str|Iterable[str]) -> dict[float]|Iterable[dict[float]]:
     :type gas: str | Iterable[str]
     :return: Dictionary of gas's Warner/Weiss coefficients.
     :rtype: dict[float]|Iterable[dict[float]]
-    """    
-    return _con.CFC_WARNERWEISS_85_COEFFS[gas] #TODO implement exception for gases without warner/weiss coefficients
+    """
+    try:
+        return CFC_WARNERWEISS_85_COEFFS[gas]
+    except:
+        print("The given gas does not have corresponding Warner-Weiss-1985-coefficients in PAGOS.")
 
-@oneormoregases
+
+@_possibly_iterable
 def abn(gas:str|Iterable[str]) -> float|Iterable[float]:
     """Get the atmospheric abundance of the given gas.
 
@@ -118,9 +149,13 @@ def abn(gas:str|Iterable[str]) -> float|Iterable[float]:
     :return: Atmospheric abundance of given gas.
     :rtype: float|Iterable[float]
     """    
-    return _con.ABUNDANCES[gas] #TODO implement exception for gases without abundances
+    try:
+        return ABUNDANCES[gas]
+    except:
+        print("The given gas does not have a corresponding abundance in PAGOS.")
 
-@oneormoregases
+
+@_possibly_iterable
 def blc(gas:str|Iterable[str]) -> dict[float]|Iterable[dict[float]]:
     """Get a dictionary of the Bullister 2002 equation coefficients of the gas:
     {a1, a2, a3, b1, b2, b3}.
@@ -129,10 +164,14 @@ def blc(gas:str|Iterable[str]) -> dict[float]|Iterable[dict[float]]:
     :type gas: str | Iterable[str]
     :return: Dictionary of gas's Bullister coefficients.
     :rtype: dict[float]|Iterable[dict[float]]
-    """    
-    return _con.SF6_BULLISTER_02_COEFFS[gas] #TODO implement exception for gases without Bullister coeffs.
+    """
+    try:
+        return SF6_BULLISTER_02_COEFFS[gas]
+    except:
+        print("The given gas does not have corresponding Bullister-2002-coefficients in PAGOS.")
 
-@oneormoregases
+
+@_possibly_iterable
 def hec(gas:str|Iterable[str]) -> dict[float]|Iterable[dict[float]]:
     """Get a dictionary of the Hamme and Emerson 2004 equation coefficients of the gas:
     {A0, A1, A2, A3, B0, B1, B2}.
@@ -142,9 +181,13 @@ def hec(gas:str|Iterable[str]) -> dict[float]|Iterable[dict[float]]:
     :return: Dictionary of gas's Hamme/Emerson coefficients.
     :rtype: dict[float]|Iterable[dict[float]]
     """    
-    return _con.ArNeN2_HAMMEEMERSON_04[gas] #TODO implement exception for gases without Hamme/Emerson coeffs.
+    try:
+        return ArNeN2_HAMMEEMERSON_04[gas]
+    except:
+        print("The given gas does not have corresponding Hamme-Emerson-2004-coefficients in PAGOS.")
 
-@oneormoregases
+
+@_possibly_iterable
 def ice(gas:str|Iterable[str]) -> float|Iterable[float]:
     """
     Get the ice fractionation coefficient of the given gas from Loose et al. 2020.
@@ -154,14 +197,17 @@ def ice(gas:str|Iterable[str]) -> float|Iterable[float]:
     :return: Ice fractionation coefficient of given gas.
     :rtype: float|Iterable[float]
     """
-    return _con.ICE_FRACTIONATION_COEFFS[gas] #TODO implement exception for gases without ice fractionation coeffs.
+    try:
+        return ICE_FRACTIONATION_COEFFS[gas]
+    except:
+        print("The given gas does not have corresponding ice fractionation coefficients in PAGOS.")
 
 
 """
 PROPERTY CALCULATIONS
 """
-@oneormoregases
-@_u.wraps('dimensionless', (None, 'degC', 'permille', None), strict=False)
+@_possibly_iterable
+@wraptpint('dimensionless', (None, 'degC', 'permille', None), False)
 def calc_Sc(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, method:str='auto') -> Quantity|Iterable[Quantity]:
     """Calculates the Schmidt number Sc of given gas in seawater. There are three methods of calculation:
         - 'HE17'
@@ -216,19 +262,18 @@ def calc_Sc(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, method:st
         # units (cm2/s, kJ/mol)
         (A_coeff, activation_energy)  = (erc(gas)[s] for s in ["A", "Ea"])
         # *1000 in exponent to convert kJ/J to J/J
-        D0 = A_coeff * unp.exp(-activation_energy/(_con.MGC * (T + _con.TPW))*1000) # -> cm2/s
+        D0 = A_coeff * unp.exp(-activation_energy/(MGC * (T + TPW))*1000) # -> cm2/s
         # Saltwater correction used by R. Hamme in her Matlab script (https://oceangaseslab.uvic.ca/download.html)
         # *1e-4 to convert cm2/s to m2/s
         D = D0 * (1 - 0.049 * S / 35.5) * 1e-4 #PSS78 as Salinity
         # Kinematic viscosity calculation
-        nu_sw = _water.calc_kinvisc(T, S).magnitude
+        nu_sw = calc_kinvisc(T, S, magnitude=True)
         Sc = nu_sw / D
     else:
         raise ValueError("%s is not a valid method. Try 'auto', 'HE17' or 'W92'" % (method))
     return Sc
 
 
-@_u.wraps('mol/kg', (None, 'degC', 'permille'), strict=False)
 def calc_Cstar(gas:str, T:float|Quantity, S:float|Quantity) -> Quantity:
     """Calculate the moist atmospheric equilibrium concentration C* of a given gas at
     temperature T and salinity S. C* = waterside gas concentration when the total water
@@ -245,7 +290,7 @@ def calc_Cstar(gas:str, T:float|Quantity, S:float|Quantity) -> Quantity:
     :rtype: Quantity
     """
     # calculation of C* (units mol/kg)
-    T_K = T + _con.TPW
+    T_K = T + TPW
     if hasgasprop(gas, 'isnoble'):
         A1, A2, A3, A4, B1, B2, B3, C1 = jkc(gas).values() #needs S in PSS78
         # C*, concentration calculated from Jenkins et al. 2019
@@ -278,8 +323,8 @@ def calc_Cstar(gas:str, T:float|Quantity, S:float|Quantity) -> Quantity:
 
 # TODO is Iterable[Quantity] here the best way, or should it specify that they have to be numpy arrays?
 # TODO is instead a dict output the best choice for the multi-gas option? All other multi-gas functionalities in this program just spit out arrays... i.e., prioritise clarity or consistency? 
-@oneormoregases
-@_u.wraps(None, (None, 'degC', 'permille', 'atm', None, None), strict=False)
+@_possibly_iterable
+@wraptpint(None, (None, 'degC', 'permille', 'atm', None, None), strict=False)
 def calc_Ceq(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quantity, Ceq_unit:str|Unit='cc/g', ret_quant:bool=False) -> float|Iterable[float]|Quantity|Iterable[Quantity]:
     """Calculate the waterside equilibrium concentration Ceq of a given gas at water
     temperature T, salinity S and airside pressure p.
@@ -300,44 +345,56 @@ def calc_Ceq(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|
     :return: Waterside equilibrium concentration Ceq of the given gas
     :rtype: float | Iterable[float] | Quantity | Iterable[Quantity]
     """
+    # molar volume and molar mass
     mvol = mv(gas)
+    mmass = mm(gas)
     # vapour pressure over the water, calculated according to Dyck and Peschke 1995 (atm)
-    e_w = _water.calc_vappres(T).magnitude / 1013.25
+    e_w = calc_vappres(T, magnitude=True) / 1013.25
     # density of the water (kg/m3)
-    rho = _water.calc_dens(T, S).magnitude
+    rho = calc_dens(T, S, magnitude=True)
 
     # calculation of C*, the gas solubility/water-side concentration expressed in units of mol/kg
-    Cstar = calc_Cstar(gas, T, S).magnitude
+    Cstar = calc_Cstar(gas, T, S)#.magnitude
     # factor to account for pressure
     pref = (p - e_w) / (1 - e_w)
     # return equilibrium concentration with desired units
+    ret = pref * Cstar
     # TODO reformulate this using CONTEXTS (see pint Github)
     if not type(Ceq_unit) == Unit:                  # create pint.Unit object from unit string argument
-        Ceq_unit = _u.Unit(Ceq_unit) 
+        Ceq_unit = _u.Unit(Ceq_unit)
     if Ceq_unit.is_compatible_with('mol/kg'):       # amount gas / mass water
         ret = pref * Cstar
         unconverted_unit = _u('mol/kg')
     elif Ceq_unit.is_compatible_with('mol/cc'):     # amount gas / volume water
-        ret =  pref * rho * Cstar * 1e-6 # *1e-6: mol/kg -> mol/cc
+        ret =  pref * rho * Cstar * 1e-6 # *1e-6: mol/m^3 -> mol/cc
         unconverted_unit = _u('mol/cc')
     elif Ceq_unit.is_compatible_with('cc/g'):       # volume gas / mass water
         ret = pref * mvol * Cstar * 1e-3 # *1e-3: cc/kg -> cc/g
         unconverted_unit = _u('cc/g')
-    else: # TODO implement vol/amount, mass/vol and mass/amount
+    elif Ceq_unit.is_compatible_with('kg/mol'):     # mass gas / amount water
+        ret = pref * mmass * MMW * Cstar * 1e-6 # *1e-6: mg/mol -> kg/mol
+        unconverted_unit = _u('kg/mol')
+    elif Ceq_unit.is_compatible_with('cc/mol'):     # volume gas / amount water
+        ret = pref * mvol * MMW * Cstar * 1e-3 # *1e-3: μL/mol -> cc/mol
+        unconverted_unit = _u('cc/mol')
+    elif Ceq_unit.is_compatible_with('kg/m^3'):     # mass gas / volume water
+        ret = pref * mmass * rho * Cstar * 1e-3 # 1e-3: g/m^3 -> kg/m^3
+        unconverted_unit = _u('kg/m^3')
+    else:
         raise ValueError("Invalid/unimplemented value for unit. Try something like \"mol/kg\", \"mol/cc\" or \"cc/g\".")
 
-    # return, after conversion if necessary - written like this to avoid _core.sto() for speed reasons
+    # return, after conversion if necessary - written like this to avoid _sto() for speed reasons
     if not ret_quant and unconverted_unit == Ceq_unit:
         return ret
     elif not ret_quant:
-        return _core.sto(ret * unconverted_unit, Ceq_unit).magnitude
+        return _sto(ret * unconverted_unit, Ceq_unit).magnitude
     elif unconverted_unit == Ceq_unit:
         return ret * unconverted_unit
     else:
-        return _core.sto(ret * unconverted_unit, Ceq_unit)
+        return _sto(ret * unconverted_unit, Ceq_unit)
 
-@oneormoregases
-@_u.wraps(None, (None, 'degC', 'permille', 'atm', None, None), strict=False)
+@_possibly_iterable
+@wraptpint(None, (None, 'degC', 'permille', 'atm', None, None), strict=False)
 def calc_dCeq_dT(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, dCeq_dT_unit:str|Unit='cc/g/K', ret_quant:bool=False) -> float|Iterable[float]|Quantity|Iterable[Quantity]:
     """Calculate the temperature-derivative dCeq_dT of the waterside equilibrium
     concentration of a given gas at water temperature T, salinity S and airside pressure p.
@@ -358,19 +415,20 @@ def calc_dCeq_dT(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, 
     :return: Waterside equilibrium concentration temperature derivative dCeq_dT of the given gas
     :rtype: float|Iterable[float]|Quantity|Iterable[Quantity]
     """
-    # molar volume
+    # molar volume and molar mass
     mvol = mv(gas)
+    mmass = mm(gas)
     # vapour pressure over the water, calculated according to Dyck and Peschke 1995 (atm)
-    e_w = _water.calc_vappres(T).magnitude / 1013.25
+    e_w = calc_vappres(T, magnitude=True) / 1013.25
     # density of the water (kg/m3)
-    rho = _water.calc_dens(T, S).magnitude
+    rho = calc_dens(T, S, magnitude=True)
     # calculation of C*, the gas solubility/water-side concentration (mol/kg)
-    Cstar = calc_Cstar(gas, T, S).magnitude
+    Cstar = calc_Cstar(gas, T, S)
     # factor to account for pressure
     pref = (p - e_w) / (1 - e_w)
     # return equilibrium concentration with desired units
     # calculation of dC*/dT at the given T, S, p
-    T_K = T + _con.TPW
+    T_K = T + TPW
     if hasgasprop(gas, 'isnoble'):
         A1, A2, A3, A4, B1, B2, B3, C1 = jkc(gas).values() #needs S in PSS78
         dCstar_dT = (S*(B3*T_K/5000 + B2/100) + A3/T_K - 100*A2/(T_K**2) + A4/100)*Cstar
@@ -387,51 +445,61 @@ def calc_dCeq_dT(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, 
         T_s = unp.log((298.15 - T)/T_K)
         dCstar_dT = Cstar * 25/((T_K-25)*T_K) * (A1 + S*B1 + 2*(A2 + S*B2)*T_s + 3*A3*T_s**2) * 1e-6
 
-    drho_dT = _water.calc_dens_Tderiv(T, S).magnitude
-    de_w_dT = _water.calc_vappres_Tderiv(T).magnitude / 1013.25 # mbar/K -> atm/K
+    drho_dT = calc_dens_Tderiv(T, S, magnitude=True)
+    de_w_dT = calc_vappres_Tderiv(T, magnitude=True) / 1013.25 # mbar/K -> atm/K
     dCeq_dT_molkgK = pref * dCstar_dT + (p - 1)/((e_w - 1)**2) * de_w_dT * Cstar
 
     # TODO reformulate this using CONTEXTS? (see pint Github)
     if not type(dCeq_dT_unit) == Unit:                  # create pint.Unit object from unit string argument
         dCeq_dT_unit = _u.Unit(dCeq_dT_unit) 
-    if dCeq_dT_unit.is_compatible_with('mol/kg/K'):        # amount gas / mass water
+    if dCeq_dT_unit.is_compatible_with('mol/kg/K'):         # amount gas / mass water
         ret = dCeq_dT_molkgK
         unconverted_unit = _u('mol/kg/K')
-    elif dCeq_dT_unit.is_compatible_with('mol/cc/K'):     # amount gas / volume water
+    elif dCeq_dT_unit.is_compatible_with('mol/cc/K'):       # amount gas / volume water
         ret = (dCeq_dT_molkgK * rho + pref * Cstar * drho_dT) * 1e-6 # *1e-6: mol/m3/K -> mol/cc/K
         unconverted_unit = _u('mol/cc/K')
-    elif dCeq_dT_unit.is_compatible_with('cc/g/K'):        # volume gas / mass water
+    elif dCeq_dT_unit.is_compatible_with('cc/g/K'):         # volume gas / mass water
         ret = dCeq_dT_molkgK * mvol * 1e-3 # *1e-3: cc/kg/K -> cc/g/K
         unconverted_unit = _u('cc/g/K')
-    else:                                       # TODO implement vol/amount, mass/vol and mass/amount
+    elif dCeq_dT_unit.is_compatible_with('kg/mol/K'):       # mass gas / amount water
+        ret = dCeq_dT_molkgK * mmass * MMW * 1e-6 # *1e-6: mg/mol/K -> kg/mol/K
+        unconverted_unit = _u('kg/mol/K')
+    elif dCeq_dT_unit.is_compatible_with('cc/mol/K'):       # volume gas / amount water
+        ret = dCeq_dT_molkgK * MMW * mvol * 1e-3 # *1e-3: μL/mol/K -> cc/mol/K
+        unconverted_unit = _u('cc/mol/K')
+    elif dCeq_dT_unit.is_compatible_with('kg/m^3/K'):       # mass gas / volume water
+        ret = (dCeq_dT_molkgK * mmass * rho + pref * mmass * drho_dT * Cstar) * 1e-3 # *1e-3: g/m^3/K -> kg/m^3/K
+        unconverted_unit = _u('kg/m^3/K')
+    else:
         raise ValueError("Invalid/unimplemented value for unit. Try something like \"mol/kg/K\", \"mol/cc/K\" or \"cc/g/K\".")
-    # return, after conversion if necessary - written like this to avoid _core.sto() for speed reasons
+    # return, after conversion if necessary - written like this to avoid _sto() for speed reasons
     if not ret_quant and unconverted_unit == dCeq_dT_unit:
         return ret
     elif not ret_quant:
-        return _core.sto(ret * unconverted_unit, dCeq_dT_unit).magnitude
+        return _sto(ret * unconverted_unit, dCeq_dT_unit).magnitude
     elif unconverted_unit == dCeq_dT_unit:
         return ret * unconverted_unit
     else:
-        return _core.sto(ret * unconverted_unit, dCeq_dT_unit)
+        return _sto(ret * unconverted_unit, dCeq_dT_unit)
 
 
-@oneormoregases
-@_u.wraps(None, (None, 'degC', 'permille', 'atm', None, None), strict=False)
+@_possibly_iterable
+@wraptpint(None, (None, 'degC', 'permille', 'atm', None, None), strict=False)
 def calc_dCeq_dS(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, dCeq_dS_unit:str|Unit='cc/g/permille', ret_quant:bool=False) -> float|Iterable[float]|Quantity|Iterable[Quantity]:
-    # molar volume
+    # molar volume and molar mass
     mvol = mv(gas)
+    mmass = mm(gas)
     # vapour pressure over the water, calculated according to Dyck and Peschke 1995 (atm)
-    e_w = _water.calc_vappres(T).magnitude / 1013.25
+    e_w = calc_vappres(T, magnitude=True) / 1013.25
     # density of the water (kg/m3)
-    rho = _water.calc_dens(T, S).magnitude
+    rho = calc_dens(T, S, magnitude=True)
     # calculation of C*, the gas solubility/water-side concentration (mol/kg)
-    Cstar = calc_Cstar(gas, T, S).magnitude
+    Cstar = calc_Cstar(gas, T, S)
     # factor to account for pressure
     pref = (p - e_w) / (1 - e_w)
     # return equilibrium concentration with desired units
-    # calculation of dC*/dT at the given T, S, p
-    T_K = T + _con.TPW
+    # calculation of dC*/dS at the given T, S, p
+    T_K = T + TPW
     if hasgasprop(gas, 'isnoble'):
         A1, A2, A3, A4, B1, B2, B3, C1 = jkc(gas).values() #needs S in PSS78
         dCstar_dS = (B1 + B2*(T_K/100) + B3*(T_K/100)**2 + 2*C1*S) * Cstar
@@ -448,7 +516,7 @@ def calc_dCeq_dS(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, 
         T_s = unp.log((298.15 - T)/T_K)
         dCstar_dS = (B0 + B1*T_s + B2*T_s**2) * Cstar
     
-    drho_dS = _water.calc_dens_Sderiv(T, S).magnitude
+    drho_dS = calc_dens_Sderiv(T, S, magnitude=True)
     dCeq_dS_molkgpm = pref * dCstar_dS
     
     # TODO reformulate this using CONTEXTS? (see pint Github)
@@ -463,58 +531,114 @@ def calc_dCeq_dS(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, 
     elif dCeq_dS_unit.is_compatible_with('cc/g/permille'):        # volume gas / mass water
         ret = dCeq_dS_molkgpm * mvol * 1e-3 # *1e-3: cc/kg/permille -> cc/g/permille
         unconverted_unit = _u('cc/g/permille')
-    else:                                       # TODO implement vol/amount, mass/vol and mass/amount
+    elif dCeq_dS_unit.is_compatible_with('kg/mol/permille'):       # mass gas / amount water
+        ret = dCeq_dS_molkgpm * mmass * MMW * 1e-6 # *1e-6: mg/mol/permille -> kg/mol/permille
+        unconverted_unit = _u('kg/mol/permille')
+    elif dCeq_dS_unit.is_compatible_with('cc/mol/permille'):       # volume gas / amount water
+        ret = dCeq_dS_molkgpm * MMW * mvol * 1e-3 # *1e-3: μL/mol/permille -> cc/mol/permille
+        unconverted_unit = _u('cc/mol/permille')
+    elif dCeq_dS_unit.is_compatible_with('kg/m^3/permille'):       # mass gas / volume water
+        ret = (dCeq_dS_molkgpm * mmass * rho + pref * mmass * drho_dS * Cstar) * 1e-3 # *1e-3: g/m^3/permille -> kg/m^3/permille
+        unconverted_unit = _u('kg/m^3/permille')
+    else:
         raise ValueError("Invalid/unimplemented value for unit. Try something like \"mol/kg/permille\", \"mol/cc/permille\" or \"cc/g/permille\".")
     
-    # return, after conversion if necessary - written like this to avoid _core.sto() for speed reasons
+    # return, after conversion if necessary - written like this to avoid _sto() for speed reasons
     if not ret_quant and unconverted_unit == dCeq_dS_unit:
         return ret
     elif not ret_quant:
-        return _core.sto(ret * unconverted_unit, dCeq_dS_unit).magnitude
+        return _sto(ret * unconverted_unit, dCeq_dS_unit).magnitude
     elif unconverted_unit == dCeq_dS_unit:
         return ret * unconverted_unit
     else:
-        return _core.sto(ret * unconverted_unit, dCeq_dS_unit)
+        return _sto(ret * unconverted_unit, dCeq_dS_unit)
 
 
-@oneormoregases
-@_u.wraps(None, (None, 'degC', 'permille', 'atm', None, None), strict=False)
+@_possibly_iterable
+@wraptpint(None, (None, 'degC', 'permille', 'atm', None, None), strict=False)
 def calc_dCeq_dp(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, dCeq_dp_unit:str|Unit='cc/g/atm', ret_quant:bool=False) -> float|Iterable[float]|Quantity|Iterable[Quantity]:
-    # molar volume
+    # molar volume and molar mass
     mvol = mv(gas)
+    mmass = mm(gas)
     # vapour pressure over the water, calculated according to Dyck and Peschke 1995 (atm)
-    e_w = _water.calc_vappres(T).magnitude / 1013.25
+    e_w = calc_vappres(T, magnitude=True) / 1013.25
     # density of the water (kg/m3)
-    rho = _water.calc_dens(T, S).magnitude
+    rho = calc_dens(T, S, magnitude=True)
     # calculation of C*, the gas solubility/water-side concentration (mol/kg)
-    Cstar = calc_Cstar(gas, T, S).magnitude
-    # factor to account for pressure
+    Cstar = calc_Cstar(gas, T, S)
+    # factor to account for pressure (this is the pressure-derivative of (p - e_w) / (1 - e_w))
     pref = 1 / (1 - e_w)
     # return equilibrium concentration with desired units
-    # calculation of dC*/dT at the given T, S, p
-    
     # TODO reformulate this using CONTEXTS? (see pint Github)
     if not type(dCeq_dp_unit) == Unit:                  # create pint.Unit object from unit string argument
         dCeq_dp_unit = _u.Unit(dCeq_dp_unit) 
-    if dCeq_dp_unit.is_compatible_with('mol/kg/atm'):        # amount gas / mass water
+    if dCeq_dp_unit.is_compatible_with('mol/kg/atm'):       # amount gas / mass water
         ret = pref * Cstar
         unconverted_unit = _u('mol/kg/atm')
     elif dCeq_dp_unit.is_compatible_with('mol/cc/atm'):     # amount gas / volume water
         ret = pref * Cstar * rho * 1e-6 # *1e-6: mol/m3/permille -> mol/cc/permille
         unconverted_unit = _u('mol/cc/atm')
-    elif dCeq_dp_unit.is_compatible_with('cc/g/atm'):        # volume gas / mass water
+    elif dCeq_dp_unit.is_compatible_with('cc/g/atm'):       # volume gas / mass water
         ret = pref * Cstar * mvol * 1e-3 # *1e-3: cc/kg/permille -> cc/g/permille
         unconverted_unit = _u('cc/g/atm')
-    else:                                       # TODO implement vol/amount, mass/vol and mass/amount
+    elif dCeq_dp_unit.is_compatible_with('kg/mol/atm'):     # mass gas / amount water
+        ret = pref * Cstar * mmass * MMW * 1e-6 # *1e-6: mg/mol/atm -> kg/mol/atm
+        unconverted_unit = _u('kg/mol/atm')
+    elif dCeq_dp_unit.is_compatible_with('cc/mol/atm'):     # volume gas / amount water
+        ret = pref * Cstar * MMW * mvol * 1e-3 # *1e-3: μL/mol/atm -> cc/mol/atm
+        unconverted_unit = _u('cc/mol/atm')
+    elif dCeq_dp_unit.is_compatible_with('kg/m^3/atm'):     # mass gas / volume water
+        ret = pref * Cstar * mmass * rho * 1e-3 # *1e-3: g/m^3/atm -> kg/m^3/atm
+        unconverted_unit = _u('kg/m^3/atm')
+    else:
         raise ValueError("Invalid/unimplemented value for unit. Try something like \"mol/kg/atm\", \"mol/cc/atm\" or \"cc/g/atm\".")
     
-    # return, after conversion if necessary - written like this to avoid _core.sto() for speed reasons
+    # return, after conversion if necessary - written like this to avoid _sto() for speed reasons
     if not ret_quant and unconverted_unit == dCeq_dp_unit:
         return ret
     elif not ret_quant:
-        return _core.sto(ret * unconverted_unit, dCeq_dp_unit).magnitude
+        return _sto(ret * unconverted_unit, dCeq_dp_unit).magnitude
     elif unconverted_unit == dCeq_dp_unit:
         return ret * unconverted_unit
     else:
-        return _core.sto(ret * unconverted_unit, dCeq_dp_unit)
+        return _sto(ret * unconverted_unit, dCeq_dp_unit)
 
+
+@_possibly_iterable
+@wraptpint(None, (None, 'degC', 'permille', 'atm', None, None), strict=False)
+def calc_solcoeff(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, solcoeff_type:str='dimensionless', ret_quant:bool=False):
+    # gas abundance
+    ab = abn(gas)
+    # vapour pressure in air
+    e_w = calc_vappres(T, magnitude=True)
+    # temperature degrees to K
+    T_K = T + TPW
+    # gas-side concentration
+    C_g = 100 * ab * (p*1013.25 - e_w) / MGC / T_K # x100 to convert from hPa mol / J to mol / m^3
+    # water-side concentration
+    C_w = calc_Ceq(gas, T, S, p, 'mol/m^3')
+    # calculate Henry coefficient H [L_w / L_g]
+    H = C_g / C_w
+
+# TODO reformulate this using CONTEXTS? - in this case differentiating between mol_w and mol_g so that units can be used instead of arbitrary solcoeff_type argument (see pint Github)
+    if solcoeff_type in ['dimless', 'dimensionless', 'H']:
+        ret = H
+        unit_out = ''
+    elif solcoeff_type in ['nv', 'Knv', 'nvp', 'Knvp']:       # amount gas / volume water / partial pressure
+        ret = 1 / MGC / T_K / H
+        unit_out = _u('mol/m^3/Pa')
+    elif solcoeff_type in ['vv', 'Kvv', 'vvp', 'Kvvp']:     # STP volume gas / volume water / partial pressure
+        ret = TPW / PAT / T_K / H
+        unit_out = _u('Pa^-1')
+    elif solcoeff_type in ['nn', 'Knn', 'nnp', 'Knnp']:     # amount gas / amount water / partial pressure
+        rho = calc_dens(T, S)
+        ret =  0.001 * MMW / MGC / T_K / rho / H  
+        unit_out = _u('Pa^-1')
+    else:
+        raise ValueError("Invalid/unimplemented value for solcoeff_type. Available options: 'H' (dimensionless), 'Knv' (mol/m3/Pa), 'Kvv' (m3_STP/m3_w/Pa), 'Knn (mol_g/mol_w/Pa)'.")
+    
+    # return, after unit implementation if required:
+    if not ret_quant:
+        return ret
+    else:
+        return ret * unit_out

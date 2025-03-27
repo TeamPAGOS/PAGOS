@@ -25,10 +25,34 @@ Quantity of different registries."
 u = UnitRegistry()
 
 """
+MISCELLANEOUS VARIABLES
+"""
+# this enables/disables the _possibly_iterable decorator
+_ENABLE_POSSIT = True
+def _is_possit_enabled():
+    return _ENABLE_POSSIT
+
+def _set_possit(value:bool):
+    if type(value) != bool:
+        raise TypeError('value must be boolean.')
+    global _ENABLE_POSSIT
+    _ENABLE_POSSIT = value
+
+# this enables/disables the wraptpint decorator
+_ENABLE_WP = True
+def _is_wp_enabled():
+    return _ENABLE_WP
+
+def _set_wp(value:bool):
+    if type(value) != bool:
+        raise TypeError('value must be boolean.')
+    global _ENABLE_WP
+    _ENABLE_WP = value
+
+"""
 DECORATORS
 """
-# TODO add optional keyword that suppresses the _possibly_iterable functionality
-@wrapt.decorator # wrapt decorator used so that function argument specification is preserved (see https://github.com/GrahamDumpleton/wrapt/blob/develop/blog/01-how-you-implemented-your-python-decorator-is-wrong.md)
+@wrapt.decorator(enabled=_is_possit_enabled) # wrapt decorator used so that function argument specification is preserved (see https://github.com/GrahamDumpleton/wrapt/blob/develop/blog/01-how-you-implemented-your-python-decorator-is-wrong.md)
 def _possibly_iterable(func, instance:object, args, kwargs) -> Callable:
     """Decorator that can make a function operate on iterables as\\
     f(*x\u1d62*) >>> \u03b1*\u2c7c* \u23af\u23afmake args labelled w/ *k* iterable\u23af\u23af\u25BA f(*x\u1d62*\u03b4*\u1d62\u2096* + *x\u1d62*(1 − \u03b4*\u1d62\u2096*)) >>> \u03b1*\u2c7c\u2096*\\
@@ -52,15 +76,29 @@ def _possibly_iterable(func, instance:object, args, kwargs) -> Callable:
     # determination of argument to func which is possibly iterable. Defaults to first argument.
     if 'possit' in kwargs:
         possitkey = kwargs['possit']
+        # remove 'possit' from keyword arguments passed to wrapped function
         kwargs_to_func = {k:kwargs[k] for k in kwargs if k != 'possit'}
+        # option to suppress _possibly_iterable functionality by using possit=None in the arguments of the function 
+        if possitkey == None:
+            return func(*args, **kwargs_to_func)
     else:
         possitkey = 0
         kwargs_to_func = kwargs
+
+    # option to sppress _possibly_iterable functionality for subsequent calls
+    # EXPERIMENTAL
+    # WARNING: ONLY USE IF YOU WILL MANUALLY RE-ENABLE STRAIGHT AWAY WHEN NECESSARY
+    if 'disablenext' in kwargs:
+        disablenext = kwargs['disablenext']
+        if disablenext:
+            kwargs_to_func = {k:kwargs[k] for k in kwargs if k != 'disablenext'}
+            _set_possit(False)
+    
     # different behaviour if the possibly iterable argument(s) is(are) in function's args or kwargs.
     # NOTE: so far mixed behaviour is not allowed - either the iterable arguments must all be args or all kwargs.
     if type(possitkey) == int:
         possit = args[possitkey]
-        isiterable = _is_iterable_quant_safe(possit)
+        isiterable = _is_iterable_sq_safe(possit)
         def return_array():
             retarr = []
             for x in possit:
@@ -71,7 +109,7 @@ def _possibly_iterable(func, instance:object, args, kwargs) -> Callable:
     
     elif type(possitkey) == tuple and all(type(p) == int for p in possitkey):
         possit_array = [args[p] for p in possitkey]
-        isiterable = all(_is_iterable_quant_safe(possit) for possit in possit_array)
+        isiterable = all(_is_iterable_sq_safe(possit) for possit in possit_array)
         def return_array():
             retarr = []
             for i in range(len(possit_array[0])):
@@ -83,7 +121,7 @@ def _possibly_iterable(func, instance:object, args, kwargs) -> Callable:
     
     elif type(possitkey) == str:
         possit = kwargs[possitkey]
-        isiterable = _is_iterable_quant_safe(possit)
+        isiterable = _is_iterable_sq_safe(possit)
         def return_array():
             retarr = []
             for x in possit:
@@ -94,7 +132,7 @@ def _possibly_iterable(func, instance:object, args, kwargs) -> Callable:
     
     elif type(possitkey) == tuple and all(type(p) == str for p in possitkey):
         possit_array = [kwargs[p] for p in possitkey]
-        isiterable = all(_is_iterable_quant_safe(possit) for possit in possit_array)
+        isiterable = all(_is_iterable_sq_safe(possit) for possit in possit_array)
         def return_array():
             retarr = []
             for i in range(len(possit_array[0])):
@@ -107,6 +145,7 @@ def _possibly_iterable(func, instance:object, args, kwargs) -> Callable:
     else:
         raise TypeError('possit must be an integer, tuple of integers, string or tuple of strings. \n\
                         WARNING: This should not have been triggered by the user! If this error has shown up, there is a bug in the code caused by incorrect use of pagos.core._possibly_iterable().')
+    return_array.__is_possibly_iterable__ = True
     # Quantity objects are iterable, so this deals with the relevant cases
     if isiterable:
         return return_array()
@@ -114,17 +153,51 @@ def _possibly_iterable(func, instance:object, args, kwargs) -> Callable:
         return func(*args, **kwargs_to_func)
 
 
+def wraptpint(  # signature copied from pint wraps()
+    ret_units: str | Unit | Iterable[str | Unit | None] | None,
+    arg_units: str | Unit | Iterable[str | Unit | None] | None,
+    strict: bool,
+):
+    """Alternative to pint wraps() functionality that preserves function signature.
+
+    :param ret_units: units of value returned by function
+    :type ret_units: str | Unit | Iterable[str | Unit | None] | None
+    :param arg_units: units of input arguments to function
+    :type arg_units: str | Unit | Iterable[str  |  Unit  |  None] | None
+    :param strict: indicates that only `Quantity`s are to be accepted, defaults to True
+    :type strict: bool, optional
+    :return: the wrapper function
+    """
+    @wrapt.decorator()
+    def wrapper(func, instance, args, kwargs):
+        # option to bypass the wrapping if the user does not want it
+        # EXPERIMENTAL
+        if not _is_wp_enabled():
+            try:                                    # TODO there are a few places in the code where kwarg popping is done like: kwargs_to_func = {k:kwargs[k] for k in kwargs if k != <kwarg to remove>}
+                kwargs.pop('magnitude')             #   where possible (not always, see the block below for example) should all look like this instead, I think - it seems better
+            finally:
+                return func(*args, **kwargs)
+        else:
+            unitwrapped = u.wraps(ret=ret_units, args=arg_units, strict=strict)(func)
+            # option to return the magnitude if the user desires (alternative to Quantity.magnitude)
+            if 'magnitude' in kwargs and kwargs['magnitude']:
+                kwargs.pop('magnitude')
+                return unitwrapped(*args, **kwargs).magnitude
+            else:
+                return unitwrapped(*args, **kwargs)
+    return wrapper
 
 """
 FUNCTIONS
 """
-def _is_iterable_quant_safe(possit) -> bool:
-    """Singular `Quantity` objects are instances of `Iterable`, so this function returns `False` if the
-    argument is a non-`Iterable` or `Quantity` with non-`Iterable` magnitude, and `True` otherwise.
+def _is_iterable_sq_safe(possit) -> bool:
+    """Singular `Quantity` objects are instances of `Iterable`, as are strings. So, this function
+    returns `False` if the argument is a `str`, a non-`Iterable` or a `Quantity` with
+    non-`Iterable` magnitude, and `True` otherwise.
 
     :param possit: Possibly iterable argument
     :type possit: Any
-    :return: `False` if `possit` is non-`Iterable` or `Quantity` with non-`Iterable` magnitude, `True` otherwise.
+    :return: `False` if `possit` is a `str`, non-`Iterable` or `Quantity` with non-`Iterable` magnitude, `True` otherwise.
     :rtype: bool
     """
     if isinstance(possit, Iterable):
@@ -133,6 +206,8 @@ def _is_iterable_quant_safe(possit) -> bool:
                 return True
             else:                                       # Q(x, units)
                 return False
+        elif isinstance(possit, str):                   # string
+            return False
         else:                                           # [x1, x2, ...]
             return True
     else:                                               # x
@@ -242,8 +317,7 @@ def sto(x:Quantity|Iterable[Quantity], to:str|Unit, strict=True) -> Quantity|Ite
             return u.Quantity(x, to)
 
 @_possibly_iterable #TODO this could be implemented in LOTS of places around the code where we constantly have to go through the tedious process of checking if a quantity is a Quantity with Variable/AffineScalarFunc magnitude, if it's just got a normal magnitude or if it's not got a magnitude at all
-# TODO implement strictness argument to return error if there is no nominal_value
-def snv(x):
+def snv(x, strict:bool=False):
     """snv <=> 'safe nominal value'. If x is an uncertainties Variable/AffineScalarFunc, its
     nominal_value is returned. Otherwise only x is returned. Quantities are handled to remove units.
 
@@ -253,14 +327,15 @@ def snv(x):
     """
     if (isinstance(x, u.Quantity) and isinstance(x.magnitude, (Variable, AffineScalarFunc))) or isinstance(x, (Variable, AffineScalarFunc)):
         return x.nominal_value
+    elif strict:
+        raise TypeError('with strict==True, x must have property x.nominal_value')
     elif isinstance(x, u.Quantity):
         return x.magnitude
     else:
         return x
 
 @_possibly_iterable
-# TODO implement strictness argument to return error if there is no std_dev
-def ssd(x):
+def ssd(x, strict:bool=False):
     """ssd <=> 'safe standard deviation'. If x is an uncertainties Variable/AffineScalarFunc, its
     std_dev is returned. Otherwise None is returned. Quantities are handled to remove units.
 
@@ -270,12 +345,13 @@ def ssd(x):
     """
     if (isinstance(x, u.Quantity) and isinstance(x.magnitude, (Variable, AffineScalarFunc))) or isinstance(x, (Variable, AffineScalarFunc)):
         return x.std_dev
+    elif strict:
+        raise TypeError('with strict==True, x must have property x.std_dev')
     else:
         return None
 
 @_possibly_iterable
-# TODO implement strictness argument to return error if there is no units
-def sgu(x):
+def sgu(x, strict:bool=False):
     """sgu <=> 'safe get units'. If x is a Pint Quantity, its units are returned. Otherwise
     None is returned.
 
@@ -285,6 +361,8 @@ def sgu(x):
     """
     if isinstance(x, u.Quantity):
         return x.units
+    elif strict:
+        raise TypeError('with strict==True, x must have property x.units')
     else:
         return None
     
@@ -303,21 +381,26 @@ def units_are_equal(units1, units2):
         return False
     
 
-def _tidy_iterable(it:Iterable) -> Iterable:
+def _tidy_iterable(it:Iterable) -> np.ndarray | Iterable:
     """Tidy up `[Q(x1, unit), Q(x2, unit), ...]` as `Q([x1, x2, ...], unit)`.
     Will perform no such conversion if units are not the same (i.e. `[Q(x1, u1), Q(x2, u2), ...]` where `ui != uj`).
+    Always returns type np.array if possible.
 
     :param it: Iterable `[Q(x1, u1), Q(x2, u2), ...]`
     :type it: Iterable
     :return: `Q([x1, x2, ...], u)` if `ui == u` for all `i`, else `it`
-    :rtype: Iterable
+    :rtype: ndarray
     """
+    # perform tidying
     if all(isinstance(elt, Quantity) for elt in it):
         units0 = it[0].units
         if all(elt.units == units0 for elt in it):
             stripped = np.array([elt.magnitude for elt in it])
             return u.Quantity(stripped, units0)
-    return it
+    try:
+        return np.array(it)
+    except ValueError:
+        return np.array(it, dtype=object)
 
 
 def Q(val:float, unit:str|Unit, err:float=None) -> Quantity:

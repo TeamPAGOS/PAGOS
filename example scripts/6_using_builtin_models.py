@@ -37,4 +37,4 @@ fit_UA = UAModel.fit(pangadata,                                             # th
                      #constraints={'T_recharge':[-10, 50], 'A':[0, 1e-2]},  # any constraints we might want to place on our fitted parameters
                      tqdm_bar=True)                                         # whether to display a progress bar
 print('Fit of UA model:')
-print(fit_UA[['Sample', 'T', 'A']])
+print(fit_UA[['T', 'A']])

@@ -24,7 +24,7 @@ def ua_model(gas, T_recharge, S, p, A):
     Ceq = pgas.calc_Ceq(gas, T_recharge, S, p)
     z = pgas.abn(gas)
     return Ceq + A * z
-UAModel = GasExchangeModel(ua_model, ('degC', 'permille', 'atm', 'cc/g'), None)
+UAModel = GasExchangeModel(ua_model, ['degC', 'permille', 'atm', 'cc/g'], None)
 
 # This model has four parameters, two of which are provided by our dataset. We will therefore use
 # the noble gas concentrations in the dataset to calculate the recharge temperature and excess air
@@ -39,7 +39,7 @@ fit_UA = UAModel.fit(pangadata,                                             # th
                      #constraints={'T_recharge':[-10, 50], 'A':[0, 1e-2]},   # any constraints we might want to place on our fitted parameters
                      tqdm_bar=True)                                         # whether to display a progress bar
 print('Fit of UA model:')
-print(fit_UA[['Sample', 'T_recharge', 'A']])
+print(fit_UA[['T_recharge', 'A']])
 
 # Note here that the init_guess arguments do NOT have to be Quantity objects, although they can be
 # for clarity, if you want. When units are omitted, the default_units_in passed to the
@@ -50,27 +50,25 @@ def ce_model(gas, T, S, p, A, F):
     Ceq = pgas.calc_Ceq(gas, T, S, p)
     z = pgas.abn(gas)
     return Ceq + (1 - F) * A * z / (1 + F * A * z / Ceq)
-CEModel1 = GasExchangeModel(ce_model, ('degC', 'permille', 'atm', 'cc/g', ''), None)
-CEModel2 = GasExchangeModel(ce_model, (None, None, None, None, None), None)
+CEModel1 = GasExchangeModel(ce_model, ['degC', 'permille', 'atm', 'cc/g', ''], 'cc/g')
+CEModel2 = GasExchangeModel(ce_model, [None, None, None, None, None], None)
 
 
 fit_CE1 = CEModel1.fit(pangadata,
                        ['T', 'A', 'F'],
                        init_guess=[Q(273.15, 'K'), 1e-5, 0.1],
                        tracers_used=gases_used,
-                       #constraints={'T':[-10, 50], 'A':[0, 1e-2], 'F':[0, 1]},
-                       constraints={'F':[-5e4, 5e4], 'A':[-10, 10], 'T':[-1000, 1000]},
+                       constraints=[[-1000, 1000], [-10, 10], [-1e4, 1e4]],
                        tqdm_bar=True)
 
 fit_CE2 = CEModel2.fit(pangadata,
                        ['T', 'A', 'F'],
                        init_guess=[0, 1e-5, 0.1],  
                        tracers_used=gases_used,
-                       #constraints={'T':[-10, 50], 'A':[0, 1e-2], 'F':[0, 1]},
-                       constraints={'F':[-5e4, 5e4], 'A':[-10, 10], 'T':[-1000, 1000]},
+                       constraints=[[-1000, 1000], [-10, 10], [-1e4, 1e4]],
                        tqdm_bar=True)
 
 print('Fit of CE model 1:')
-print(fit_CE1[['Sample', 'T', 'A', 'F']])
+print(fit_CE1[['T', 'A', 'F']])
 print('Fit of CE model 2:')
-print(fit_CE2[['Sample', 'T', 'A', 'F']])
+print(fit_CE2[['T', 'A', 'F']])

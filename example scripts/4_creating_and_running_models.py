@@ -19,7 +19,7 @@ def ua_model(gas, T, S, p, A):
     Ceq = pgas.calc_Ceq(gas, T, S, p)
     z = pgas.abn(gas)   # <- pagos.gas.abn(G) returns the dimensionless atmospheric abundance of G
     return Ceq + A * z
-UAModel = GasExchangeModel(ua_model, ('degC', 'permille', 'atm', 'cc/g'), 'cc/g')
+UAModel = GasExchangeModel(ua_model, ['degC', 'permille', 'atm', 'cc/g'], 'cc/g')
 
 # The arguments to GasExchangeModel() are the user-defined function describing the model, a tuple
 # of default input units and one default output unit. The default input units correspond to the
@@ -36,7 +36,7 @@ printlines(('Result with no given units:', myResult1, 'Result with given units m
 # After running the above script you should see that all the results are the same! If messing
 # around with the Q() constructor isn't to your liking, one can also override units thus:
 
-myResult4 = UAModel.run('Ne', 283.15, 3, 1, 5e-4, units_in=('K', 'percent', 'atm', 'cc/g'))
+myResult4 = UAModel.run('Ne', 283.15, 3, 1, 5e-4, units_in=['K', 'percent', 'atm', 'cc/g'])
 print('Result using units_in kwarg:', myResult4)
 
 # The returned units may also be altered with the units_out keyword argument. Additionally, note
@@ -45,7 +45,7 @@ print('Result using units_in kwarg:', myResult4)
 # units_in argument along with Q()-based model arguments, as units_in will always be silently
 # overridden.
 
-myResult5 = UAModel.run('Ne', 10, Q(30, 'permille'), 1, 5e-4, units_in=('degC', 'percent', 'atm', 'cc/g'), units_out='m^3/kg')
+myResult5 = UAModel.run('Ne', 10, Q(30, 'permille'), 1, 5e-4, units_in=['degC', 'percent', 'atm', 'cc/g'], units_out='m^3/kg')
 print('Result in using units_out kwarg:', myResult5)
 
 # Here is an example of another, more complicated gas exchange model we might like to implement,
@@ -55,7 +55,7 @@ def ce_model(gas, T, S, p, F, A):
     Ceq = pgas.calc_Ceq(gas, T, S, p)
     z = pgas.abn(gas)
     return (1 - F)*A*z / (1 + F*A*z/Ceq)
-CEModel = GasExchangeModel(ce_model, ('degC', 'permille', 'atm', '', 'cc/g'), 'cc/g')
+CEModel = GasExchangeModel(ce_model, ['degC', 'permille', 'atm', '', 'cc/g'], 'cc/g')
 
 myResult6 = CEModel.run(['Ne', 'Ar', 'Kr', 'Xe'], 10, 30, 1, 0.15, 5e-4)
 print('Result of CE model:', myResult6)
