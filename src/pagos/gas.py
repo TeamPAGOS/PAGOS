@@ -15,13 +15,13 @@ from pagos.constants import ABUNDANCES, MOLAR_VOLUMES, MOLAR_MASSES, ICE_FRACTIO
 from pagos.water import calc_dens, calc_dens_Tderiv, calc_dens_Sderiv, calc_kinvisc, calc_vappres, calc_vappres_Tderiv
 
 
-def hasgasprop(gas:str|Iterable[str], condition:str|list[str]) -> bool|list[bool]: #want to use union type but needs python 3.10 or newer for specification str|list
+def hasgasprop(gas:str, condition:str) -> bool:
     """
-    Returns True if the gas fulfils the condition specified by arguments condition and specific.
+    Returns True if the gas fulfils the condition specified by arguments `condition`.
 
+    :param str gas:  Gas species to be checked.
     :param str condition:
-        Condition to be checked. Need not have an argument, e.g. condition='isstabletransient' takes no argument and
-        only checks if the gas is a stable transient gas (e.g. SF6 or CFC12).
+        Condition to be checked, e.g. condition='isstabletransient' checks if the gas is a stable transient gas (e.g. SF6 or CFC12).
         possible conditions are 'spcis' (needs the species in specific), 'isnoble', 'isng', 'isstabletransient', 'isst'
     :return bool:
         Truth value of the condition.
@@ -209,7 +209,10 @@ PROPERTY CALCULATIONS
 @_possibly_iterable
 @wraptpint('dimensionless', (None, 'degC', 'permille', None), False)
 def calc_Sc(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, method:str='auto') -> Quantity|Iterable[Quantity]:
-    """Calculates the Schmidt number Sc of given gas in seawater. There are three methods of calculation:
+    """Calculates the Schmidt number Sc of given gas in seawater.\\
+    **Default input units** --- `T`:°C, `S`:‰\\
+    **Output units** --- dimensionless\\
+    There are three methods of calculation:
         - 'HE17'
             - Hamme and Emerson 2017, combination of various methods.
             - Based off of Roberta Hamme's Matlab scripts, available at
@@ -235,7 +238,7 @@ def calc_Sc(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, method:st
     :raises ValueError: if `S` < 0
     :raises ValueError: if invalid `method` is given
     :return: Calculated Schmidt number
-    :rtype: float|Quantity|Iterable[float]|Iterable[Quantity]
+    :rtype: float | Quantity | Iterable[float] | Iterable[Quantity]
     """    
 
     if method == 'auto':
@@ -275,8 +278,11 @@ def calc_Sc(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, method:st
 
 
 def calc_Cstar(gas:str, T:float|Quantity, S:float|Quantity) -> Quantity:
-    """Calculate the moist atmospheric equilibrium concentration C* of a given gas at
-    temperature T and salinity S. C* = waterside gas concentration when the total water
+    """Calculate the moist atmospheric equilibrium concentration C* in mol/kg of a given gas at
+    temperature T and salinity S.\\
+    **Default input units** --- `T`:°C, `S`:‰\\
+    **Output units** --- None\\
+    C* = waterside gas concentration when the total water
     vapour-saturated atmospheric pressure is 1 atm (see Solubility of Gases in Water, W.
     Aeschbach-Hertig, Jan. 2004).
 
@@ -327,7 +333,9 @@ def calc_Cstar(gas:str, T:float|Quantity, S:float|Quantity) -> Quantity:
 @wraptpint(None, (None, 'degC', 'permille', 'atm', None, None), strict=False)
 def calc_Ceq(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quantity, Ceq_unit:str|Unit='cc/g', ret_quant:bool=False) -> float|Iterable[float]|Quantity|Iterable[Quantity]:
     """Calculate the waterside equilibrium concentration Ceq of a given gas at water
-    temperature T, salinity S and airside pressure p.
+    temperature T, salinity S and airside pressure p.\\
+    **Default input units** --- `T`:°C, `S`:‰, `p`:atm\\
+    **Output units** --- None
 
     :param gas: Gas(es) for which Ceq should be calculated
     :type gas: str | Iterable[str]
@@ -397,7 +405,9 @@ def calc_Ceq(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|
 @wraptpint(None, (None, 'degC', 'permille', 'atm', None, None), strict=False)
 def calc_dCeq_dT(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, dCeq_dT_unit:str|Unit='cc/g/K', ret_quant:bool=False) -> float|Iterable[float]|Quantity|Iterable[Quantity]:
     """Calculate the temperature-derivative dCeq_dT of the waterside equilibrium
-    concentration of a given gas at water temperature T, salinity S and airside pressure p.
+    concentration of a given gas at water temperature T, salinity S and airside pressure p.\\
+    **Default input units** --- `T`:°C, `S`:‰, `p`:atm\\
+    **Output units** --- None
 
     :param gas: Gas(es) for which dCeq_dT should be calculated
     :type gas: str
@@ -486,6 +496,27 @@ def calc_dCeq_dT(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, 
 @_possibly_iterable
 @wraptpint(None, (None, 'degC', 'permille', 'atm', None, None), strict=False)
 def calc_dCeq_dS(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, dCeq_dS_unit:str|Unit='cc/g/permille', ret_quant:bool=False) -> float|Iterable[float]|Quantity|Iterable[Quantity]:
+    """Calculate the salinity-derivative dCeq_dS of the waterside equilibrium
+    concentration of a given gas at water temperature T, salinity S and airside pressure p.\\
+    **Default input units** --- `T`:°C, `S`:‰, `p`:atm\\
+    **Output units** --- None
+
+    :param gas: Gas(es) for which dCeq_dS should be calculated
+    :type gas: str
+    :param T: Temperature
+    :type T: float | Quantity
+    :param S: Salinity
+    :type S: float | Quantity
+    :param p: Pressure
+    :type p: float | Quantity
+    :param dCeq_dS_unit: Units in which dCeq_dS should be expressed
+    :type dCeq_dS_unit: str | Unit, optional
+    :param ret_quant: Whether to return the result as a Pint Quantity instead of just a float, defaults to False
+    :type ret_quant: bool, optional
+    :raises ValueError: If the units given in dCeq_dS_unit are unimplemented
+    :return: Waterside equilibrium concentration salinity derivative dCeq_dS of the given gas
+    :rtype: float|Iterable[float]|Quantity|Iterable[Quantity]
+    """
     # molar volume and molar mass
     mvol = mv(gas)
     mmass = mm(gas)
@@ -557,6 +588,27 @@ def calc_dCeq_dS(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, 
 @_possibly_iterable
 @wraptpint(None, (None, 'degC', 'permille', 'atm', None, None), strict=False)
 def calc_dCeq_dp(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, dCeq_dp_unit:str|Unit='cc/g/atm', ret_quant:bool=False) -> float|Iterable[float]|Quantity|Iterable[Quantity]:
+    """Calculate the pressure-derivative dCeq_dp of the waterside equilibrium
+    concentration of a given gas at water temperature T, salinity S and airside pressure p.\\
+    **Default input units** --- `T`:°C, `S`:‰, `p`:atm\\
+    **Output units** --- None
+
+    :param gas: Gas(es) for which dCeq_dp should be calculated
+    :type gas: str
+    :param T: Temperature
+    :type T: float | Quantity
+    :param S: Salinity
+    :type S: float | Quantity
+    :param p: Pressure
+    :type p: float | Quantity
+    :param dCeq_dp_unit: Units in which dCeq_dp should be expressed
+    :type dCeq_dp_unit: str | Unit, optional
+    :param ret_quant: Whether to return the result as a Pint Quantity instead of just a float, defaults to False
+    :type ret_quant: bool, optional
+    :raises ValueError: If the units given in dCeq_dp_unit are unimplemented
+    :return: Waterside equilibrium concentration pressure derivative dCeq_dp of the given gas
+    :rtype: float | Iterable[float] | Quantity | Iterable[Quantity]
+    """
     # molar volume and molar mass
     mvol = mv(gas)
     mmass = mm(gas)
@@ -606,7 +658,32 @@ def calc_dCeq_dp(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, 
 
 @_possibly_iterable
 @wraptpint(None, (None, 'degC', 'permille', 'atm', None, None), strict=False)
-def calc_solcoeff(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, solcoeff_type:str='dimensionless', ret_quant:bool=False):
+def calc_solcoeff(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, solcoeff_type:str='dimensionless', ret_quant:bool=False) -> float|Iterable[float]|Quantity|Iterable[Quantity]:
+    """Calculate the solubility coefficient of a gas in water at water temperature T, salinity S and airside pressure p.\\
+    **Default input units** --- `T`:°C, `S`:‰, `p`:atm\\
+    **Output units** --- None\\
+    The type of solubility coefficient (`solcoeff_type`) can be:
+    * dimensionless (`['dimless', 'dimensionless', 'H']`)
+    * amount gas / volume water / partial pressure (`['nv', 'Knv', 'nvp', 'Knvp']`)
+    * STP volume gas / volume water / partial pressure (`['vv', 'Kvv', 'vvp', 'Kvvp']`)
+    * amount gas / amount water / partial pressure (`['nn', 'Knn', 'nnp', 'Knnp']`)
+
+    :param gas: Gas(es) for which the solubility coefficient should be calculated.
+    :type gas: str
+    :param T: Temperature
+    :type T: float | Quantity
+    :param S: Salinity
+    :type S: float | Quantity
+    :param p: Pressure
+    :type p: float | Quantity
+    :param solcoeff_type: Type of solubility coefficient, defaults to 'dimensionless'
+    :type solcoeff_type: str, optional
+    :param ret_quant: Whether to return the result as a Pint Quantity instead of just a float, defaults to False
+    :type ret_quant: bool, optional
+    :raises ValueError: If the type of solubility coefficient is unimplemented
+    :return: Solubility coefficient of the given gas
+    :rtype: float | Iterable[float] | Quantity | Iterable[Quantity]
+    """
     # gas abundance
     ab = abn(gas)
     # vapour pressure in air

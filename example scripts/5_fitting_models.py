@@ -36,7 +36,7 @@ fit_UA = UAModel.fit(pangadata,                                             # th
                      to_fit=['T_recharge', 'A'],                            # the arguments of the model we would like to fit
                      init_guess=[Q(1, 'degC'), 1e-5],                       # the initial guesses for the parameters to be fit
                      tracers_used=gases_used,                               # the tracers used for the fitting procedure
-                     #constraints={'T_recharge':[-10, 50], 'A':[0, 1e-2]},   # any constraints we might want to place on our fitted parameters
+                     #constraints=[[-10, 50], [0, 1e-2]],   # any constraints we might want to place on our fitted parameters
                      tqdm_bar=True)                                         # whether to display a progress bar
 print('Fit of UA model:')
 print(fit_UA[['T_recharge', 'A']])

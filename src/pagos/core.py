@@ -1,6 +1,6 @@
 """
 Core functions for the PAGOS package. The universal UnitRegistry `u` is included here, as
-well as the Quantity shorthand `Q()` and some internal functions.
+well as the Quantity shorthand `Q()` and some internal functions/decorators.
 """
 
 from pint import UnitRegistry
@@ -365,20 +365,6 @@ def sgu(x, strict:bool=False):
         raise TypeError('with strict==True, x must have property x.units')
     else:
         return None
-    
-
-def units_are_equal(units1, units2):
-    if type(units1) == type(units2) == str or type(units1) == type(units2) == None:
-        if units1 == units2:
-            return True
-    if units1 is None:
-        units1 = ''
-    if units2 is None:
-        units2 = ''
-    if Unit(units1) == Unit(units2):
-        return True
-    else:
-        return False
     
 
 def _tidy_iterable(it:Iterable) -> np.ndarray | Iterable:

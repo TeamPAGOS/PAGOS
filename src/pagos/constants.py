@@ -1,7 +1,6 @@
 """
-Useful constants for the PAGOS package, all as Quantity objects.
+Useful constants for the PAGOS package.
 """
-from pint import UnitRegistry, Context
 
 """
 PHYSICAL CONSTANTS

@@ -16,8 +16,8 @@ from inspect import signature
 import re
 import warnings
 
-from pagos.core import u as _u, Q as _Q, snv as _snv, ssd as _ssd, sgu as _sgu, sto as _sto, units_are_equal as _uae
-from pagos.core import _possibly_iterable, _tidy_iterable, _set_possit, _set_wp
+from pagos.core import u as _u, Q as _Q, snv as _snv, sto as _sto
+from pagos.core import _possibly_iterable, _set_possit, _set_wp
 
 
 class GasExchangeModel:

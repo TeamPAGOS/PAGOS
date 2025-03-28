@@ -33,7 +33,7 @@ def ua(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quanti
 
 def pr(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quantity, A:float|Quantity, FPR:float|Quantity, beta:float|Quantity) -> Quantity|Iterable[Quantity]:
     """Partial re-equilibration (PR) model, typically for groundwater studies.
-    * C = Cₑ(T, S, p) + Aχ·exp(-Fᴾᴿ·(D/Dᶰᵉ)ᵝ)
+    * C = Cₑ(T, S, p) + Aχ·exp(−Fᴾᴿ·(D/Dᶰᵉ)ᵝ)
         * Cₑ(T, S, p) = equilibrium concentration at water recharge temperature T, salinity S and air pressure p
         * A = excess air in same units as Cₑ
         * χ = atmospheric abundance of given gas
@@ -69,7 +69,7 @@ def pr(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quanti
 
 def pr(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quantity, A:float|Quantity, FPD:float|Quantity, beta:float|Quantity) -> Quantity|Iterable[Quantity]:
     """Partial degassing (PD) model, typically for groundwater studies.
-    * C = [Cₑ(T, S, p) + Aχ]·exp(-Fᴾᴰ·(D/Dᶰᵉ)ᵝ)
+    * C = [Cₑ(T, S, p) + Aχ]·exp(−Fᴾᴰ·(D/Dᶰᵉ)ᵝ)
         * Cₑ(T, S, p) = equilibrium concentration at water recharge temperature T, salinity S and air pressure p
         * A = excess air in same units as Cₑ
         * χ = atmospheric abundance of given gas
@@ -128,6 +128,35 @@ def od(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quanti
     :rtype: Quantity | Iterable[Quantity]
     """
     return calc_Ceq(gas, T, S, p) * POD + A * abn(gas)
+
+
+def ce(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quantity, A:float|Quantity, F:float|Quantity) -> Quantity|Iterable[Quantity]:
+    """Closed-system equilibration (CE) model, typically for groundwater studies.
+    * C = Cₑ(T, S, p) + (1 − F)·Aχ / (1 + FAχ / Cₑ(T, S, p))
+        * Cₑ(T, S, p) = equilibrium concentration at water recharge temperature T, salinity S and air pressure p
+        * F = dimensionless fractionation factor by whichthe size of the gas phase has changed during re-equilibration
+        * A = excess air in same units as Cₑ
+        * χ = atmospheric abundance of given gas
+    See Jung and Aeschbach 2018 (https://doi.org/10.1016/j.envsoft.2018.02.004) for more details.
+
+    :param gas: Gas(es) whose concentration should be calculated
+    :type gas: str | Iterable[str]
+    :param T: Temperature of the water
+    :type T: float | Quantity
+    :param S: Salinity of the water
+    :type S: float | Quantity
+    :param p: Pressure over the water
+    :type p: float | Quantity
+    :param A: Excess air
+    :type A: float | Quantity
+    :param F: Dimensionless fractionation factor
+    :type F: float | Quantity
+    :return: Concentration of gas(es) calculated with the model
+    :rtype: Quantity | Iterable[Quantity]
+    """
+    ceq = calc_Ceq(gas, T, S, p)
+    z = abn(gas)
+    return ceq + (1 - F) * A * z / (1 + F * A * z / ceq)
 
 
 def taylor_swif(gas:str|Iterable[str], T_r:float|Quantity, S:float|Quantity, p:float|Quantity, R:float|Quantity, A:float|Quantity) -> Quantity|Iterable[Quantity]:

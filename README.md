@@ -13,14 +13,14 @@ pip install pagos
 ## Usage
 This is a relatively abridged version of the information you can find in `example scripts`.
 ### How quantities are defined in PAGOS
-This package is designed with a number of "numerical safeguards". Datapoints used in PAGOS may contain units, and a future implementation of PAGOS should also include uncertainties. Although many of the functions in PAGOS will work with other types, they are designed for use with `Quantity` objects from [Pint](https://pint.readthedocs.io/en/stable/). The following code produces such a quantity representing the speed 11.2 m/s.
+This package is designed with a number of "numerical safeguards". Quantities used in PAGOS may contain units, and uncertainties. Functions in PAGOS are designed for use with `Quantity` objects from [Pint](https://pint.readthedocs.io/en/stable/), but can also be used with regular Python datatypes. The following code produces such a quantity representing the speed 11.2 m/s.
 ```python
 from pagos import Q
 mySpeed = Q(11.2, 'm/s')
 print(mySpeed)
 # -> 11.2000 meter / second
 ```
-Those familiar with Pint will recognise `Q()` as a shortcut for `pint.UnitRegistry.Quantity()`.
+Those familiar with Pint will recognise `Q()` as a shortcut for `pint.UnitRegistry.Quantity()`. This is the PAGOS-safe version though, as it will always refer to the universal `UnitRegistry` defined in `pagos.core`.
 
 ### Water property calculations
 The properties of seawater and various gases can be calculated with the `water` and `gas` modules. For example, calculating the density of, kinematic viscosity of and vapour pressure over water at a given temperature and salinity:
@@ -39,7 +39,7 @@ print(myDensity2)
 # -> 1023.0511189339445 kilogram / meter ** 3
 # -> 1023.0511189339445 kilogram / meter ** 3
 ```
-We can see that the water property function have default, assumed units for any given float arguments. PAGOS will also automatically convert units of a different kind:
+We can see that the water property function have default, assumed units for any given float arguments (you can see these in the docstrings of the respective functions). PAGOS will also automatically convert units of a different kind:
 
 ```python
 myTemp2 = Q(283.15, 'K')
@@ -64,7 +64,7 @@ print(myKinVisc)
 ### Gas property calculations 
 Much like the bulk water properties, properties of gases dissolved in water can also be calculated, namely the equilibrium concentration and the Schmidt number at given temperature, salinity and overlying pressure. Also like the functions in the  `water` module, the `gas` module functions have default assumed units which may be overriden by the user. See how all of the following calculations return the same result:
 ```python
-from pagos import gas as pgas
+from pagos import gas as pgas, Q
 myTemp, myTempC, myTempK = 20, Q(20, 'degC'), Q(293.15, 'K')
 mySal, mySalpm, mySalpc = 32, Q(32, 'permille'), Q(3.2, 'percent')
 myPres, myPresatm, myPreshPa = 1, Q(1, 'atm'), Q(1013.25, 'hPa')
@@ -83,7 +83,7 @@ print('Sc(Ne):', Sc)
 # -> Ceq3(Ne): 1.567684769072535e-07
 # -> Sc(Ne): 300.07687253959057 dimensionless
 ```
-Multiple gas properties may be calculated all at once:
+Multiple gas properties may be calculated all at once (this is also true of water properties):
 ```python
 Ceqs = pgas.calc_Ceq(['Ne', 'Ar', 'N2', 'CFC12'], 20, 32, myPreshPa)
 print('Ceq(Ne, Ar, N2, CFC12) =', Ceqs, 'ccSTP/g')
@@ -97,6 +97,7 @@ print('Ceq(Ne) =', Ceqsmolcc)
 # -> Ceq(Ne) = 6.9908309248701225e-09
 # -> Ceq(Ne) = 7.147959263640384e-12 mole / cubic_centimeter
 ```
+Note also here that the different units that one can return are incommensurable with each other (mol/kg has different dimensions to mol/cc). This is another reason why `calc_Ceq` does not returned a dimensioned object by default - functions in PAGOS which do automatically return dimensioned quantities do so by way of a wrapper, but `calc_Ceq` cannot be wrapped due to the many incommensurable possibilities of return units.
 
 ### Creating and fitting models
 The real power of PAGOS is in its gas exchange modelling capabilities. PAGOS allows for simple user-definition of gas exchange models. Say we wanted to implement a simple unfractionated excess air model (that is, equilibrium concentration "topped up" with an excess air component):
@@ -126,7 +127,7 @@ print('Result with overridden units:', myResult3)
 # -> Result with given units matching defaults: 1.7903293005762066e-07 cubic_centimeter / gram
 # -> Result with overridden units: 1.7903293005762066e-07 cubic_centimeter / gram
 ```
-If messing around with the `Q()` constructor isn't to your liking, one can also override units with the `units_in` argument thus:
+If repeatedly typing the `Q()` constructor isn't to your liking, one can also override default units with the `units_in` argument thus:
 ```python
 myResult4 = UAModel.run('Ne', 283.15, 3, 1, 5e-4, units_in=('K', 'percent', 'atm', 'cc/g'))
 print('Result using units_in kwarg:', myResult4)
@@ -162,7 +163,7 @@ fit_UA = UAModel.fit(pangadata,                                             # th
                      to_fit=['T_recharge', 'A'],                            # the arguments of the model we would like to fit
                      init_guess=[Q(1, 'degC'), 1e-5],                       # the initial guesses for the parameters to be fit
                      tracers_used=gases_used,                               # the tracers used for the fitting procedure
-                     constraints={'T_recharge':[-10, 50], 'A':[0, 1e-2]},   # any (optional) constraints we might want to place on our fitted parameters
+                     constraints=[[-10, 50], 'A':[0, 1e-2]],   # any (optional) constraints we might want to place on our fitted parameters
                      tqdm_bar=True)                                         # whether to display a progress bar
 print('Fit of UA model:')
 print(fit_UA[['Sample', 'T_recharge', 'A']])

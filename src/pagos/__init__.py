@@ -10,20 +10,20 @@ Provides
     2. Functions for calculating the properties of seawater and dissolved gases in seawater.
     3. Objects for fitting the parameters of pre- or user-defined gas exchange models to gas tracer data.
 
-Notes on units and the UnitRegistry `u`:
+Notes on Quantities, units and the UnitRegistry `u`:
 --------
-    * Any units provided by the user must come from the UnitRegistry `u` used by PAGOS, accessed with:
-        >>> from pagos import u
-
-    * Dimensioned quantities defined by the user are then defined using Pint (see <https://pint.readthedocs.io/en/stable/>):
-        >>> myquantity1 = 15 * u.mm
-    myquantity2 = 22 * u('m/s')
-    myquantity3 = pint.Quantity(9, u.kg)
-
-    * Quantities with both units and uncertainty can be defined with the Q() constructor:
-        >>> import pagos
-    myq1 = pagos.Q(9.0, u.kg, 0.2)
+Dimensioned quantites can be defined by the user using the `Q(<value>, <unit>, <error>)` constructor, which creates a Pint `Quantity` object:
+    
+    from pagos import Q
+    myquantity1 = Q(15, 'mm')
+    myquantity2 = Q(22.0, 'km/s', 0.3)
+    myquantity3 = Q(np.inf, 'J')
+    
+Note that the above construction is a wrapper around the constructor `Quantity(<magnitude>, <unit>)` from Pint.
+In Pint, all units come from a `UnitRegistry` object, and the same unit from different registries will be flagged as incompatible.
+For this reason, PAGOS has its own registry, `u`, from which all units are derived (when a string `...` is passed as the unit argument to `Q`, the actual unit is `u.Unit(...)`)
 """
+
 
 __version__ = '0.4.0'
 __author__ = 'Stanley Scott and Chiara-Marlen Hubner'
