@@ -3,7 +3,7 @@ Here is a tutorial on the implementation of Jacobian matrices in models in PAGOS
 """
 
 # Importing
-from pagos.gas import ice, abn, calc_Ceq, calc_dCeq_dT, calc_dCeq_dS, calc_dCeq_dp
+from pagos.gas import abn, calc_dCeq_dT, calc_dCeq_dS, calc_dCeq_dp
 from pagos.modelling import GasExchangeModel
 from pagos import Q
 import pandas as pd
@@ -51,7 +51,7 @@ ua_model = pbim.ua
 def ua_jacobian(gas, T, S, p, A):       # <- note that the signature of the jacobian must be IDENTICAL to that of the fitted function, even if some parameters are not used
     jT = calc_dCeq_dT(gas, T, S, p)     # <- here we make use of the derivative calculator for equilibrium concentration provided by PAGOS
     jS = calc_dCeq_dS(gas, T, S, p)
-    jp = 0
+    jp = calc_dCeq_dp(gas, T, S, p)
     jA = abn(gas)
     return np.array([jT, jS, jp, jA])   # <- a list/array of derivatives w.r.t. parameters should be returned
 # IMPORTANT: this Jacobian is actually that of the model function, NOT of the residual. All

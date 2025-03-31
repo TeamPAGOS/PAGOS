@@ -36,7 +36,7 @@ fit_UA = UAModel.fit(pangadata,                                             # th
                      to_fit=['T_recharge', 'A'],                            # the arguments of the model we would like to fit
                      init_guess=[Q(1, 'degC'), 1e-5],                       # the initial guesses for the parameters to be fit
                      tracers_used=gases_used,                               # the tracers used for the fitting procedure
-                     #constraints=[[-10, 50], [0, 1e-2]],   # any constraints we might want to place on our fitted parameters
+                     #constraints={'T_recharge':[-10, 50], 'A':[0, 1e-2]},   # any constraints we might want to place on our fitted parameters
                      tqdm_bar=True)                                         # whether to display a progress bar
 print('Fit of UA model:')
 print(fit_UA[['T_recharge', 'A']])
@@ -51,19 +51,23 @@ def ce_model(gas, T, S, p, A, F):
     z = pgas.abn(gas)
     return Ceq + (1 - F) * A * z / (1 + F * A * z / Ceq)
 CEModel1 = GasExchangeModel(ce_model, ['degC', 'permille', 'atm', 'cc/g', ''], 'cc/g')
+# Here we bypass the unit conversion altogether. It will not make too much of a difference on speed
+# - perhaps only if there are thousands+ individual samples. This is not very safe though, as if we
+# make a unit-related numerical mistake in our model, we would not be able to know. So only do this
+# if you are 100% sure that your model is correct!
 CEModel2 = GasExchangeModel(ce_model, [None, None, None, None, None], None)
 
 
 fit_CE1 = CEModel1.fit(pangadata,
                        ['T', 'A', 'F'],
-                       init_guess=[Q(273.15, 'K'), 1e-5, 0.1],
+                       init_guess=[Q(273.15, 'K'), 1e-5, 0.1],              # <- here the K will be internally converted to degC before fitting
                        tracers_used=gases_used,
-                       constraints=[[-1000, 1000], [-10, 10], [-1e4, 1e4]],
+                       constraints=[[-1000, 1000], [-10, 10], [-1e4, 1e4]], # <- here no conversion takes place, as we have not declared any units, so the default units are assumed
                        tqdm_bar=True)
 
 fit_CE2 = CEModel2.fit(pangadata,
                        ['T', 'A', 'F'],
-                       init_guess=[0, 1e-5, 0.1],  
+                       init_guess=[0, 1e-5, 0.1],                           # <- here we cannot write in the temperature IG in K, because there are no default units to convert to, and we would make a numerical error
                        tracers_used=gases_used,
                        constraints=[[-1000, 1000], [-10, 10], [-1e4, 1e4]],
                        tqdm_bar=True)
@@ -72,3 +76,38 @@ print('Fit of CE model 1:')
 print(fit_CE1[['T', 'A', 'F']])
 print('Fit of CE model 2:')
 print(fit_CE2[['T', 'A', 'F']])
+
+# If you want to fit the data of one sample at a time (for instance if you are performing Monte
+# Carlo analysis and wish to put a single fit procedure in a loop without deaing with creating
+# thousands of DataFrames), you can do so according to this structure:
+    # GasExchangeModel.fit(data=(<measured tracer values>, <measured tracer errors>, <measured tracer units>, <parameters set by observation>),
+    #                      ...
+    #                     )
+
+# Here is an example, taking just the first row of our data:
+
+data_vals = pangadata[gases_used].iloc[0].to_numpy()                            # [<valNe>, <valAr>, <valKr>, <valXe>]  the values of the measured tracers
+data_errs = pangadata[['err %s' % ng for ng in gases_used]].iloc[0].to_numpy()  # [<errNe>, <errAr>, <errKr>, <errXe>]  the errors on those values
+data_units = ['cc/g', 'cc/g', 'cc/g', 'cc/g']                                   # ['cc/g',  'cc/g',  'cc/g',  'cc/g']   the units of those values/errors
+data_psbo = pangadata[['S', 'p']].iloc[0].to_numpy()                            # [<valS>,  <valp>]                     the values of parameters set by observation (S and p here; units are assumed to be default units of GasExchangeModel)
+
+fit_CEsingle1 = CEModel1.fit((data_vals, data_errs, data_units, data_psbo),
+                             ['T', 'A', 'F'],
+                             init_guess=[0, 1e-5, 0.1],                           
+                             tracers_used=gases_used,
+                             constraints=[[-1000, 1000], [-10, 10], [-1e4, 1e4]],
+                             tqdm_bar=True)
+
+print('Single fit result:\n', fit_CEsingle1)
+
+# We can also pass one unit string in as the units for the data, and it will assume all measurements take these units:
+fit_CEsingle2 = CEModel1.fit((data_vals, data_errs, 'cc/g', data_psbo),
+                             ['T', 'A', 'F'],
+                             init_guess=[0, 1e-5, 0.1],                           
+                             tracers_used=gases_used,
+                             constraints=[[-1000, 1000], [-10, 10], [-1e4, 1e4]],
+                             tqdm_bar=True)
+
+print('Single fit result with one unit in:\n', fit_CEsingle2)
+
+# We can see that the result is identical to the first row of the previous fits.
