@@ -130,5 +130,5 @@ def calc_vappres_Tderiv(T:float|Quantity) -> Quantity:
     :rtype: Quantity
     """
     pv = calc_vappres(T, magnitude=True)
-    dpv_dT = pv * np.log(10) * 11078.38810722 / (1 + 239.7)**2
-    return dpv_dT
+    dpv_dT = 553919405361 * np.log(10) * pv / 3053900 / (10 * T + 2397)**2
+    return dpv_dT 
