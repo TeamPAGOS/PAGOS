@@ -1,0 +1,63 @@
+# see: https://squidfunk.github.io/mkdocs-material
+site_name: PAGOS Documentation
+site_description: PAGOS Documentation
+site_url: https://teampagos.github.io/pagos
+repo_name: PAGOS
+repo_url: https://github.com/TeamPAGOS/PAGOS
+
+theme:
+  name: material
+
+  palette:
+    # Palette toggle for light mode
+    - scheme: default
+      primary: green
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
+    # Palette toggle for dark mode
+    - scheme: slate
+      primary: green
+      accent: light-green
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.tooltips
+    - content.code.annotate
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.sections
+    - navigation.path
+    - navigation.indexes
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.share
+
+  markdown_extensions:
+    - abbr
+    - attr_list
+    - md_in_html
+    - admonition
+    - pymdownx.extra
+    - pymdownx.details
+    - pymdownx.snippets
+    - pymdownx.highlight
+    - pymdownx.superfences
+    - pymdownx.tabbed:
+        alternate_style: true
+    - pymdownx.emoji:
+        emoji_index: !!python/name:material.extensions.emoji.twemoji
+        emoji_generator: !!python/name:material.extensions.emoji.to_svg
+    - pymdownx.snippets:
+        base_path: docs/snippets
+        check_paths: true
+
+plugins:
+  - search
+
+extra:
+  version:
+    provider: mike
