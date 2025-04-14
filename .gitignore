@@ -7,3 +7,7 @@ dist/
 tests/
 launch.json
 __pycache__/
+pagos.egg-info/
+
+# gh page
+site/
