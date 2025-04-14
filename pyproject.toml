@@ -16,16 +16,21 @@ dependencies = [
   "wrapt>=1.16.0",
 ]
 authors = [
-  {name="Stanley Scott and Chiara Hubner", email="sscott@iup.uni-heidelberg.de"},
+  { name = "Stanley Scott", email = "sscott@iup.uni-heidelberg.de" },
+  { name = "Chiara Hubner" },
 ]
 description = "Python Analysis of Groundwater and Ocean Samples"
 readme = "README.md"
 requires-python = ">=3.12"
 classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: BSD License",
-    "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: BSD License",
+  "Operating System :: OS Independent",
 ]
+
+[project.optional-dependencies]
+docs = ["mkdocs", "mkdocs-material", "mike"]
 
 [project.urls]
 Homepage = "https://github.com/TeamPAGOS/PAGOS"
+
