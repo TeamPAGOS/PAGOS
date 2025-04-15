@@ -1,5 +1,3 @@
-# ASK KAI: how can I make sure the PAGOS version being tested is inside the repository and not the installed version?
-
 # Tests calc_dens() from pagos.water and its associated derivatives
 
 from pagos.water import calc_dens, calc_dens_Tderiv, calc_dens_Sderiv

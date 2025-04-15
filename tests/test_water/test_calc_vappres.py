@@ -1,5 +1,3 @@
-# ASK KAI: how can I make sure the PAGOS version being tested is inside the repository and not the installed version?
-
 # Tests calc_vappres() from pagos.water
 
 from pagos.water import calc_vappres, calc_vappres_Tderiv
