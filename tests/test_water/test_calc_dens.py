@@ -1,4 +1,4 @@
-# Tests calc_dens() from pagos.water and its associated derivatives
+# Tests calc_dens() from pagos.water and its associated derivatives.
 
 from pagos.water import calc_dens, calc_dens_Tderiv, calc_dens_Sderiv
 from pagos import Q
