@@ -7,6 +7,7 @@ from pint import Quantity
 from pint import Unit
 from uncertainties import unumpy as unp
 from collections.abc import Iterable
+from enum import Enum, auto
 
 from pagos.core import u as _u, sto as _sto, _possibly_iterable, wraptpint
 from pagos.constants import NOBLEGASES, STABLETRANSIENTGASES, BIOLOGICALGASES
@@ -30,6 +31,15 @@ u_kg_mol = u_kg / u_mol
 u_cc_mol = u_cc / u_mol
 u_cc_g = u_cc / u_g
 u_kg_m3 = u_kg / u_m3
+
+class UEnum(Enum):
+    MOL_KG = auto()
+    MOL_CC = auto()
+    CC_G = auto()
+    KG_MOL = auto()
+    CC_MOL = auto()
+    KG_M3 = auto()
+
 
 def hasgasprop(gas:str, condition:str) -> bool:
     """
@@ -395,23 +405,22 @@ def calc_Ceq(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|
         ):  # create pint.Unit object from unit string argument
             Ceq_unit = _u.Unit(Ceq_unit)
         if Ceq_unit.is_compatible_with(u_mol_kg):  # amount gas / mass water
-            compat_unit = 1
+            compat_unit = UEnum.MOL_KG
             unconverted_unit = u_mol_kg
-
         elif Ceq_unit.is_compatible_with(u_mol_cc):  # amount gas / volume water
-            compat_unit = 2
+            compat_unit = UEnum.MOL_CC
             unconverted_unit = u_mol_cc
         elif Ceq_unit.is_compatible_with(u_cc_g):  # volume gas / mass water
-            compat_unit = 3
+            compat_unit = UEnum.CC_G
             unconverted_unit = u_cc_g
         elif Ceq_unit.is_compatible_with(u_kg_mol):  # mass gas / amount water
-            compat_unit = 4
+            compat_unit = UEnum.KG_MOL
             unconverted_unit = u_kg_mol
         elif Ceq_unit.is_compatible_with(u_cc_mol):  # volume gas / amount water
-            compat_unit = 5
+            compat_unit = UEnum.CC_MOL
             unconverted_unit = u_cc_mol
         elif Ceq_unit.is_compatible_with(u_kg_m3):  # mass gas / volume water
-            compat_unit = 6
+            compat_unit = UEnum.KG_M3
             unconverted_unit = u_kg_m3
         else:
             raise ValueError(
@@ -421,17 +430,17 @@ def calc_Ceq(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|
         CACHE[id] = (compat_unit, unconverted_unit, unit_change)
 
     # TODO reformulate this using CONTEXTS (see pint Github)
-    if compat_unit == 1:  # amount gas / mass water
+    if compat_unit == UEnum.MOL_KG:  # amount gas / mass water
         ret = pref * Cstar
-    elif compat_unit == 2:  # amount gas / volume water
+    elif compat_unit == UEnum.MOL_CC:  # amount gas / volume water
         ret = pref * rho * Cstar * 1e-6  # *1e-6: mol/m^3 -> mol/cc
-    elif compat_unit == 3:  # volume gas / mass water
+    elif compat_unit == UEnum.CC_G:  # volume gas / mass water
         ret = pref * mvol * Cstar * 1e-3  # *1e-3: cc/kg -> cc/g
-    elif compat_unit == 4:  # mass gas / amount water
+    elif compat_unit == UEnum.KG_MOL:  # mass gas / amount water
         ret = pref * mmass * MMW * Cstar * 1e-6  # *1e-6: mg/mol -> kg/mol
-    elif compat_unit == 5:  # volume gas / amount water
+    elif compat_unit == UEnum.CC_MOL:  # volume gas / amount water
         ret = pref * mvol * MMW * Cstar * 1e-3  # *1e-3: μL/mol -> cc/mol
-    elif compat_unit == 6:  # mass gas / volume water
+    elif compat_unit == UEnum.KG_M3:  # mass gas / volume water
         ret = pref * mmass * rho * Cstar * 1e-3  # 1e-3: g/m^3 -> kg/m^3
     else:
         raise ValueError(
