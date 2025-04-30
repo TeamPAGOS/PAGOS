@@ -15,6 +15,22 @@ from pagos.constants import ABUNDANCES, MOLAR_VOLUMES, MOLAR_MASSES, ICE_FRACTIO
 from pagos.water import calc_dens, calc_dens_Tderiv, calc_dens_Sderiv, calc_kinvisc, calc_vappres, calc_vappres_Tderiv
 
 
+# prevent many __getattr__
+u_mol = _u.mol
+u_kg = _u.kg
+u_cc = _u.cc
+u_g = _u.g
+u_m3 = _u.m**3
+
+# prevent many __truediv__
+u_mol_kg = u_mol / u_kg
+u_mol_g = u_mol / u_g
+u_mol_cc = u_mol / u_cc
+u_kg_mol = u_kg / u_mol
+u_cc_mol = u_cc / u_mol
+u_cc_g = u_cc / u_g
+u_kg_m3 = u_kg / u_m3
+
 def hasgasprop(gas:str, condition:str) -> bool:
     """
     Returns True if the gas fulfils the condition specified by arguments `condition`.
@@ -327,6 +343,7 @@ def calc_Cstar(gas:str, T:float|Quantity, S:float|Quantity) -> Quantity:
     return Cstar
 
 
+CACHE = dict()
 # TODO is Iterable[Quantity] here the best way, or should it specify that they have to be numpy arrays?
 # TODO is instead a dict output the best choice for the multi-gas option? All other multi-gas functionalities in this program just spit out arrays... i.e., prioritise clarity or consistency? 
 @_possibly_iterable
@@ -354,6 +371,7 @@ def calc_Ceq(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|
     :rtype: float | Iterable[float] | Quantity | Iterable[Quantity]
     """
     # molar volume and molar mass
+    global CACHE
     mvol = mv(gas)
     mmass = mm(gas)
     # vapour pressure over the water, calculated according to Dyck and Peschke 1995 (atm)
@@ -367,36 +385,65 @@ def calc_Ceq(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|
     pref = (p - e_w) / (1 - e_w)
     # return equilibrium concentration with desired units
     ret = pref * Cstar
-    # TODO reformulate this using CONTEXTS (see pint Github)
-    if not type(Ceq_unit) == Unit:                  # create pint.Unit object from unit string argument
-        Ceq_unit = _u.Unit(Ceq_unit)
-    if Ceq_unit.is_compatible_with('mol/kg'):       # amount gas / mass water
-        ret = pref * Cstar
-        unconverted_unit = _u('mol/kg')
-    elif Ceq_unit.is_compatible_with('mol/cc'):     # amount gas / volume water
-        ret =  pref * rho * Cstar * 1e-6 # *1e-6: mol/m^3 -> mol/cc
-        unconverted_unit = _u('mol/cc')
-    elif Ceq_unit.is_compatible_with('cc/g'):       # volume gas / mass water
-        ret = pref * mvol * Cstar * 1e-3 # *1e-3: cc/kg -> cc/g
-        unconverted_unit = _u('cc/g')
-    elif Ceq_unit.is_compatible_with('kg/mol'):     # mass gas / amount water
-        ret = pref * mmass * MMW * Cstar * 1e-6 # *1e-6: mg/mol -> kg/mol
-        unconverted_unit = _u('kg/mol')
-    elif Ceq_unit.is_compatible_with('cc/mol'):     # volume gas / amount water
-        ret = pref * mvol * MMW * Cstar * 1e-3 # *1e-3: μL/mol -> cc/mol
-        unconverted_unit = _u('cc/mol')
-    elif Ceq_unit.is_compatible_with('kg/m^3'):     # mass gas / volume water
-        ret = pref * mmass * rho * Cstar * 1e-3 # 1e-3: g/m^3 -> kg/m^3
-        unconverted_unit = _u('kg/m^3')
+
+    id = hash(Ceq_unit)
+    if cache_hit := CACHE.get(id):
+        compat_unit, unconverted_unit, unit_change = cache_hit
     else:
-        raise ValueError("Invalid/unimplemented value for unit. Try something like \"mol/kg\", \"mol/cc\" or \"cc/g\".")
+        if not isinstance(
+            Ceq_unit, Unit
+        ):  # create pint.Unit object from unit string argument
+            Ceq_unit = _u.Unit(Ceq_unit)
+        if Ceq_unit.is_compatible_with(u_mol_kg):  # amount gas / mass water
+            compat_unit = 1
+            unconverted_unit = u_mol_kg
+
+        elif Ceq_unit.is_compatible_with(u_mol_cc):  # amount gas / volume water
+            compat_unit = 2
+            unconverted_unit = u_mol_cc
+        elif Ceq_unit.is_compatible_with(u_cc_g):  # volume gas / mass water
+            compat_unit = 3
+            unconverted_unit = u_cc_g
+        elif Ceq_unit.is_compatible_with(u_kg_mol):  # mass gas / amount water
+            compat_unit = 4
+            unconverted_unit = u_kg_mol
+        elif Ceq_unit.is_compatible_with(u_cc_mol):  # volume gas / amount water
+            compat_unit = 5
+            unconverted_unit = u_cc_mol
+        elif Ceq_unit.is_compatible_with(u_kg_m3):  # mass gas / volume water
+            compat_unit = 6
+            unconverted_unit = u_kg_m3
+        else:
+            raise ValueError(
+                'Invalid/unimplemented value for unit. Try something like "mol/kg", "mol/cc" or "cc/g".'
+            )
+        unit_change = unconverted_unit != Ceq_unit
+        CACHE[id] = (compat_unit, unconverted_unit, unit_change)
+
+    # TODO reformulate this using CONTEXTS (see pint Github)
+    if compat_unit == 1:  # amount gas / mass water
+        ret = pref * Cstar
+    elif compat_unit == 2:  # amount gas / volume water
+        ret = pref * rho * Cstar * 1e-6  # *1e-6: mol/m^3 -> mol/cc
+    elif compat_unit == 3:  # volume gas / mass water
+        ret = pref * mvol * Cstar * 1e-3  # *1e-3: cc/kg -> cc/g
+    elif compat_unit == 4:  # mass gas / amount water
+        ret = pref * mmass * MMW * Cstar * 1e-6  # *1e-6: mg/mol -> kg/mol
+    elif compat_unit == 5:  # volume gas / amount water
+        ret = pref * mvol * MMW * Cstar * 1e-3  # *1e-3: μL/mol -> cc/mol
+    elif compat_unit == 6:  # mass gas / volume water
+        ret = pref * mmass * rho * Cstar * 1e-3  # 1e-3: g/m^3 -> kg/m^3
+    else:
+        raise ValueError(
+            'Invalid/unimplemented value for unit. Try something like "mol/kg", "mol/cc" or "cc/g".'
+        )
 
     # return, after conversion if necessary - written like this to avoid _sto() for speed reasons
-    if not ret_quant and unconverted_unit == Ceq_unit:
+    if not ret_quant and not unit_change:
         return ret
     elif not ret_quant:
         return _sto(ret * unconverted_unit, Ceq_unit).magnitude
-    elif unconverted_unit == Ceq_unit:
+    elif not unit_change:
         return ret * unconverted_unit
     else:
         return _sto(ret * unconverted_unit, Ceq_unit)
