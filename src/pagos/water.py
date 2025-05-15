@@ -63,7 +63,7 @@ def calc_kinvisc(T:float|Quantity, S:float|Quantity) -> Quantity:
     :rtype: Quantity
     """
     # Density of the water
-    rho = calc_dens(T, S, magnitude=True) # kg/m3, take magnitude for speed # TODO if calc_dens() gets an option to return magnitude, use that instead of extracting it here
+    rho = calc_dens(T, S, magnitude=True) # kg/m3, take magnitude for speed
     # Adapt salinity to reference composition salinity in kg/kg (Sharqawy 2010)
     S_R = 1.00472*S / 1000 # permille -> kg/kg
     # Viscosity calculated following Sharqawy 2010
