@@ -5,7 +5,7 @@ Functions for calculating the properties of various gases.
 # for example, that for us, STP = 0 degC 1 atm instead of 20 degC 1 atm.
 from pint import Quantity
 from pint import Unit
-from uncertainties import unumpy as unp
+import numpy as np
 from collections.abc import Iterable
 
 from pagos.core import u as _u, sto as _sto, _possibly_iterable, wraptpint
@@ -13,7 +13,7 @@ from pagos.constants import NOBLEGASES, STABLETRANSIENTGASES, BIOLOGICALGASES
 from pagos.constants import NG_JENKINS_19_COEFFS, WANNINKHOF_92_COEFFS, EYRING_36_COEFFS, CFC_WARNERWEISS_85_COEFFS, SF6_BULLISTER_02_COEFFS, ArNeN2_HAMMEEMERSON_04
 from pagos.constants import ABUNDANCES, MOLAR_VOLUMES, MOLAR_MASSES, ICE_FRACTIONATION_COEFFS, MGC, TPW, PAT, MMW
 from pagos.water import calc_dens, calc_dens_Tderiv, calc_dens_Sderiv, calc_kinvisc, calc_vappres, calc_vappres_Tderiv
-
+from pagos.units import *
 
 def hasgasprop(gas:str, condition:str) -> bool:
     """
@@ -260,12 +260,12 @@ def calc_Sc(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, method:st
         (A, B, C, D) = (wkc(gas)[s] for s in ["A", "B", "C", "D"])
         Sc = saltfactor*(A - B*T + C*T**2 - D*T**3)
     # Hamme & Emerson 2017 method
-    if method == 'HE17':
+    elif method == 'HE17':
         # Eyring diffusivity calculation
         # units (cm2/s, kJ/mol)
         (A_coeff, activation_energy)  = (erc(gas)[s] for s in ["A", "Ea"])
         # *1000 in exponent to convert kJ/J to J/J
-        D0 = A_coeff * unp.exp(-activation_energy/(MGC * (T + TPW))*1000) # -> cm2/s
+        D0 = A_coeff * np.exp(-activation_energy/(MGC * (T + TPW))*1000) # -> cm2/s
         # Saltwater correction used by R. Hamme in her Matlab script (https://oceangaseslab.uvic.ca/download.html)
         # *1e-4 to convert cm2/s to m2/s
         D = D0 * (1 - 0.049 * S / 35.5) * 1e-4 #PSS78 as Salinity
@@ -277,7 +277,7 @@ def calc_Sc(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, method:st
     return Sc
 
 
-def calc_Cstar(gas:str, T:float|Quantity, S:float|Quantity) -> Quantity:
+def calc_Cstar(gas:str, T:float|Quantity, S:float|Quantity) -> float: # TODO calc_Cstar returns a single-valued array due to unumpy... why did I use unumpy here again?
     """Calculate the moist atmospheric equilibrium concentration C* in mol/kg of a given gas at
     temperature T and salinity S.\\
     **Default input units** --- `T`:°C, `S`:‰\\
@@ -300,7 +300,7 @@ def calc_Cstar(gas:str, T:float|Quantity, S:float|Quantity) -> Quantity:
     if hasgasprop(gas, 'isnoble'):
         A1, A2, A3, A4, B1, B2, B3, C1 = jkc(gas).values() #needs S in PSS78
         # C*, concentration calculated from Jenkins et al. 2019
-        Cstar = unp.exp(A1 + A2*100/T_K + A3*unp.log(T_K/100) + A4*(T_K/100)
+        Cstar = np.exp(A1 + A2*100/T_K + A3*np.log(T_K/100) + A4*(T_K/100)
                         + S*(B1 + B2 * T_K/100 + B3 * (T_K/100)**2)
                         + C1*S**2)
     elif gas in ['CFC11', 'CFC12']:
@@ -309,24 +309,27 @@ def calc_Cstar(gas:str, T:float|Quantity, S:float|Quantity) -> Quantity:
         # abundance
         ab = abn(gas)
         # C* = F*abundance, concentration calculated from Warner and Weiss 1985
-        Cstar = unp.exp(a1 + a2*100/T_K + a3*unp.log(T_K/100) + a4*(T_K/100)**2
+        Cstar = np.exp(a1 + a2*100/T_K + a3*np.log(T_K/100) + a4*(T_K/100)**2
                         + S*(b1 + b2*T_K/100 + b3*(T_K/100)**2))
     elif gas == 'SF6':
         a1, a2, a3, b1, b2, b3 = blc(gas).values() #don't know salinity unit
         # abundance
         ab = abn(gas)
         # C* = F*abundance, concentration calculated from Bullister et al. 2002
-        Cstar = unp.exp(a1 + a2*(100/T_K) + a3*unp.log(T_K/100)
+        Cstar = np.exp(a1 + a2*(100/T_K) + a3*np.log(T_K/100)
                         + S*(b1 + b2*T_K/100 + b3*(T_K/100)**2)) * ab
     elif gas == 'N2':
         A0, A1, A2, A3, B0, B1, B2 = hec(gas).values() #PSS salinity
         # T_s, temperature expression used in the calculation of C*
-        T_s = unp.log((298.15 - T)/T_K)
+        T_s = np.log((298.15 - T)/T_K)
         # C*, concentration calculated from Hamme and Emerson 2004. Multiplication by 10^-6 to have units of mol/kg
-        Cstar = unp.exp(A0 + A1*T_s + A2*T_s**2 + A3*T_s**3 + S*(B0 + B1*T_s + B2*T_s**2)) * 1e-6
+        Cstar = np.exp(A0 + A1*T_s + A2*T_s**2 + A3*T_s**3 + S*(B0 + B1*T_s + B2*T_s**2)) * 1e-6
     return Cstar
 
 
+# cache to hold Ceq_units if they have previously been used so that Unit.is_compatible_with() is
+# called as infrequently as possible (it gets expensive when running fitting routines)
+CEQUNIT_CACHE = dict()
 # TODO is Iterable[Quantity] here the best way, or should it specify that they have to be numpy arrays?
 # TODO is instead a dict output the best choice for the multi-gas option? All other multi-gas functionalities in this program just spit out arrays... i.e., prioritise clarity or consistency? 
 @_possibly_iterable
@@ -367,40 +370,85 @@ def calc_Ceq(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|
     pref = (p - e_w) / (1 - e_w)
     # return equilibrium concentration with desired units
     ret = pref * Cstar
-    # TODO reformulate this using CONTEXTS (see pint Github)
-    if not type(Ceq_unit) == Unit:                  # create pint.Unit object from unit string argument
-        Ceq_unit = _u.Unit(Ceq_unit)
-    if Ceq_unit.is_compatible_with('mol/kg'):       # amount gas / mass water
+
+
+    """
+    Cache-and-compare system, written by Kai Riedmiller (Heidelberg Scientific Software Centre 
+    (https://www.ssc.uni-heidelberg.de/en/what-the-scientific-software-center-is-all-about/meet-our-team))
+    Steps:
+    1)  check if Ceq_unit has been used before (check for its hash in the keys of CEQUNIT_CACHE)
+    2a) if it has, take the values from the cache for compat_unit, unconverted_unit and
+        unit_change, which are the desired unit of the user, the "base" unconverted unit stored
+        in PAGOS and whether the two are different.
+    2b) otherwise, set these three values and store them under a new entry in the cache
+    3)  calculate the Ceq-value in the requisite "base" unconverted unit
+    4)  convert to the desired unit if necessary
+    The reason for this caching system is to avoid calls of pint.Unit.is_compatible_with. Before
+    this system was implemented, we called is_compatible_with every time the function was run. In
+    fitting procedures, this meant that almost 1/3 of the entire execution time was spent inside
+    is_compatible_with.
+    """
+    global CEQUNIT_CACHE
+    id = hash(Ceq_unit)
+    if cache_hit := CEQUNIT_CACHE.get(id): # if the hashed Ceq_unit is in our cache...
+        compat_unit, unconverted_unit, unit_change = cache_hit # access the relevant values in the cache
+    else:
+        if not isinstance(Ceq_unit, Unit):  # create pint.Unit object from unit string argument
+            Ceq_unit = _u.Unit(Ceq_unit)
+        
+        if Ceq_unit.is_compatible_with(u_mol_kg):  # amount gas / mass water
+            compat_unit = UEnum.MOL_KG
+            unconverted_unit = u_mol_kg
+        elif Ceq_unit.is_compatible_with(u_mol_cc):  # amount gas / volume water
+            compat_unit = UEnum.MOL_CC
+            unconverted_unit = u_mol_cc
+        elif Ceq_unit.is_compatible_with(u_cc_g):  # volume gas / mass water
+            compat_unit = UEnum.CC_G
+            unconverted_unit = u_cc_g
+        elif Ceq_unit.is_compatible_with(u_kg_mol):  # mass gas / amount water
+            compat_unit = UEnum.KG_MOL
+            unconverted_unit = u_kg_mol
+        elif Ceq_unit.is_compatible_with(u_cc_mol):  # volume gas / amount water
+            compat_unit = UEnum.CC_MOL
+            unconverted_unit = u_cc_mol
+        elif Ceq_unit.is_compatible_with(u_kg_m3):  # mass gas / volume water
+            compat_unit = UEnum.KG_M3
+            unconverted_unit = u_kg_m3
+        else:
+            raise ValueError("Invalid/unimplemented value for unit. Try something like \"mol/kg\", \"mol/cc\" or \"cc/g\".")
+        
+        unit_change = unconverted_unit != Ceq_unit
+        CEQUNIT_CACHE[id] = (compat_unit, unconverted_unit, unit_change) # add the Ceq_unit to the cache if it's not already there
+    
+    if compat_unit == UEnum.MOL_KG:  # amount gas / mass water
         ret = pref * Cstar
-        unconverted_unit = _u('mol/kg')
-    elif Ceq_unit.is_compatible_with('mol/cc'):     # amount gas / volume water
-        ret =  pref * rho * Cstar * 1e-6 # *1e-6: mol/m^3 -> mol/cc
-        unconverted_unit = _u('mol/cc')
-    elif Ceq_unit.is_compatible_with('cc/g'):       # volume gas / mass water
-        ret = pref * mvol * Cstar * 1e-3 # *1e-3: cc/kg -> cc/g
-        unconverted_unit = _u('cc/g')
-    elif Ceq_unit.is_compatible_with('kg/mol'):     # mass gas / amount water
-        ret = pref * mmass * MMW * Cstar * 1e-6 # *1e-6: mg/mol -> kg/mol
-        unconverted_unit = _u('kg/mol')
-    elif Ceq_unit.is_compatible_with('cc/mol'):     # volume gas / amount water
-        ret = pref * mvol * MMW * Cstar * 1e-3 # *1e-3: μL/mol -> cc/mol
-        unconverted_unit = _u('cc/mol')
-    elif Ceq_unit.is_compatible_with('kg/m^3'):     # mass gas / volume water
-        ret = pref * mmass * rho * Cstar * 1e-3 # 1e-3: g/m^3 -> kg/m^3
-        unconverted_unit = _u('kg/m^3')
+    elif compat_unit == UEnum.MOL_CC:  # amount gas / volume water
+        ret = pref * rho * Cstar * 1e-6  # *1e-6: mol/m^3 -> mol/cc
+    elif compat_unit == UEnum.CC_G:  # volume gas / mass water
+        ret = pref * mvol * Cstar * 1e-3  # *1e-3: cc/kg -> cc/g
+    elif compat_unit == UEnum.KG_MOL:  # mass gas / amount water
+        ret = pref * mmass * MMW * Cstar * 1e-6  # *1e-6: mg/mol -> kg/mol
+    elif compat_unit == UEnum.CC_MOL:  # volume gas / amount water
+        ret = pref * mvol * MMW * Cstar * 1e-3  # *1e-3: μL/mol -> cc/mol
+    elif compat_unit == UEnum.KG_M3:  # mass gas / volume water
+        ret = pref * mmass * rho * Cstar * 1e-3  # 1e-3: g/m^3 -> kg/m^3
     else:
         raise ValueError("Invalid/unimplemented value for unit. Try something like \"mol/kg\", \"mol/cc\" or \"cc/g\".")
 
     # return, after conversion if necessary - written like this to avoid _sto() for speed reasons
-    if not ret_quant and unconverted_unit == Ceq_unit:
+    if not ret_quant and not unit_change:
         return ret
     elif not ret_quant:
         return _sto(ret * unconverted_unit, Ceq_unit).magnitude
-    elif unconverted_unit == Ceq_unit:
+    elif not unit_change:
         return ret * unconverted_unit
     else:
         return _sto(ret * unconverted_unit, Ceq_unit)
 
+
+# cache to hold dCeq_dT_units if they have previously been used so that Unit.is_compatible_with()
+# is called as infrequently as possible (it gets expensive when running fitting routines)
+DT_CEQUNIT_CACHE = dict()
 @_possibly_iterable
 @wraptpint(None, (None, 'degC', 'permille', 'atm', None, None), strict=False)
 def calc_dCeq_dT(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, dCeq_dT_unit:str|Unit='cc/g/K', ret_quant:bool=False) -> float|Iterable[float]|Quantity|Iterable[Quantity]:
@@ -452,47 +500,79 @@ def calc_dCeq_dT(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, 
     elif gas == 'N2':
         A0, A1, A2, A3, B0, B1, B2 = hec(gas).values() #PSS salinity
         # T_s, temperature expression used in the calculation of C*
-        T_s = unp.log((298.15 - T)/T_K)
+        T_s = np.log((298.15 - T)/T_K)
         dCstar_dT = Cstar * 25/((T_K-25)*T_K) * (A1 + S*B1 + 2*(A2 + S*B2)*T_s + 3*A3*T_s**2) * 1e-6
 
     drho_dT = calc_dens_Tderiv(T, S, magnitude=True)
     de_w_dT = calc_vappres_Tderiv(T, magnitude=True) / 1013.25 # mbar/K -> atm/K
     dCeq_dT_molkgK = pref * dCstar_dT + (p - 1)/((e_w - 1)**2) * de_w_dT * Cstar
 
+    """
+    Cache-and-compare system, written by Kai Riedmiller (Heidelberg Scientific Software Centre 
+    (https://www.ssc.uni-heidelberg.de/en/what-the-scientific-software-center-is-all-about/meet-our-team))
+    See calc_Ceq for a description of how this works.
+    """
+    global DT_CEQUNIT_CACHE
+    id = hash(dCeq_dT_unit)
     # TODO reformulate this using CONTEXTS? (see pint Github)
-    if not type(dCeq_dT_unit) == Unit:                  # create pint.Unit object from unit string argument
-        dCeq_dT_unit = _u.Unit(dCeq_dT_unit) 
-    if dCeq_dT_unit.is_compatible_with('mol/kg/K'):         # amount gas / mass water
+    if cache_hit := DT_CEQUNIT_CACHE.get(id): # if the hashed dCeq_dT_unit is in our cache...
+        compat_unit, unconverted_unit, unit_change = cache_hit # access the relevant values in the cache
+    else:
+        if not isinstance(dCeq_dT_unit, Unit):  # create pint.Unit object from unit string argument
+            dCeq_dT_unit = _u.Unit(dCeq_dT_unit)
+        
+        if dCeq_dT_unit.is_compatible_with(u_mol_kg_K):  # amount gas / mass water
+            compat_unit = UEnum.MOL_KG_K
+            unconverted_unit = u_mol_kg_K
+        elif dCeq_dT_unit.is_compatible_with(u_mol_cc_K):  # amount gas / volume water
+            compat_unit = UEnum.MOL_CC_K
+            unconverted_unit = u_mol_cc_K
+        elif dCeq_dT_unit.is_compatible_with(u_cc_g_K):  # volume gas / mass water
+            compat_unit = UEnum.CC_G_K
+            unconverted_unit = u_cc_g_K
+        elif dCeq_dT_unit.is_compatible_with(u_kg_mol_K):  # mass gas / amount water
+            compat_unit = UEnum.KG_MOL_K
+            unconverted_unit = u_kg_mol_K
+        elif dCeq_dT_unit.is_compatible_with(u_cc_mol_K):  # volume gas / amount water
+            compat_unit = UEnum.CC_MOL_K
+            unconverted_unit = u_cc_mol_K
+        elif dCeq_dT_unit.is_compatible_with(u_kg_m3_K):  # mass gas / volume water
+            compat_unit = UEnum.KG_M3_K
+            unconverted_unit = u_kg_m3_K
+        else:
+            raise ValueError("Invalid/unimplemented value for unit. Try something like \"mol/kg\", \"mol/cc\" or \"cc/g\".")
+        
+        unit_change = unconverted_unit != dCeq_dT_unit
+        DT_CEQUNIT_CACHE[id] = (compat_unit, unconverted_unit, unit_change) # add the dCeq_dT_unit to the cache if it's not already there
+    
+    if compat_unit == UEnum.MOL_KG_K:  # amount gas / mass water
         ret = dCeq_dT_molkgK
-        unconverted_unit = _u('mol/kg/K')
-    elif dCeq_dT_unit.is_compatible_with('mol/cc/K'):       # amount gas / volume water
+    elif compat_unit == UEnum.MOL_CC_K:  # amount gas / volume water
         ret = (dCeq_dT_molkgK * rho + pref * Cstar * drho_dT) * 1e-6 # *1e-6: mol/m3/K -> mol/cc/K
-        unconverted_unit = _u('mol/cc/K')
-    elif dCeq_dT_unit.is_compatible_with('cc/g/K'):         # volume gas / mass water
+    elif compat_unit == UEnum.CC_G_K:  # volume gas / mass water
         ret = dCeq_dT_molkgK * mvol * 1e-3 # *1e-3: cc/kg/K -> cc/g/K
-        unconverted_unit = _u('cc/g/K')
-    elif dCeq_dT_unit.is_compatible_with('kg/mol/K'):       # mass gas / amount water
+    elif compat_unit == UEnum.KG_MOL_K:  # mass gas / amount water
         ret = dCeq_dT_molkgK * mmass * MMW * 1e-6 # *1e-6: mg/mol/K -> kg/mol/K
-        unconverted_unit = _u('kg/mol/K')
-    elif dCeq_dT_unit.is_compatible_with('cc/mol/K'):       # volume gas / amount water
+    elif compat_unit == UEnum.CC_MOL_K:  # volume gas / amount water
         ret = dCeq_dT_molkgK * MMW * mvol * 1e-3 # *1e-3: μL/mol/K -> cc/mol/K
-        unconverted_unit = _u('cc/mol/K')
-    elif dCeq_dT_unit.is_compatible_with('kg/m^3/K'):       # mass gas / volume water
+    elif compat_unit == UEnum.KG_M3_K:  # mass gas / volume water
         ret = (dCeq_dT_molkgK * mmass * rho + pref * mmass * drho_dT * Cstar) * 1e-3 # *1e-3: g/m^3/K -> kg/m^3/K
-        unconverted_unit = _u('kg/m^3/K')
     else:
         raise ValueError("Invalid/unimplemented value for unit. Try something like \"mol/kg/K\", \"mol/cc/K\" or \"cc/g/K\".")
+
     # return, after conversion if necessary - written like this to avoid _sto() for speed reasons
-    if not ret_quant and unconverted_unit == dCeq_dT_unit:
+    if not ret_quant and not unit_change:
         return ret
     elif not ret_quant:
         return _sto(ret * unconverted_unit, dCeq_dT_unit).magnitude
-    elif unconverted_unit == dCeq_dT_unit:
+    elif not unit_change:
         return ret * unconverted_unit
     else:
         return _sto(ret * unconverted_unit, dCeq_dT_unit)
 
-
+# cache to hold dCeq_dS_units if they have previously been used so that Unit.is_compatible_with()
+# is called as infrequently as possible (it gets expensive when running fitting routines)
+DS_CEQUNIT_CACHE = dict()
 @_possibly_iterable
 @wraptpint(None, (None, 'degC', 'permille', 'atm', None, None), strict=False)
 def calc_dCeq_dS(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, dCeq_dS_unit:str|Unit='cc/g/permille', ret_quant:bool=False) -> float|Iterable[float]|Quantity|Iterable[Quantity]:
@@ -544,47 +624,79 @@ def calc_dCeq_dS(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, 
     elif gas == 'N2':
         A0, A1, A2, A3, B0, B1, B2 = hec(gas).values() #PSS salinity
         # T_s, temperature expression used in the calculation of C*
-        T_s = unp.log((298.15 - T)/T_K)
+        T_s = np.log((298.15 - T)/T_K)
         dCstar_dS = (B0 + B1*T_s + B2*T_s**2) * Cstar
     
     drho_dS = calc_dens_Sderiv(T, S, magnitude=True)
     dCeq_dS_molkgpm = pref * dCstar_dS
     
+    """
+    Cache-and-compare system, written by Kai Riedmiller (Heidelberg Scientific Software Centre 
+    (https://www.ssc.uni-heidelberg.de/en/what-the-scientific-software-center-is-all-about/meet-our-team))
+    See calc_Ceq for a description of how this works.
+    """
+    global DS_CEQUNIT_CACHE
+    id = hash(dCeq_dS_unit)
     # TODO reformulate this using CONTEXTS? (see pint Github)
-    if not type(dCeq_dS_unit) == Unit:                  # create pint.Unit object from unit string argument
-        dCeq_dS_unit = _u.Unit(dCeq_dS_unit) 
-    if dCeq_dS_unit.is_compatible_with('mol/kg/permille'):        # amount gas / mass water
+    if cache_hit := DS_CEQUNIT_CACHE.get(id): # if the hashed dCeq_dS_unit is in our cache...
+        compat_unit, unconverted_unit, unit_change = cache_hit # access the relevant values in the cache
+    else:
+        if not isinstance(dCeq_dS_unit, Unit):  # create pint.Unit object from unit string argument
+            dCeq_dS_unit = _u.Unit(dCeq_dS_unit)
+        
+        if dCeq_dS_unit.is_compatible_with(u_mol_kg_permille):  # amount gas / mass water
+            compat_unit = UEnum.MOL_KG_PERMILLE
+            unconverted_unit = u_mol_kg_permille
+        elif dCeq_dS_unit.is_compatible_with(u_mol_cc_permille):  # amount gas / volume water
+            compat_unit = UEnum.MOL_CC_PERMILLE
+            unconverted_unit = u_mol_cc_permille
+        elif dCeq_dS_unit.is_compatible_with(u_cc_g_permille):  # volume gas / mass water
+            compat_unit = UEnum.CC_G_PERMILLE
+            unconverted_unit = u_cc_g_permille
+        elif dCeq_dS_unit.is_compatible_with(u_kg_mol_permille):  # mass gas / amount water
+            compat_unit = UEnum.KG_MOL_PERMILLE
+            unconverted_unit = u_kg_mol_permille
+        elif dCeq_dS_unit.is_compatible_with(u_cc_mol_permille):  # volume gas / amount water
+            compat_unit = UEnum.CC_MOL_PERMILLE
+            unconverted_unit = u_cc_mol_permille
+        elif dCeq_dS_unit.is_compatible_with(u_kg_m3_permille):  # mass gas / volume water
+            compat_unit = UEnum.KG_M3_PERMILLE
+            unconverted_unit = u_kg_m3_permille
+        else:
+            raise ValueError("Invalid/unimplemented value for unit. Try something like \"mol/kg\", \"mol/cc\" or \"cc/g\".")
+        
+        unit_change = unconverted_unit != dCeq_dS_unit
+        DS_CEQUNIT_CACHE[id] = (compat_unit, unconverted_unit, unit_change) # add the dCeq_dS_unit to the cache if it's not already there
+    
+    if compat_unit == UEnum.MOL_KG_PERMILLE:  # amount gas / mass water
         ret = dCeq_dS_molkgpm
-        unconverted_unit = _u('mol/kg/permille')
-    elif dCeq_dS_unit.is_compatible_with('mol/cc/permille'):     # amount gas / volume water
+    elif compat_unit == UEnum.MOL_CC_PERMILLE:  # amount gas / volume water
         ret = (dCeq_dS_molkgpm * rho + pref * Cstar * drho_dS) * 1e-6 # *1e-6: mol/m3/permille -> mol/cc/permille
-        unconverted_unit = _u('mol/cc/permille')
-    elif dCeq_dS_unit.is_compatible_with('cc/g/permille'):        # volume gas / mass water
+    elif compat_unit == UEnum.CC_G_PERMILLE:  # volume gas / mass water
         ret = dCeq_dS_molkgpm * mvol * 1e-3 # *1e-3: cc/kg/permille -> cc/g/permille
-        unconverted_unit = _u('cc/g/permille')
-    elif dCeq_dS_unit.is_compatible_with('kg/mol/permille'):       # mass gas / amount water
+    elif compat_unit == UEnum.KG_MOL_PERMILLE:  # mass gas / amount water
         ret = dCeq_dS_molkgpm * mmass * MMW * 1e-6 # *1e-6: mg/mol/permille -> kg/mol/permille
-        unconverted_unit = _u('kg/mol/permille')
-    elif dCeq_dS_unit.is_compatible_with('cc/mol/permille'):       # volume gas / amount water
+    elif compat_unit == UEnum.CC_MOL_PERMILLE:  # volume gas / amount water
         ret = dCeq_dS_molkgpm * MMW * mvol * 1e-3 # *1e-3: μL/mol/permille -> cc/mol/permille
-        unconverted_unit = _u('cc/mol/permille')
-    elif dCeq_dS_unit.is_compatible_with('kg/m^3/permille'):       # mass gas / volume water
+    elif compat_unit == UEnum.KG_M3_PERMILLE:  # mass gas / volume water
         ret = (dCeq_dS_molkgpm * mmass * rho + pref * mmass * drho_dS * Cstar) * 1e-3 # *1e-3: g/m^3/permille -> kg/m^3/permille
-        unconverted_unit = _u('kg/m^3/permille')
     else:
         raise ValueError("Invalid/unimplemented value for unit. Try something like \"mol/kg/permille\", \"mol/cc/permille\" or \"cc/g/permille\".")
-    
+
     # return, after conversion if necessary - written like this to avoid _sto() for speed reasons
-    if not ret_quant and unconverted_unit == dCeq_dS_unit:
+    if not ret_quant and not unit_change:
         return ret
     elif not ret_quant:
         return _sto(ret * unconverted_unit, dCeq_dS_unit).magnitude
-    elif unconverted_unit == dCeq_dS_unit:
+    elif not unit_change:
         return ret * unconverted_unit
     else:
         return _sto(ret * unconverted_unit, dCeq_dS_unit)
 
 
+# cache to hold dCeq_dp_units if they have previously been used so that Unit.is_compatible_with()
+# is called as infrequently as possible (it gets expensive when running fitting routines)
+DP_CEQUNIT_CACHE = dict()
 @_possibly_iterable
 @wraptpint(None, (None, 'degC', 'permille', 'atm', None, None), strict=False)
 def calc_dCeq_dp(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, dCeq_dp_unit:str|Unit='cc/g/atm', ret_quant:bool=False) -> float|Iterable[float]|Quantity|Iterable[Quantity]:
@@ -621,36 +733,66 @@ def calc_dCeq_dp(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, 
     # factor to account for pressure (this is the pressure-derivative of (p - e_w) / (1 - e_w))
     pref = 1 / (1 - e_w)
     # return equilibrium concentration with desired units
+
+    """
+    Cache-and-compare system, written by Kai Riedmiller (Heidelberg Scientific Software Centre 
+    (https://www.ssc.uni-heidelberg.de/en/what-the-scientific-software-center-is-all-about/meet-our-team))
+    See calc_Ceq for a description of how this works.
+    """
+    global DP_CEQUNIT_CACHE
+    id = hash(dCeq_dp_unit)
     # TODO reformulate this using CONTEXTS? (see pint Github)
-    if not type(dCeq_dp_unit) == Unit:                  # create pint.Unit object from unit string argument
-        dCeq_dp_unit = _u.Unit(dCeq_dp_unit) 
-    if dCeq_dp_unit.is_compatible_with('mol/kg/atm'):       # amount gas / mass water
-        ret = pref * Cstar
-        unconverted_unit = _u('mol/kg/atm')
-    elif dCeq_dp_unit.is_compatible_with('mol/cc/atm'):     # amount gas / volume water
-        ret = pref * Cstar * rho * 1e-6 # *1e-6: mol/m3/permille -> mol/cc/permille
-        unconverted_unit = _u('mol/cc/atm')
-    elif dCeq_dp_unit.is_compatible_with('cc/g/atm'):       # volume gas / mass water
-        ret = pref * Cstar * mvol * 1e-3 # *1e-3: cc/kg/permille -> cc/g/permille
-        unconverted_unit = _u('cc/g/atm')
-    elif dCeq_dp_unit.is_compatible_with('kg/mol/atm'):     # mass gas / amount water
-        ret = pref * Cstar * mmass * MMW * 1e-6 # *1e-6: mg/mol/atm -> kg/mol/atm
-        unconverted_unit = _u('kg/mol/atm')
-    elif dCeq_dp_unit.is_compatible_with('cc/mol/atm'):     # volume gas / amount water
-        ret = pref * Cstar * MMW * mvol * 1e-3 # *1e-3: μL/mol/atm -> cc/mol/atm
-        unconverted_unit = _u('cc/mol/atm')
-    elif dCeq_dp_unit.is_compatible_with('kg/m^3/atm'):     # mass gas / volume water
-        ret = pref * Cstar * mmass * rho * 1e-3 # *1e-3: g/m^3/atm -> kg/m^3/atm
-        unconverted_unit = _u('kg/m^3/atm')
+    if cache_hit := DP_CEQUNIT_CACHE.get(id): # if the hashed dCeq_dp_unit is in our cache...
+        compat_unit, unconverted_unit, unit_change = cache_hit # access the relevant values in the cache
     else:
-        raise ValueError("Invalid/unimplemented value for unit. Try something like \"mol/kg/atm\", \"mol/cc/atm\" or \"cc/g/atm\".")
+        if not isinstance(dCeq_dp_unit, Unit):  # create pint.Unit object from unit string argument
+            dCeq_dp_unit = _u.Unit(dCeq_dp_unit)
+        
+        if dCeq_dp_unit.is_compatible_with(u_mol_kg_atm):  # amount gas / mass water
+            compat_unit = UEnum.MOL_KG_ATM
+            unconverted_unit = u_mol_kg_atm
+        elif dCeq_dp_unit.is_compatible_with(u_mol_cc_atm):  # amount gas / volume water
+            compat_unit = UEnum.MOL_CC_ATM
+            unconverted_unit = u_mol_cc_atm
+        elif dCeq_dp_unit.is_compatible_with(u_cc_g_atm):  # volume gas / mass water
+            compat_unit = UEnum.CC_G_ATM
+            unconverted_unit = u_cc_g_atm
+        elif dCeq_dp_unit.is_compatible_with(u_kg_mol_atm):  # mass gas / amount water
+            compat_unit = UEnum.KG_MOL_ATM
+            unconverted_unit = u_kg_mol_atm
+        elif dCeq_dp_unit.is_compatible_with(u_cc_mol_atm):  # volume gas / amount water
+            compat_unit = UEnum.CC_MOL_ATM
+            unconverted_unit = u_cc_mol_atm
+        elif dCeq_dp_unit.is_compatible_with(u_kg_m3_atm):  # mass gas / volume water
+            compat_unit = UEnum.KG_M3_ATM
+            unconverted_unit = u_kg_m3_atm
+        else:
+            raise ValueError("Invalid/unimplemented value for unit. Try something like \"mol/kg/atm\", \"mol/cc/atm\" or \"cc/g/atm\".")
+        
+        unit_change = unconverted_unit != dCeq_dp_unit
+        DP_CEQUNIT_CACHE[id] = (compat_unit, unconverted_unit, unit_change) # add the dCeq_dp_unit to the cache if it's not already there
     
+    if compat_unit == UEnum.MOL_KG_ATM:  # amount gas / mass water
+        ret = pref * Cstar
+    elif compat_unit == UEnum.MOL_CC_ATM:  # amount gas / volume water
+        ret = pref * Cstar * rho * 1e-6 # *1e-6: mol/m3/atm -> mol/cc/atm
+    elif compat_unit == UEnum.CC_G_ATM:  # volume gas / mass water
+        ret = pref * Cstar * mvol * 1e-3 # *1e-3: cc/kg/atm -> cc/g/atm
+    elif compat_unit == UEnum.KG_MOL_ATM:  # mass gas / amount water
+        ret = pref * Cstar * mmass * MMW * 1e-6 # *1e-6: mg/mol/atm -> kg/mol/atm
+    elif compat_unit == UEnum.CC_MOL_ATM:  # volume gas / amount water
+        ret = pref * Cstar * MMW * mvol * 1e-3 # *1e-3: μL/mol/atm -> cc/mol/atm
+    elif compat_unit == UEnum.KG_M3_ATM:  # mass gas / volume water
+        ret = pref * Cstar * mmass * rho * 1e-3 # *1e-3: g/m^3/atm -> kg/m^3/atm
+    else:
+        raise ValueError("Invalid/unimplemented value for unit. Try something like \"mol/kg/permille\", \"mol/cc/permille\" or \"cc/g/permille\".")
+
     # return, after conversion if necessary - written like this to avoid _sto() for speed reasons
-    if not ret_quant and unconverted_unit == dCeq_dp_unit:
+    if not ret_quant and not unit_change:
         return ret
     elif not ret_quant:
         return _sto(ret * unconverted_unit, dCeq_dp_unit).magnitude
-    elif unconverted_unit == dCeq_dp_unit:
+    elif not unit_change:
         return ret * unconverted_unit
     else:
         return _sto(ret * unconverted_unit, dCeq_dp_unit)
@@ -694,25 +836,25 @@ def calc_solcoeff(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity,
     C_g = 100 * ab * (p*1013.25 - e_w) / MGC / T_K # x100 to convert from hPa mol / J to mol / m^3
     # water-side concentration
     C_w = calc_Ceq(gas, T, S, p, 'mol/m^3')
-    # calculate Henry coefficient H [L_w / L_g]
-    H = C_g / C_w
+    # calculate Ostwald coefficient L [L_g / L_w]
+    L = C_w / C_g
 
-# TODO reformulate this using CONTEXTS? - in this case differentiating between mol_w and mol_g so that units can be used instead of arbitrary solcoeff_type argument (see pint Github)
-    if solcoeff_type in ['dimless', 'dimensionless', 'H']:
-        ret = H
-        unit_out = ''
+    # TODO reformulate this using CONTEXTS? - in this case differentiating between mol_w and mol_g so that units can be used instead of arbitrary solcoeff_type argument (see pint Github)
+    if solcoeff_type in ['dimless', 'dimensionless', 'L']:
+        ret = L
+        unit_out = u_dimless
     elif solcoeff_type in ['nv', 'Knv', 'nvp', 'Knvp']:       # amount gas / volume water / partial pressure
-        ret = 1 / MGC / T_K / H
-        unit_out = _u('mol/m^3/Pa')
+        ret = L / MGC / T_K
+        unit_out = u_mol_m3_Pa
     elif solcoeff_type in ['vv', 'Kvv', 'vvp', 'Kvvp']:     # STP volume gas / volume water / partial pressure
-        ret = TPW / PAT / T_K / H
-        unit_out = _u('Pa^-1')
+        ret = L * TPW / PAT / T_K
+        unit_out = u_perPa
     elif solcoeff_type in ['nn', 'Knn', 'nnp', 'Knnp']:     # amount gas / amount water / partial pressure
         rho = calc_dens(T, S)
-        ret =  0.001 * MMW / MGC / T_K / rho / H  
-        unit_out = _u('Pa^-1')
+        ret = 0.001 * L * MMW / MGC / T_K / rho
+        unit_out = u_perPa
     else:
-        raise ValueError("Invalid/unimplemented value for solcoeff_type. Available options: 'H' (dimensionless), 'Knv' (mol/m3/Pa), 'Kvv' (m3_STP/m3_w/Pa), 'Knn (mol_g/mol_w/Pa)'.")
+        raise ValueError("Invalid/unimplemented value for solcoeff_type. Available options: 'L' (dimensionless), 'Knv' (mol/m3/Pa), 'Kvv' (m3_STP/m3_w/Pa), 'Knn (mol_g/mol_w/Pa)'.")
     
     # return, after unit implementation if required:
     if not ret_quant:
