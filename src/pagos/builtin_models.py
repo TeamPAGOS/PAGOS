@@ -63,7 +63,7 @@ def pr(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quanti
     kinvisc = calc_kinvisc(T, S, magnitude=True)
     schmidt = calc_Sc(gas, T, S, magnitude=True)
     diff = kinvisc/schmidt
-    diffNe = kinvisc/calc_Sc('Ne', T, S)
+    diffNe = kinvisc/calc_Sc('Ne', T, S, magnitude=True)
     return calc_Ceq(gas, T, S, p) + A * abn(gas)  * np.exp(-FPR * (diff/diffNe)**beta)
 
 
@@ -99,7 +99,7 @@ def pd(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quanti
     kinvisc = calc_kinvisc(T, S, magnitude=True)
     schmidt = calc_Sc(gas, T, S, magnitude=True)
     diff = kinvisc/schmidt
-    diffNe = kinvisc/calc_Sc('Ne', T, S)
+    diffNe = kinvisc/calc_Sc('Ne', T, S, magnitude=True)
     return (calc_Ceq(gas, T, S, p) + A * abn(gas))  * np.exp(-FPD * (diff/diffNe)**beta)
 
 
