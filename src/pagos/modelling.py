@@ -227,7 +227,7 @@ class GasExchangeModel:
             modelled_data = self.run_fast(tracers, **paramsdict)
 
             # if there is an error associated with every observation, weight by the errors
-            if all(e is not None for e in observed_errors):
+            if all(e is not None and not np.isnan(e) for e in observed_errors):
                 return (modelled_data - observed_data) / observed_errors
             else:
                 return modelled_data - observed_data
@@ -246,7 +246,7 @@ class GasExchangeModel:
             jindx = [i for i, p in enumerate(list(self.model_jac_sig.parameters)[1:]) if p in to_fit] # TODO can this be moved outside of jacfunc?
 
             ntracers = len(tracers)
-            if modelled_jac.shape[1] != ntracers:   #TODO: verify that either that modelled_jac will ALWAYS be np.ndarray or change to accommodate other iterables
+            if modelled_jac.shape[0] != ntracers:   #TODO: verify that either that modelled_jac will ALWAYS be np.ndarray or change to accommodate other iterables
                 raise ValueError('The columns of the jacobian have length %s. All columns must have length %s' % (modelled_jac.shape[1], ntracers))
             jac_cut_to_fit = modelled_jac[:, jindx]
 
