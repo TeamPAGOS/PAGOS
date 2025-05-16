@@ -63,7 +63,7 @@ def calc_kinvisc(T:float|Quantity, S:float|Quantity) -> Quantity:
     :rtype: Quantity
     """
     # Density of the water
-    rho = calc_dens(T, S, magnitude=True) # kg/m3, take magnitude for speed # TODO if calc_dens() gets an option to return magnitude, use that instead of extracting it here
+    rho = calc_dens(T, S, magnitude=True) # kg/m3, take magnitude for speed
     # Adapt salinity to reference composition salinity in kg/kg (Sharqawy 2010)
     S_R = 1.00472*S / 1000 # permille -> kg/kg
     # Viscosity calculated following Sharqawy 2010
@@ -130,5 +130,5 @@ def calc_vappres_Tderiv(T:float|Quantity) -> Quantity:
     :rtype: Quantity
     """
     pv = calc_vappres(T, magnitude=True)
-    dpv_dT = pv * np.log(10) * 11078.38810722 / (1 + 239.7)**2
-    return dpv_dT
+    dpv_dT = 553919405361 * np.log(10) * pv / 3053900 / (10 * T + 2397)**2
+    return dpv_dT 

@@ -63,11 +63,11 @@ def pr(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quanti
     kinvisc = calc_kinvisc(T, S, magnitude=True)
     schmidt = calc_Sc(gas, T, S, magnitude=True)
     diff = kinvisc/schmidt
-    diffNe = kinvisc/calc_Sc('Ne', T, S)
+    diffNe = kinvisc/calc_Sc('Ne', T, S, magnitude=True)
     return calc_Ceq(gas, T, S, p) + A * abn(gas)  * np.exp(-FPR * (diff/diffNe)**beta)
 
 
-def pr(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quantity, A:float|Quantity, FPD:float|Quantity, beta:float|Quantity) -> Quantity|Iterable[Quantity]:
+def pd(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quantity, A:float|Quantity, FPD:float|Quantity, beta:float|Quantity) -> Quantity|Iterable[Quantity]:
     """Partial degassing (PD) model, typically for groundwater studies.
     * C = [Cₑ(T, S, p) + Aχ]·exp(−Fᴾᴰ·(D/Dᶰᵉ)ᵝ)
         * Cₑ(T, S, p) = equilibrium concentration at water recharge temperature T, salinity S and air pressure p
@@ -99,7 +99,7 @@ def pr(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quanti
     kinvisc = calc_kinvisc(T, S, magnitude=True)
     schmidt = calc_Sc(gas, T, S, magnitude=True)
     diff = kinvisc/schmidt
-    diffNe = kinvisc/calc_Sc('Ne', T, S)
+    diffNe = kinvisc/calc_Sc('Ne', T, S, magnitude=True)
     return (calc_Ceq(gas, T, S, p) + A * abn(gas))  * np.exp(-FPD * (diff/diffNe)**beta)
 
 

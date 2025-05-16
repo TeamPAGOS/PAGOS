@@ -1,9 +1,8 @@
 """
-Core functions for the PAGOS package. The universal UnitRegistry `u` is included here, as
-well as the Quantity shorthand `Q()` and some internal functions/decorators.
+Core functions for the PAGOS package. The Quantity shorthand `Q()` is included here, as well as
+some internal functions/decorators.
 """
 
-from pint import UnitRegistry
 from pint import Quantity
 from pint import Unit
 from uncertainties import ufloat
@@ -13,16 +12,7 @@ import numpy as np
 from collections.abc import Iterable
 from typing import Callable
 import wrapt
-
-"""
-THE UNIT REGISTRY u
-
-This is the object from which ALL units within PAGOS and with which PAGOS should
-interact will come from. If the user defines another UnitRegistry v in their program, and then
-attempts to use PAGOS, it will fail and throw: "ValueError: Cannot operate with Quantity and
-Quantity of different registries."
-"""
-u = UnitRegistry()
+from pagos.units import u
 
 """
 MISCELLANEOUS VARIABLES
