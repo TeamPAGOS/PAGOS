@@ -2,7 +2,7 @@
 # possible gases, as in theory test_calc_Cstar should handle any discrepancies (up to errors in the
 # abn() function, but test_getters.py should also handle most of those cases).
 
-from pagos.gas import calc_Ceq, calc_dCeq_dT, calc_dCeq_dS, calc_dCeq_dp, calc_solcoeff
+from pagos.gas import calc_Ceq, calc_dCeq_dT, calc_dCeq_dS, calc_dCeq_dp
 from pagos import Q
 import numpy as np
 
