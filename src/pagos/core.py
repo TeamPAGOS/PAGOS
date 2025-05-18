@@ -72,7 +72,10 @@ def _possibly_iterable(func, instance:object, args, kwargs) -> Callable:
         if possitkey == None:
             return func(*args, **kwargs_to_func)
     else:
-        possitkey = 0
+        if len(args) == 0:
+            possitkey = tuple(kwargs.keys())[0]
+        else:
+            possitkey = 0
         kwargs_to_func = kwargs
 
     # option to sppress _possibly_iterable functionality for subsequent calls
