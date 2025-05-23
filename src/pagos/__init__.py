@@ -25,7 +25,7 @@ For this reason, PAGOS has its own registry, `u`, from which all units are deriv
 """
 
 
-__version__ = '0.5.1'
+__version__ = '0.5.2'
 __author__ = 'Stanley Scott and Chiara-Marlen Hubner'
 
 # for ease of use, these could change later

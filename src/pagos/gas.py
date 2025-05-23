@@ -277,7 +277,7 @@ def calc_Sc(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, method:st
     return Sc
 
 
-def calc_Cstar(gas:str, T:float|Quantity, S:float|Quantity) -> float: # TODO calc_Cstar returns a single-valued array due to unumpy... why did I use unumpy here again?
+def calc_Cstar(gas:str, T:float|Quantity, S:float|Quantity, ab='default') -> float: # TODO calc_Cstar returns a single-valued array due to unumpy... why did I use unumpy here again?
     """Calculate the moist atmospheric equilibrium concentration C* in mol/kg of a given gas at
     temperature T and salinity S.\\
     **Default input units** --- `T`:°C, `S`:‰\\
@@ -307,14 +307,20 @@ def calc_Cstar(gas:str, T:float|Quantity, S:float|Quantity) -> float: # TODO cal
         a1, a2, a3, a4, b1, b2, b3 = wwc(gas).values() #needs S in parts per thousand
         #TODO adopt for absolute salinity??
         # abundance
-        ab = abn(gas)
+        if ab == 'default':
+            ab = abn(gas)
+        else:
+            ab = ab
         # C* = F*abundance, concentration calculated from Warner and Weiss 1985
         Cstar = np.exp(a1 + a2*100/T_K + a3*np.log(T_K/100) + a4*(T_K/100)**2
-                        + S*(b1 + b2*T_K/100 + b3*(T_K/100)**2))
+                        + S*(b1 + b2*T_K/100 + b3*(T_K/100)**2)) * ab
     elif gas == 'SF6':
         a1, a2, a3, b1, b2, b3 = blc(gas).values() #don't know salinity unit
         # abundance
-        ab = abn(gas)
+        if ab == 'default':
+            ab = abn(gas)
+        else:
+            ab = ab
         # C* = F*abundance, concentration calculated from Bullister et al. 2002
         Cstar = np.exp(a1 + a2*(100/T_K) + a3*np.log(T_K/100)
                         + S*(b1 + b2*T_K/100 + b3*(T_K/100)**2)) * ab
@@ -333,8 +339,8 @@ CEQUNIT_CACHE = dict()
 # TODO is Iterable[Quantity] here the best way, or should it specify that they have to be numpy arrays?
 # TODO is instead a dict output the best choice for the multi-gas option? All other multi-gas functionalities in this program just spit out arrays... i.e., prioritise clarity or consistency? 
 @_possibly_iterable
-@wraptpint(None, (None, 'degC', 'permille', 'atm', None, None), strict=False)
-def calc_Ceq(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quantity, Ceq_unit:str|Unit='cc/g', ret_quant:bool=False) -> float|Iterable[float]|Quantity|Iterable[Quantity]:
+@wraptpint(None, (None, 'degC', 'permille', 'atm', None, None, None), strict=False)
+def calc_Ceq(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quantity, Ceq_unit:str|Unit='cc/g', ret_quant:bool=False, ab='default') -> float|Iterable[float]|Quantity|Iterable[Quantity]:
     """Calculate the waterside equilibrium concentration Ceq of a given gas at water
     temperature T, salinity S and airside pressure p.\\
     **Default input units** --- `T`:°C, `S`:‰, `p`:atm\\
@@ -365,12 +371,9 @@ def calc_Ceq(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|
     rho = calc_dens(T, S, magnitude=True)
 
     # calculation of C*, the gas solubility/water-side concentration expressed in units of mol/kg
-    Cstar = calc_Cstar(gas, T, S)#.magnitude
+    Cstar = calc_Cstar(gas, T, S, ab)
     # factor to account for pressure
     pref = (p - e_w) / (1 - e_w)
-    # return equilibrium concentration with desired units
-    ret = pref * Cstar
-
 
     """
     Cache-and-compare system, written by Kai Riedmiller (Heidelberg Scientific Software Centre 
@@ -420,6 +423,7 @@ def calc_Ceq(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|
         unit_change = unconverted_unit != Ceq_unit
         CEQUNIT_CACHE[id] = (compat_unit, unconverted_unit, unit_change) # add the Ceq_unit to the cache if it's not already there
     
+    # return equilibrium concentration with desired units
     if compat_unit == UEnum.MOL_KG:  # amount gas / mass water
         ret = pref * Cstar
     elif compat_unit == UEnum.MOL_CC:  # amount gas / volume water
@@ -450,8 +454,8 @@ def calc_Ceq(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|
 # is called as infrequently as possible (it gets expensive when running fitting routines)
 DT_CEQUNIT_CACHE = dict()
 @_possibly_iterable
-@wraptpint(None, (None, 'degC', 'permille', 'atm', None, None), strict=False)
-def calc_dCeq_dT(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, dCeq_dT_unit:str|Unit='cc/g/K', ret_quant:bool=False) -> float|Iterable[float]|Quantity|Iterable[Quantity]:
+@wraptpint(None, (None, 'degC', 'permille', 'atm', None, None, None), strict=False)
+def calc_dCeq_dT(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, dCeq_dT_unit:str|Unit='cc/g/K', ret_quant:bool=False, ab='default') -> float|Iterable[float]|Quantity|Iterable[Quantity]:
     """Calculate the temperature-derivative dCeq_dT of the waterside equilibrium
     concentration of a given gas at water temperature T, salinity S and airside pressure p.\\
     **Default input units** --- `T`:°C, `S`:‰, `p`:atm\\
@@ -481,7 +485,7 @@ def calc_dCeq_dT(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, 
     # density of the water (kg/m3)
     rho = calc_dens(T, S, magnitude=True)
     # calculation of C*, the gas solubility/water-side concentration (mol/kg)
-    Cstar = calc_Cstar(gas, T, S)
+    Cstar = calc_Cstar(gas, T, S, ab)
     # factor to account for pressure
     pref = (p - e_w) / (1 - e_w)
     # return equilibrium concentration with desired units
@@ -574,8 +578,8 @@ def calc_dCeq_dT(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, 
 # is called as infrequently as possible (it gets expensive when running fitting routines)
 DS_CEQUNIT_CACHE = dict()
 @_possibly_iterable
-@wraptpint(None, (None, 'degC', 'permille', 'atm', None, None), strict=False)
-def calc_dCeq_dS(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, dCeq_dS_unit:str|Unit='cc/g/permille', ret_quant:bool=False) -> float|Iterable[float]|Quantity|Iterable[Quantity]:
+@wraptpint(None, (None, 'degC', 'permille', 'atm', None, None, None), strict=False)
+def calc_dCeq_dS(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, dCeq_dS_unit:str|Unit='cc/g/permille', ret_quant:bool=False, ab='default') -> float|Iterable[float]|Quantity|Iterable[Quantity]:
     """Calculate the salinity-derivative dCeq_dS of the waterside equilibrium
     concentration of a given gas at water temperature T, salinity S and airside pressure p.\\
     **Default input units** --- `T`:°C, `S`:‰, `p`:atm\\
@@ -605,7 +609,7 @@ def calc_dCeq_dS(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, 
     # density of the water (kg/m3)
     rho = calc_dens(T, S, magnitude=True)
     # calculation of C*, the gas solubility/water-side concentration (mol/kg)
-    Cstar = calc_Cstar(gas, T, S)
+    Cstar = calc_Cstar(gas, T, S, ab)
     # factor to account for pressure
     pref = (p - e_w) / (1 - e_w)
     # return equilibrium concentration with desired units
@@ -698,8 +702,8 @@ def calc_dCeq_dS(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, 
 # is called as infrequently as possible (it gets expensive when running fitting routines)
 DP_CEQUNIT_CACHE = dict()
 @_possibly_iterable
-@wraptpint(None, (None, 'degC', 'permille', 'atm', None, None), strict=False)
-def calc_dCeq_dp(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, dCeq_dp_unit:str|Unit='cc/g/atm', ret_quant:bool=False) -> float|Iterable[float]|Quantity|Iterable[Quantity]:
+@wraptpint(None, (None, 'degC', 'permille', 'atm', None, None, None), strict=False)
+def calc_dCeq_dp(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, dCeq_dp_unit:str|Unit='cc/g/atm', ret_quant:bool=False, ab='default') -> float|Iterable[float]|Quantity|Iterable[Quantity]:
     """Calculate the pressure-derivative dCeq_dp of the waterside equilibrium
     concentration of a given gas at water temperature T, salinity S and airside pressure p.\\
     **Default input units** --- `T`:°C, `S`:‰, `p`:atm\\
@@ -729,7 +733,7 @@ def calc_dCeq_dp(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, 
     # density of the water (kg/m3)
     rho = calc_dens(T, S, magnitude=True)
     # calculation of C*, the gas solubility/water-side concentration (mol/kg)
-    Cstar = calc_Cstar(gas, T, S)
+    Cstar = calc_Cstar(gas, T, S, ab)
     # factor to account for pressure (this is the pressure-derivative of (p - e_w) / (1 - e_w))
     pref = 1 / (1 - e_w)
     # return equilibrium concentration with desired units
@@ -799,8 +803,8 @@ def calc_dCeq_dp(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, 
 
 
 @_possibly_iterable
-@wraptpint(None, (None, 'degC', 'permille', 'atm', None, None), strict=False)
-def calc_solcoeff(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, solcoeff_type:str='dimensionless', ret_quant:bool=False) -> float|Iterable[float]|Quantity|Iterable[Quantity]:
+@wraptpint(None, (None, 'degC', 'permille', 'atm', None, None, None), strict=False)
+def calc_solcoeff(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, solcoeff_type:str='dimensionless', ret_quant:bool=False, ab='default') -> float|Iterable[float]|Quantity|Iterable[Quantity]:
     """Calculate the solubility coefficient of a gas in water at water temperature T, salinity S and airside pressure p.\\
     **Default input units** --- `T`:°C, `S`:‰, `p`:atm\\
     **Output units** --- None\\
@@ -827,7 +831,10 @@ def calc_solcoeff(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity,
     :rtype: float | Iterable[float] | Quantity | Iterable[Quantity]
     """
     # gas abundance
-    ab = abn(gas)
+    if ab == 'default':
+        ab = abn(gas)
+    else:
+        ab = ab
     # vapour pressure in air
     e_w = calc_vappres(T, magnitude=True)
     # temperature degrees to K
@@ -835,7 +842,7 @@ def calc_solcoeff(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity,
     # gas-side concentration
     C_g = 100 * ab * (p*1013.25 - e_w) / MGC / T_K # x100 to convert from hPa mol / J to mol / m^3
     # water-side concentration
-    C_w = calc_Ceq(gas, T, S, p, 'mol/m^3')
+    C_w = calc_Ceq(gas, T, S, p, 'mol/m^3', ab)
     # calculate Ostwald coefficient L [L_g / L_w]
     L = C_w / C_g
 
