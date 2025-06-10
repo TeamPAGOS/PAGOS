@@ -1,5 +1,5 @@
 # see: https://squidfunk.github.io/mkdocs-material
-site_name: PAGOS Documentation
+site_name: PAGOS
 site_description: PAGOS Documentation
 site_url: https://teampagos.github.io/pagos
 repo_name: PAGOS
@@ -7,25 +7,31 @@ repo_url: https://github.com/TeamPAGOS/PAGOS
 
 theme:
   name: material
+  logo: img/PAGOS_Logo_O_Bright-cropped.svg
+  favicon: img/PAGOS_logo_O_Bright2-cropped.svg
+  icon:
+    annotation: material/information
 
   palette:
     # Palette toggle for light mode
     - scheme: default
-      primary: green
+      primary: light blue
+      accent: indigo
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
 
     # Palette toggle for dark mode
     - scheme: slate
-      primary: green
-      accent: light-green
+      primary: indigo
+      accent: cyan
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
   features:
     - content.tooltips
     - content.code.annotate
+    - content.code.copy
     - navigation.instant
     - navigation.instant.progress
     - navigation.sections
@@ -35,8 +41,11 @@ theme:
     - toc.follow
     - search.suggest
     - search.share
+  
+plugins:
+  - search
 
-  markdown_extensions:
+markdown_extensions:
     - abbr
     - attr_list
     - md_in_html
@@ -44,7 +53,11 @@ theme:
     - pymdownx.extra
     - pymdownx.details
     - pymdownx.snippets
-    - pymdownx.highlight
+    - pymdownx.highlight:
+        line_spans: __span
+        use_pygments: true
+        pygments_lang_class: true
+    - pymdownx.inlinehilite
     - pymdownx.superfences
     - pymdownx.tabbed:
         alternate_style: true
@@ -54,10 +67,13 @@ theme:
     - pymdownx.snippets:
         base_path: docs/snippets
         check_paths: true
-
-plugins:
-  - search
+    - pymdownx.arithmatex:
+        generic: true
 
 extra:
   version:
     provider: mike
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
