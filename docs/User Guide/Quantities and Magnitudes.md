@@ -1,7 +1,7 @@
 # Quantities and Magnitudes
 
 ## Basics
-This package is designed with a number of "numerical safeguards". Quantities used in PAGOS may contain units, and uncertainties. Functions in PAGOS are designed for use with `Quantity` objects from [Pint](https://pint.readthedocs.io/en/stable/), but can also be used with regular Python datatypes. The following code produces such a quantity representing the speed 11.2 m/s.
+Quantities used in PAGOS may contain units. Functions in PAGOS are designed for use with `Quantity` objects from [Pint](https://pint.readthedocs.io/en/stable/), but can also be used with regular Python datatypes. The following code produces such a quantity representing the speed 11.2 m/s.
 ```py
 from pagos import Q
 mySpeed = Q(11.2, 'm/s')
@@ -79,7 +79,7 @@ print(density)
 ``` 
 Here we see the output is also a `Quantity` with units of kilogram per cubic metre.
 
-### Default units
+### Default Units
 If the arguments to a PAGOS function are not given as `Quantity` objects, then their units will be _assumed_.
 The default units assumed by a function are shown in the docstring. For example, running `help(calc_dens)`{:.py} will
 output the following
@@ -111,10 +111,13 @@ print(calc_dens(15, 20))
 # -> 1014.4433634457197 kilogram / meter ** 3
 ```
 
-The outputs of PAGOS unit-aware functions can be converted to magnitudes in three different ways:
+### Returning Magnitudes
+The outputs of PAGOS [unit-aware](../Functions#unit-aware) functions can be converted to magnitudes in three different ways:
+
 1. by explicitly calling the Pint `Quantity.magnitude` method as discussed above,
 2. by including a `magnitude=True` keyword argument in the function call,
 3. by using the `snv` function from `pagos.core`.
+
 ```py
 from pagos.water import calc_dens
 from pagos.core import snv
@@ -131,7 +134,7 @@ print(snv(calc_dens(15, 20)))
     `Quantity` whose magnitude is a `Variable`. For regular `Quantities` with `float`-like magnitudes it
     functions the same as `to`.
 
-## The `UnitRegistry`
+## The `UnitRegistry` [:material-flash-alert:](./#the-unitregistry "Advanced")
 It is worth noting that Pint handles units by comparing them to other units inside a `UnitRegistry` object - 
 all `Quantity` objects are constructed from the `UnitRegistry`, and it contains all the units that Pint is
 aware of in a given program. One problem that can arise is that Pint units only "know" about each other if

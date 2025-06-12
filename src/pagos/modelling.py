@@ -39,8 +39,7 @@ class GasExchangeModel:
         Defaults to None.
         :type jacobian: Callable, optional
         :param jacobian_units: strings specifying which units to **convert** the output of the `jacobian` to.
-        Note that this has **no effect** on the `fit` method.
-        Defaults to None
+        Note that this has **no effect** on the `fit` method. Defaults to None
         :type jacobian_units: list[str], optional
         """
         # force default units into list:

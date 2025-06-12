@@ -69,6 +69,7 @@ markdown_extensions:
         check_paths: true
     - pymdownx.arithmatex:
         generic: true
+    - tables
 
 extra:
   version:
@@ -77,3 +78,16 @@ extra:
 extra_javascript:
   - javascripts/mathjax.js
   - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+
+nav:
+  - index.md
+  - Getting Started:
+    - Getting Started/Usage.md
+  - User Guide:
+    - User Guide/Quantities and Magnitudes.md
+    - User Guide/Functions.md
+    - User Guide/Modelling.md
+  - Development:
+    - Development/Contributing.md
+
+copyright: Copyright &copy; 2024&mdash;2025 Stanley Scott and Chiara Hubner
