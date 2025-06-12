@@ -63,87 +63,91 @@ def _possibly_iterable(func, instance:object, args, kwargs) -> Callable:
     Note that this can be tuple; e.g. `possit=(0, 2)` means the 1st and 3rd arguments to `func` may be iterable; `possit=('A', 'C') ` means the kwargs `A` and `C` may be iterable.
     :type kwargs: Any
     """
-    # determination of argument to func which is possibly iterable. Defaults to first argument.
-    if 'possit' in kwargs:
-        possitkey = kwargs['possit']
-        # remove 'possit' from keyword arguments passed to wrapped function
-        kwargs_to_func = {k:kwargs[k] for k in kwargs if k != 'possit'}
-        # option to suppress _possibly_iterable functionality by using possit=None in the arguments of the function 
-        if possitkey == None:
-            return func(*args, **kwargs_to_func)
-    else:
-        if len(args) == 0:
-            possitkey = tuple(kwargs.keys())[0]
+    try:
+        # determination of argument to func which is possibly iterable. Defaults to first argument.
+        if 'possit' in kwargs:
+            possitkey = kwargs['possit']
+            # remove 'possit' from keyword arguments passed to wrapped function
+            kwargs_to_func = {k:kwargs[k] for k in kwargs if k != 'possit'}
+            # option to suppress _possibly_iterable functionality by using possit=None in the arguments of the function 
+            if possitkey == None:
+                return func(*args, **kwargs_to_func)
         else:
-            possitkey = 0
-        kwargs_to_func = kwargs
+            if len(args) == 0:
+                possitkey = tuple(kwargs.keys())[0]
+            else:
+                possitkey = 0
+            kwargs_to_func = kwargs
 
-    # option to sppress _possibly_iterable functionality for subsequent calls
-    # EXPERIMENTAL
-    # WARNING: ONLY USE IF YOU WILL MANUALLY RE-ENABLE STRAIGHT AWAY WHEN NECESSARY
-    if 'disablenext' in kwargs:
-        disablenext = kwargs['disablenext']
-        if disablenext:
-            kwargs_to_func = {k:kwargs[k] for k in kwargs if k != 'disablenext'}
-            _set_possit(False)
-    
-    # different behaviour if the possibly iterable argument(s) is(are) in function's args or kwargs.
-    # NOTE: so far mixed behaviour is not allowed - either the iterable arguments must all be args or all kwargs.
-    if type(possitkey) == int:
-        possit = args[possitkey]
-        isiterable = _is_iterable_sq_safe(possit)
-        def return_array():
-            retarr = []
-            for x in possit:
-                newargs = list(args)
-                newargs[possitkey] = x
-                retarr.append(func(*newargs, **kwargs_to_func))
-            return _tidy_iterable(retarr)
-    
-    elif type(possitkey) == tuple and all(type(p) == int for p in possitkey):
-        possit_array = [args[p] for p in possitkey]
-        isiterable = all(_is_iterable_sq_safe(possit) for possit in possit_array)
-        def return_array():
-            retarr = []
-            for i in range(len(possit_array[0])):
-                newargs = list(args)
-                for j in possitkey:         # TODO is this really the best way to do this? Embedded for loops may slow down code
-                    newargs[j] = args[j][i]
-                retarr.append(func(*newargs, **kwargs_to_func))
-            return _tidy_iterable(retarr)
-    
-    elif type(possitkey) == str:
-        possit = kwargs[possitkey]
-        isiterable = _is_iterable_sq_safe(possit)
-        def return_array():
-            retarr = []
-            for x in possit:
-                newkwargs = kwargs_to_func
-                newkwargs[possitkey] = x
-                retarr.append(func(*args, **newkwargs))
-            return _tidy_iterable(retarr)
-    
-    elif type(possitkey) == tuple and all(type(p) == str for p in possitkey):
-        possit_array = [kwargs[p] for p in possitkey]
-        isiterable = all(_is_iterable_sq_safe(possit) for possit in possit_array)
-        def return_array():
-            retarr = []
-            for i in range(len(possit_array[0])):
-                newkwargs = kwargs_to_func
-                for j in possitkey:
-                    newkwargs[j] = kwargs[j][i]
-                retarr.append(func(*args, **newkwargs))
-            return _tidy_iterable(retarr)
-    
-    else:
-        raise TypeError('possit must be an integer, tuple of integers, string or tuple of strings. \n\
-                        WARNING: This should not have been triggered by the user! If this error has shown up, there is a bug in the code caused by incorrect use of pagos.core._possibly_iterable().')
-    return_array.__is_possibly_iterable__ = True
-    # Quantity objects are iterable, so this deals with the relevant cases
-    if isiterable:
-        return return_array()
-    else:
-        return func(*args, **kwargs_to_func)
+        # option to suppress _possibly_iterable functionality for subsequent calls
+        # EXPERIMENTAL
+        # WARNING: ONLY USE IF YOU WILL MANUALLY RE-ENABLE STRAIGHT AWAY WHEN NECESSARY
+        if 'disablenext' in kwargs:
+            disablenext = kwargs['disablenext']
+            if disablenext:
+                kwargs_to_func = {k:kwargs[k] for k in kwargs if k != 'disablenext'}
+                _set_possit(False)
+        
+        # different behaviour if the possibly iterable argument(s) is(are) in function's args or kwargs.
+        # NOTE: so far mixed behaviour is not allowed - either the iterable arguments must all be args or all kwargs.
+        if type(possitkey) == int:
+            possit = args[possitkey]
+            isiterable = _is_iterable_sq_safe(possit)
+            def return_array():
+                retarr = []
+                for x in possit:
+                    newargs = list(args)
+                    newargs[possitkey] = x
+                    retarr.append(func(*newargs, **kwargs_to_func))
+                return _tidy_iterable(retarr)
+        
+        elif type(possitkey) == tuple and all(type(p) == int for p in possitkey):
+            possit_array = [args[p] for p in possitkey]
+            isiterable = all(_is_iterable_sq_safe(possit) for possit in possit_array)
+            def return_array():
+                retarr = []
+                for i in range(len(possit_array[0])):
+                    newargs = list(args)
+                    for j in possitkey:         # TODO is this really the best way to do this? Embedded for loops may slow down code
+                        newargs[j] = args[j][i]
+                    retarr.append(func(*newargs, **kwargs_to_func))
+                return _tidy_iterable(retarr)
+        
+        elif type(possitkey) == str:
+            possit = kwargs[possitkey]
+            isiterable = _is_iterable_sq_safe(possit)
+            def return_array():
+                retarr = []
+                for x in possit:
+                    newkwargs = kwargs_to_func
+                    newkwargs[possitkey] = x
+                    retarr.append(func(*args, **newkwargs))
+                return _tidy_iterable(retarr)
+        
+        elif type(possitkey) == tuple and all(type(p) == str for p in possitkey):
+            possit_array = [kwargs[p] for p in possitkey]
+            isiterable = all(_is_iterable_sq_safe(possit) for possit in possit_array)
+            def return_array():
+                retarr = []
+                for i in range(len(possit_array[0])):
+                    newkwargs = kwargs_to_func
+                    for j in possitkey:
+                        newkwargs[j] = kwargs[j][i]
+                    retarr.append(func(*args, **newkwargs))
+                return _tidy_iterable(retarr)
+        
+        else:
+            raise TypeError('possit must be an integer, tuple of integers, string or tuple of strings. \n\
+                            WARNING: This should not have been triggered by the user! If this error has shown up, there is a bug in the code caused by incorrect use of pagos.core._possibly_iterable().')
+        return_array.__is_possibly_iterable__ = True
+        # Quantity objects are iterable, so this deals with the relevant cases
+        if isiterable:
+            return return_array()
+        else:
+            return func(*args, **kwargs_to_func)
+    except:
+        _set_possit(True)
+        raise
 
 
 def wraptpint(  # signature copied from pint wraps()
