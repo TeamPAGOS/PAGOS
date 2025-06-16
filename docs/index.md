@@ -13,7 +13,13 @@ PyPi link [here](https://pypi.org/project/pagos/).
 pip install pagos
 ```
 
+## Citation
+To cite PAGOS, please see this [Zenodo link](https://zenodo.org/records/15675621).
+An example (IEEE) citation is given below:
+
+S. Scott. PAGOS: Python Analysis of Groundwater and Ocean Samples. (2025) \[Online\]. Available: https://zenodo.org/records/15675621.
+
 ## License
 
 [BSD-3-Clause](https://opensource.org/license/bsd-3-clause), see LICENSE file.
-PAGOS was developed for Python 3 by Stanley Scott and Chiara Hubner.
+PAGOS was developed for Python 3 by Stanley Scott.
