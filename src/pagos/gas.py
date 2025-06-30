@@ -809,7 +809,7 @@ def calc_solcoeff(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity,
     **Default input units** --- `T`:°C, `S`:‰, `p`:atm\\
     **Output units** --- None\\
     The type of solubility coefficient (`solcoeff_type`) can be:
-    * dimensionless (`['dimless', 'dimensionless', 'H']`)
+    * dimensionless (`['dimless', 'dimensionless', 'L']`)
     * amount gas / volume water / partial pressure (`['nv', 'Knv', 'nvp', 'Knvp']`)
     * STP volume gas / volume water / partial pressure (`['vv', 'Kvv', 'vvp', 'Kvvp']`)
     * amount gas / amount water / partial pressure (`['nn', 'Knn', 'nnp', 'Knnp']`)
@@ -842,7 +842,7 @@ def calc_solcoeff(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity,
     # gas-side concentration
     C_g = 100 * ab * (p*1013.25 - e_w) / MGC / T_K # x100 to convert from hPa mol / J to mol / m^3
     # water-side concentration
-    C_w = calc_Ceq(gas, T, S, p, 'mol/m^3', ab)
+    C_w = calc_Ceq(gas, T, S, p, 'mol/m^3', ab, magnitude=True)
     # calculate Ostwald coefficient L [L_g / L_w]
     L = C_w / C_g
 
@@ -850,7 +850,7 @@ def calc_solcoeff(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity,
     if solcoeff_type in ['dimless', 'dimensionless', 'L']:
         ret = L
         unit_out = u_dimless
-    elif solcoeff_type in ['nv', 'Knv', 'nvp', 'Knvp']:       # amount gas / volume water / partial pressure
+    elif solcoeff_type in ['nv', 'Knv', 'nvp', 'Knvp']:     # amount gas / volume water / partial pressure
         ret = L / MGC / T_K
         unit_out = u_mol_m3_Pa
     elif solcoeff_type in ['vv', 'Kvv', 'vvp', 'Kvvp']:     # STP volume gas / volume water / partial pressure

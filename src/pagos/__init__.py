@@ -25,12 +25,12 @@ For this reason, PAGOS has its own registry, `u`, from which all units are deriv
 """
 
 
-__version__ = '0.5.3'
+__version__ = '0.5.4'
 __author__ = 'Stanley Scott and Chiara-Marlen Hubner'
 
 # for ease of use, these could change later
 from .core import u, Q
-from .gas import calc_Ceq, calc_dCeq_dT, calc_Sc
+from .gas import calc_Ceq, calc_solcoeff, calc_dCeq_dT, calc_Sc
 from .water import calc_dens, calc_kinvisc, calc_vappres
 from .modelling import GasExchangeModel
 
