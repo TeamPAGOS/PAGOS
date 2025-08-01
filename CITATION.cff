@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Scott"
+  given-names: "Stanley"
+  orcid: "https://orcid.org/0000-0002-2115-2957"
+- family-names: "Hubner"
+  given-names: "Chiara-Marlen"
+  orcid: "https://orcid.org/0009-0001-7346-8873"
+title: "PAGOS"
+version: 0.5.4
+doi: 10.5281/zenodo.15775382
+date-released: 2025-06-30
+url: "https://github.com/TeamPAGOS/PAGOS"
