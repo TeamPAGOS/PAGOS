@@ -1,0 +1,883 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="PAGOS Documentation">
+      
+      
+      
+        <link rel="canonical" href="https://teampagos.github.io/pagos/User%20Guide/Modelling/">
+      
+      
+        <link rel="prev" href="../Functions/">
+      
+      
+      
+      <link rel="icon" href="../../img/PAGOS_logo_O_Bright2-cropped.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.16">
+    
+    
+      
+        <title>Modelling - PAGOS</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.7e37652d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+  
+  
+  
+  
+  <style>:root{--md-annotation-icon:url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M13%209h-2V7h2m0%2010h-2v-6h2m-1-9A10%2010%200%200%200%202%2012a10%2010%200%200%200%2010%2010%2010%2010%200%200%200%2010-10A10%2010%200%200%200%2012%202%22/%3E%3C/svg%3E');}</style>
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="cyan">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#modelling" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="PAGOS" class="md-header__button md-logo" aria-label="PAGOS" data-md-component="logo">
+      
+  <img src="../../img/PAGOS_Logo_O_Bright-cropped.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            PAGOS
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Modelling
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="cyan"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="cyan"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/TeamPAGOS/PAGOS" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.0.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    PAGOS
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="PAGOS" class="md-nav__button md-logo" aria-label="PAGOS" data-md-component="logo">
+      
+  <img src="../../img/PAGOS_Logo_O_Bright-cropped.svg" alt="logo">
+
+    </a>
+    PAGOS
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/TeamPAGOS/PAGOS" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.0.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    PAGOS
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    Getting Started
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Getting Started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Getting%20Started/Usage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Usage
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    User Guide
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            User Guide
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Quantities%20and%20Magnitudes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Quantities and Magnitudes
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Functions
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    Modelling
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    Modelling
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#functions-and-the-gasexchangemodel" class="md-nav__link">
+    <span class="md-ellipsis">
+      Functions and the GasExchangeModel
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fitting-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      Fitting Models
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    Development
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Development
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Development/Contributing.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    None
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#functions-and-the-gasexchangemodel" class="md-nav__link">
+    <span class="md-ellipsis">
+      Functions and the GasExchangeModel
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fitting-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      Fitting Models
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="modelling">Modelling</h1>
+<p>The real power of PAGOS is in its gas exchange modelling capabilities. PAGOS comes packaged with a number of built-in
+gas exchange models (found in the module <code>builtin_models</code>), but the user may also define whatever model they like (as long as it can be expressed in a Python function!).</p>
+<h2 id="functions-and-the-gasexchangemodel">Functions and the <code>GasExchangeModel</code></h2>
+<p>Here, we look at implementing a simple unfractionated excess air (UA) model (that is, equilibrium concentration
+<span class="arithmatex">\(C^\mathrm{eq}\)</span> "topped up" with an excess air component). The details of this model can be found in <a href="https://www.sciencedirect.com/science/article/pii/S1364815216307150">Jung &amp; Aeschbach
+2018</a>. The model is written mathematically as</p>
+<div class="arithmatex">\[
+C_\mathrm{gas}^\mathrm{UA}(T, S, p, A) = C_\mathrm{gas}^\mathrm{eq}(T, S, p) + A\cdot z,
+\]</div>
+<p>where <span class="arithmatex">\(A\)</span> is in the units of <span class="arithmatex">\(C^\mathrm{eq}_\mathrm{gas}\)</span> and <span class="arithmatex">\(z\)</span> is the atmospheric abundance of the gas. Using the
+<a href="../Functions">functions</a> provided by PAGOS we can express this as the following Python function:</p>
+<div class="language-py highlight"><pre><span></span><code><span id="__span-0-1"><span class="kn">from</span><span class="w"> </span><span class="nn">pagos.gas</span><span class="w"> </span><span class="kn">import</span> <span class="n">calc_Ceq</span><span class="p">,</span> <span class="n">abn</span>
+</span><span id="__span-0-2"><span class="k">def</span><span class="w"> </span><span class="nf">ua_model</span><span class="p">(</span><span class="n">gas</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">S</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">A</span><span class="p">):</span>
+</span><span id="__span-0-3">    <span class="n">Ceq</span> <span class="o">=</span> <span class="n">calc_Ceq</span><span class="p">(</span><span class="n">gas</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">S</span><span class="p">,</span> <span class="n">p</span><span class="p">)</span>
+</span><span id="__span-0-4">    <span class="n">z</span> <span class="o">=</span> <span class="n">abn</span><span class="p">(</span><span class="n">gas</span><span class="p">)</span>
+</span><span id="__span-0-5">    <span class="k">return</span> <span class="n">Ceq</span> <span class="o">+</span> <span class="n">A</span> <span class="o">*</span> <span class="n">z</span>
+</span></code></pre></div>
+<div class="admonition info">
+<p class="admonition-title">Important</p>
+<p>The first argument of <em>any</em> function to be used in the modelling framework of PAGOS must be called <code>gas</code> and should
+take the string-name of the gas for which the model should be run. For example, in the function above, running
+<code>ua_model('Ne', 10, 30, 1, 2e-5)</code> calculates <span class="arithmatex">\(C^\mathrm{UA}\)</span> for <strong>neon</strong> at 10 &deg;C, 30 &permil;, 1 atm and 0.00002 cc/g of excess air.</p>
+</div>
+<p>So far, so boring. However, PAGOS provides an object, <code>GasExchangeModel</code>, that will handle this function for fitting,
+automatically taking care things like unit conversion. The constructor looks like this:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1">GasExchangeModel(&lt;function&gt;, &lt;default units in&gt;, &lt;units out&gt;)
+</span></code></pre></div>
+where <code>&lt;function&gt;</code> is the Python function expressing the model of interest, <code>&lt;default units in&gt;</code> are the units that will
+be assumed are associated with the arguments of <code>&lt;function&gt;</code>, if none are provided by the user, and <code>&lt;units out&gt;</code> are
+the units of the value returned by the model. Let's take the UA example again:
+<div class="language-py highlight"><pre><span></span><code><span id="__span-2-1"><span class="kn">from</span><span class="w"> </span><span class="nn">pagos</span><span class="w"> </span><span class="kn">import</span> <span class="n">GasExchangeModel</span>
+</span><span id="__span-2-2"><span class="n">ua_gem</span> <span class="o">=</span> <span class="n">GasExchangeModel</span><span class="p">(</span><span class="n">ua_model</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;degC&#39;</span><span class="p">,</span> <span class="s1">&#39;permille&#39;</span><span class="p">,</span> <span class="s1">&#39;atm&#39;</span><span class="p">,</span> <span class="s1">&#39;cc/g&#39;</span><span class="p">),</span> <span class="s1">&#39;cc/g&#39;</span><span class="p">)</span>
+</span><span id="__span-2-3"><span class="c1">#                            ^         ^         ^         ^      ^        ^</span>
+</span><span id="__span-2-4"><span class="c1">#                            |         |         |         |      |        |</span>
+</span><span id="__span-2-5"><span class="c1">#                            |     unit of T     |     unit of p  |   output unit</span>
+</span><span id="__span-2-6"><span class="c1">#                         function           unit of S        unit of A</span>
+</span></code></pre></div>
+The default units in must match the signature of the original function. Here, it's <code>(T, S, p, A)</code>. Note that the <code>gas</code>
+argument is not included, and is automatically ignored by PAGOS when setting up the default units (the argument <code>gas</code>
+takes a string value, which of course has no units).</p>
+<p>The <code>GasExchangeModel</code> can now be <em>run</em> with user-provided input parameters:
+<div class="language-py highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span></pre></div></td><td class="code"><div><pre><span></span><code><span id="__span-3-1"><span class="kn">from</span><span class="w"> </span><span class="nn">pagos</span><span class="w"> </span><span class="kn">import</span> <span class="n">Q</span>
+</span><span id="__span-3-2"><span class="nb">print</span><span class="p">(</span><span class="n">ua_gem</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s1">&#39;Ne&#39;</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">30</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mf">2e-5</span><span class="p">))</span>
+</span><span id="__span-3-3"><span class="c1"># -&gt; 1.7030653005762064e-07 cubic_centimeter / gram</span>
+</span><span id="__span-3-4"><span class="nb">print</span><span class="p">(</span><span class="n">ua_gem</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s1">&#39;Ne&#39;</span><span class="p">,</span> <span class="n">Q</span><span class="p">(</span><span class="mf">283.15</span><span class="p">,</span> <span class="s1">&#39;K&#39;</span><span class="p">),</span> <span class="n">Q</span><span class="p">(</span><span class="mi">30</span><span class="p">,</span> <span class="s1">&#39;permille&#39;</span><span class="p">),</span> <span class="n">Q</span><span class="p">(</span><span class="mf">1013.25</span><span class="p">,</span> <span class="s1">&#39;hPa&#39;</span><span class="p">),</span> <span class="n">Q</span><span class="p">(</span><span class="mf">2e-5</span><span class="p">,</span> <span class="s1">&#39;cc/g&#39;</span><span class="p">)))</span>
+</span><span id="__span-3-5"><span class="c1"># -&gt; 1.7030653005762064e-07 cubic_centimeter / gram</span>
+</span><span id="__span-3-6"><span class="nb">print</span><span class="p">(</span><span class="n">ua_gem</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s1">&#39;Ne&#39;</span><span class="p">,</span> <span class="mf">283.15</span><span class="p">,</span> <span class="mi">30</span><span class="p">,</span> <span class="mf">1013.25</span><span class="p">,</span> <span class="mf">2e-5</span><span class="p">,</span>
+</span><span id="__span-3-7">                 <span class="n">units_in</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;K&#39;</span><span class="p">,</span> <span class="s1">&#39;permille&#39;</span><span class="p">,</span> <span class="s1">&#39;hPa&#39;</span><span class="p">,</span> <span class="s1">&#39;cc/g&#39;</span><span class="p">]))</span>
+</span><span id="__span-3-8"><span class="c1"># -&gt; 1.7030653005762067e-07 cubic_centimeter / gram</span>
+</span><span id="__span-3-9"><span class="nb">print</span><span class="p">(</span><span class="n">ua_gem</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s1">&#39;Ne&#39;</span><span class="p">,</span> <span class="mf">283.15</span><span class="p">,</span> <span class="mi">30</span><span class="p">,</span> <span class="mf">1013.25</span><span class="p">,</span> <span class="mf">2e-5</span><span class="p">,</span>
+</span><span id="__span-3-10">                 <span class="n">units_in</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;K&#39;</span><span class="p">,</span> <span class="s1">&#39;permille&#39;</span><span class="p">,</span> <span class="s1">&#39;hPa&#39;</span><span class="p">,</span> <span class="s1">&#39;cc/g&#39;</span><span class="p">],</span>
+</span><span id="__span-3-11">                 <span class="n">units_out</span><span class="o">=</span><span class="s1">&#39;m^3/kg&#39;</span><span class="p">))</span>
+</span><span id="__span-3-12"><span class="c1"># -&gt; 1.703065300576207e-10 meter ** 3 / kilogram</span>
+</span></code></pre></div></td></tr></table></div>
+Above is demonstrated that <code>GasExchangeModel</code>s are automatically unit-aware, and the units can be handled
+in a number of ways. On line 2, we see that the default units we provided when we defined <code>ua_gem</code> are
+used. On line 4, we use quantities already laden with units, using the explicit <code>Q</code> constructor. On line
+6, we specify the units of the input parameters in a separate argument, <code>units_in</code>. On line 8, we do the
+same thing, and also convert the <em>output</em> into units specified by us.
+The differences in the last digits the results are due to floating point errors.</p>
+<h2 id="fitting-models">Fitting Models</h2>
+<p>Of course, we do not want only to perform forward-models, but inverse too. This functionality is provided
+by the <code>fit</code> method of <code>GasExchangeModel</code>. A better walkthrough can be found in the <code>example scripts</code> folder, but here is a brief explanation. The <code>GasExchangeModel.fit()</code> method can be used to fit a number of parameters of a gas exchange model using a least-squares minimisation. Here is an example using the Belgium data (from <a href="https://doi.org/10.1016/j.envsoft.2018.02.004">Jung and Aeschbach 2018</a>) taken from the <code>example scripts/example data</code> folder:</p>
+<p><div class="language-py highlight"><pre><span></span><code><span id="__span-4-1"><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+</span><span id="__span-4-2"><span class="n">gases_used</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;Ne&#39;</span><span class="p">,</span> <span class="s1">&#39;Ar&#39;</span><span class="p">,</span> <span class="s1">&#39;Kr&#39;</span><span class="p">,</span> <span class="s1">&#39;Xe&#39;</span><span class="p">]</span>
+</span><span id="__span-4-3">
+</span><span id="__span-4-4"><span class="c1"># Data import</span>
+</span><span id="__span-4-5"><span class="c1"># These data are from Jung and Aeschbach 2018 (https://www.sciencedirect.com/science/article/pii/S1364815216307150)</span>
+</span><span id="__span-4-6"><span class="n">pangadata</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="s1">&#39;example scripts/Example Data/Complete_Input_Data_Samples_Belgium.CSV&#39;</span><span class="p">,</span> <span class="n">sep</span><span class="o">=</span><span class="s1">&#39;,&#39;</span><span class="p">)</span>
+</span><span id="__span-4-7">
+</span><span id="__span-4-8"><span class="n">fit_UA</span> <span class="o">=</span> <span class="n">ua_gem</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">pangadata</span><span class="p">,</span>                          <span class="c1"># the data as a Pandas DataFrame</span>
+</span><span id="__span-4-9">                    <span class="n">to_fit</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;T&#39;</span><span class="p">,</span> <span class="s1">&#39;A&#39;</span><span class="p">],</span>                  <span class="c1"># the arguments of the model we would like to fit</span>
+</span><span id="__span-4-10">                    <span class="n">init_guess</span><span class="o">=</span><span class="p">[</span><span class="n">Q</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="s1">&#39;degC&#39;</span><span class="p">),</span> <span class="mf">1e-5</span><span class="p">],</span>    <span class="c1"># the initial guesses for the parameters to be fit</span>
+</span><span id="__span-4-11">                    <span class="n">tracers_used</span><span class="o">=</span><span class="n">gases_used</span><span class="p">,</span>            <span class="c1"># the tracers used for the fitting procedure</span>
+</span><span id="__span-4-12">                    <span class="n">constraints</span><span class="o">=</span><span class="p">[[</span><span class="o">-</span><span class="mi">10</span><span class="p">,</span> <span class="mi">50</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mf">1e-2</span><span class="p">]],</span> <span class="c1"># any (optional) constraints we might want to place on our fitted parameters</span>
+</span><span id="__span-4-13">                    <span class="n">tqdm_bar</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>                      <span class="c1"># whether to display a progress bar</span>
+</span><span id="__span-4-14"><span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Fit of UA model:&#39;</span><span class="p">)</span>
+</span><span id="__span-4-15"><span class="nb">print</span><span class="p">(</span><span class="n">fit_UA</span><span class="p">)</span>
+</span><span id="__span-4-16">
+</span><span id="__span-4-17"><span class="c1"># -&gt; Fit of UA model:</span>
+</span><span id="__span-4-18"><span class="c1">#                        T_recharge                                           A</span>
+</span><span id="__span-4-19"><span class="c1">#    0     7.1+/-0.9 degree_Celsius     0.0023+/-0.0006 cubic_centimeter / gram</span>
+</span><span id="__span-4-20"><span class="c1">#    1     5.0+/-0.4 degree_Celsius   0.00348+/-0.00029 cubic_centimeter / gram</span>
+</span><span id="__span-4-21"><span class="c1">#    2     5.0+/-0.4 degree_Celsius   0.00098+/-0.00022 cubic_centimeter / gram</span>
+</span><span id="__span-4-22"><span class="c1">#    ...</span>
+</span></code></pre></div>
+The arguments are explained in the method docstrings and on the right hand side above. Note here that the init_guess arguments do NOT have to be Quantity objects, although they can be for clarity/safety, if you want. When units are omitted, the <code>default_units_in</code> passed to the <code>GasExchangeModel()</code> constructor are used. So in this case, <code>1e-5</code> becomes <code>1e-5 cc/g</code>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../Functions/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Functions">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Functions
+              </div>
+            </div>
+          </a>
+        
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2024&mdash;2025 Stanley Scott and Chiara Hubner
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": "../..", "features": ["content.tooltips", "content.code.annotate", "content.code.copy", "navigation.instant", "navigation.instant.progress", "navigation.sections", "navigation.path", "navigation.indexes", "navigation.footer", "toc.follow", "search.suggest", "search.share"], "search": "../../assets/javascripts/workers/search.d50fe291.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.50899def.min.js"></script>
+      
+        <script src="../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>
