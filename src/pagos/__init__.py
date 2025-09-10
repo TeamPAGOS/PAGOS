@@ -25,7 +25,7 @@ For this reason, PAGOS has its own registry, `u`, from which all units are deriv
 """
 
 
-__version__ = '0.5.4'
+__version__ = '0.5.5dev1'
 __author__ = 'Stanley Scott and Chiara-Marlen Hubner'
 
 # for ease of use, these could change later
@@ -42,3 +42,4 @@ from . import water
 from . import modelling
 from . import builtin_models
 from . import plotting
+from . import pint_monkey_patch

@@ -11,8 +11,7 @@ import numpy as np
 from pagos.core import u as _u, wraptpint
 from pagos.constants import GILL_82_COEFFS
 
-# TODO should there be some option to not return the unit?
-@wraptpint('kg/m^3', ('degC', 'permille'), strict=False)
+@wraptpint('kg_water/m3_water', ('degC', 'permille'), strict=False)
 def calc_dens(T:float|Quantity, S:float|Quantity) -> Quantity:
     """Calculate density of seawater at given temperature and salinity, according to Gill 1982.\\
     **Default input units** --- `T`:°C, `S`:‰\\
@@ -25,6 +24,7 @@ def calc_dens(T:float|Quantity, S:float|Quantity) -> Quantity:
     :return: Calculated density
     :rtype: Quantity
     """
+    # NOTE: THIS FUNCTION IS DUPLICATED IN UNITS.PY TO AVOID CIRCULAR IMPORT; IF YOU CHANGE IT HERE, CHANGE IT THERE TOO
     a0, a1, a2, a3, a4, a5, b0, b1, b2, b3, b4, c0, c1, c2, d0 = GILL_82_COEFFS.values()
 
     rho0 = a0 + a1*T + a2*T**2 + a3*T**3 + a4*T**4 + a5*T**5
@@ -78,7 +78,7 @@ def calc_kinvisc(T:float|Quantity, S:float|Quantity) -> Quantity:
     return nu_sw
 
 
-@wraptpint('kg/m^3/K', ('degC', 'permille'), strict=False)
+@wraptpint('kg_water/m3_water/K', ('degC', 'permille'), strict=False)
 def calc_dens_Tderiv(T:float|Quantity, S:float|Quantity) -> Quantity:
     """Calculate temperature-derivative of the density (dρ/dT) of seawater at given temperature and salinity, according to Gill 1982.\\
     **Default input units** --- `T`:°C, `S`:‰\\
@@ -98,7 +98,7 @@ def calc_dens_Tderiv(T:float|Quantity, S:float|Quantity) -> Quantity:
     return drhodT
 
 
-@wraptpint('kg/m^3/permille', ('degC', 'permille'), strict=False)
+@wraptpint('kg_water/m3_water/permille', ('degC', 'permille'), strict=False)
 def calc_dens_Sderiv(T:float|Quantity, S:float|Quantity) -> Quantity:
     """Calculate salinity-derivative of the density (dρ/dS) of seawater at given temperature and salinity, according to Gill 1982.\\
     **Default input units** --- `T`:°C, `S`:‰\\

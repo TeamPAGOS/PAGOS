@@ -7,68 +7,68 @@ from pagos import Q
 import numpy as np
 
 def test_calc_Ceq_all_floats():
-    assert calc_Ceq('He', 5, 30, 0.98) == 4.004634568050064e-08 # <- this will likely fail in future due to changing the default value of ret_quant; be sure to update appropriately
-    assert calc_Ceq('He', 5, 30, 0.98, Ceq_unit='cc/g') == 4.004634568050064e-08 # <- "
-    assert calc_Ceq('He', 5, 30, 0.98, Ceq_unit='g/mol') == 1.2876990243812647e-10 # <- "
-    assert calc_Ceq('He', 5, 30, 0.98, Ceq_unit='mol/m^3') == 1.828067122190318e-06 # <- "
+    assert calc_Ceq('He', 5, 30, 0.98, magnitude=True) == 1.785720915716375e-09 # <- this will likely fail in future due to changing the default value of ret_quant; be sure to update appropriately
+    assert calc_Ceq('He', 5, 30, 0.98, units='ccSTP_g/g_w', magnitude=True) == 4.004634568050063e-08 # <- "
+    assert calc_Ceq('He', 5, 30, 0.98, units='g_g/mol_w', magnitude=True) == 1.2876489916705044e-10 # <- "
+    assert calc_Ceq('He', 5, 30, 0.98, units='mol_g/m3_w', magnitude=True) == 1.8280671221903182e-06 # <- "
 
-    assert calc_Ceq('He', 5, 30, 0.98, ret_quant=True) == Q(4.004634568050064e-08, 'cc/g')
-    assert calc_Ceq('He', 5, 30, 0.98, Ceq_unit='cc/g', ret_quant=True) == Q(4.004634568050064e-08, 'cc/g')
-    assert calc_Ceq('He', 5, 30, 0.98, Ceq_unit='g/mol', ret_quant=True) == Q(1.2876990243812647e-10, 'g/mol')
-    assert calc_Ceq('He', 5, 30, 0.98, Ceq_unit='mol/m^3', ret_quant=True) == Q(1.828067122190318e-06, 'mol/m^3')
+    assert calc_Ceq('He', 5, 30, 0.98) == Q(1.785720915716375e-09, 'mol_g/kg_w')
+    assert calc_Ceq('He', 5, 30, 0.98, units='ccSTP_g/g_w') == Q(4.004634568050063e-08, 'ccSTP_g/g_w')
+    assert calc_Ceq('He', 5, 30, 0.98, units='g_g/mol_w') == Q(1.2876489916705044e-10, 'g_g/mol_w')
+    assert calc_Ceq('He', 5, 30, 0.98, units='mol_g/m3_w') == Q(1.8280671221903182e-06, 'mol_g/m3_w')
 
-    assert all(calc_Ceq(['He', 'Ne'], 5, 30, 0.98) == np.array([4.004634568050064e-08, 1.7391096248593038e-07]))
-    assert all(calc_Ceq(['He', 'Ne'], 5, 30, 0.98, Ceq_unit='mol/m^3') == np.array([1.828067122190318e-06, 7.939178580807624e-06]))
-    assert all(calc_Ceq(['He', 'Ne'], 5, 30, 0.98, ret_quant=True) == Q([4.004634568050064e-08, 1.7391096248593038e-07], 'cc/g'))
-    assert all(calc_Ceq(['He', 'Ne'], 5, 30, 0.98, Ceq_unit='mol/m^3', ret_quant=True) == Q([1.828067122190318e-06, 7.939178580807624e-06], 'mol/m^3'))
+    assert all(calc_Ceq(['He', 'Ne'], 5, 30, 0.98, magnitude=True) == np.array([1.785720915716375e-09, 7.75527171473283e-09]))
+    assert all(calc_Ceq(['He', 'Ne'], 5, 30, 0.98, units='mol_g/m3_w', magnitude=True) == np.array([1.8280671221903182e-06, 7.939178580807624e-06]))
+    assert all(calc_Ceq(['He', 'Ne'], 5, 30, 0.98) == Q([1.785720915716375e-09, 7.75527171473283e-09], 'mol_g/kg_w'))
+    assert all(calc_Ceq(['He', 'Ne'], 5, 30, 0.98, units='mol_g/m3_w') == Q([1.8280671221903182e-06, 7.939178580807624e-06], 'mol_g/m3_w'))
 
 def test_calc_Ceq_all_quants_default_units():
-    assert calc_Ceq('He', Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm')) == 4.004634568050064e-08 # <- this will likely fail in future due to changing the default value of ret_quant; be sure to update appropriately
-    assert calc_Ceq('He', Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm'), Ceq_unit='cc/g') == 4.004634568050064e-08 # <- "
-    assert calc_Ceq('He', Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm'), Ceq_unit='g/mol') == 1.2876990243812647e-10 # <- "
-    assert calc_Ceq('He', Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm'), Ceq_unit='mol/m^3') == 1.828067122190318e-06 # <- "
+    assert calc_Ceq('He', Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm'), magnitude=True) == 1.785720915716375e-09 # <- this will likely fail in future due to changing the default value of ret_quant; be sure to update appropriately
+    assert calc_Ceq('He', Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm'), units='ccSTP_g/g_w', magnitude=True) == 4.004634568050063e-08 # <- "
+    assert calc_Ceq('He', Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm'), units='g_g/mol_w', magnitude=True) == 1.2876489916705044e-10 # <- "
+    assert calc_Ceq('He', Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm'), units='mol_g/m3_w', magnitude=True) == 1.8280671221903182e-06 # <- "
 
-    assert calc_Ceq('He', Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm'), ret_quant=True) == Q(4.004634568050064e-08, 'cc/g')
-    assert calc_Ceq('He', Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm'), Ceq_unit='cc/g', ret_quant=True) == Q(4.004634568050064e-08, 'cc/g')
-    assert calc_Ceq('He', Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm'), Ceq_unit='g/mol', ret_quant=True) == Q(1.2876990243812647e-10, 'g/mol')
-    assert calc_Ceq('He', Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm'), Ceq_unit='mol/m^3', ret_quant=True) == Q(1.828067122190318e-06, 'mol/m^3')
+    assert calc_Ceq('He', Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm')) == Q(1.785720915716375e-09, 'mol_g/kg_w')
+    assert calc_Ceq('He', Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm'), units='ccSTP_g/g_w') == Q(4.004634568050063e-08, 'ccSTP_g/g_w')
+    assert calc_Ceq('He', Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm'), units='g_g/mol_w') == Q(1.2876489916705044e-10, 'g_g/mol_w')
+    assert calc_Ceq('He', Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm'), units='mol_g/m3_w') == Q(1.8280671221903182e-06, 'mol_g/m3_w')
 
-    assert all(calc_Ceq(['He', 'Ne'], Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm')) == np.array([4.004634568050064e-08, 1.7391096248593038e-07]))
-    assert all(calc_Ceq(['He', 'Ne'], Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm'), Ceq_unit='mol/m^3') == np.array([1.828067122190318e-06, 7.939178580807624e-06]))
-    assert all(calc_Ceq(['He', 'Ne'], Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm'), ret_quant=True) == Q([4.004634568050064e-08, 1.7391096248593038e-07], 'cc/g'))
-    assert all(calc_Ceq(['He', 'Ne'], Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm'), Ceq_unit='mol/m^3', ret_quant=True) == Q([1.828067122190318e-06, 7.939178580807624e-06], 'mol/m^3'))
+    assert all(calc_Ceq(['He', 'Ne'], Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm'), magnitude=True) == np.array([1.785720915716375e-09, 7.75527171473283e-09]))
+    assert all(calc_Ceq(['He', 'Ne'], Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm'), units='mol_g/m3_w', magnitude=True) == np.array([1.8280671221903182e-06, 7.939178580807624e-06]))
+    assert all(calc_Ceq(['He', 'Ne'], Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm')) == Q([1.785720915716375e-09, 7.75527171473283e-09], 'mol_g/kg_w'))
+    assert all(calc_Ceq(['He', 'Ne'], Q(5, 'degC'), Q(30, 'permille'), Q(0.98, 'atm'), units='mol_g/m3_w') == Q([1.8280671221903182e-06, 7.939178580807624e-06], 'mol_g/m3_w'))
 
 def test_calc_Ceq_all_quants_custom_units():
-    assert calc_Ceq('He', Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg')) == 4.004634568050064e-08 # <- this will likely fail in future due to changing the default value of ret_quant; be sure to update appropriately
-    assert calc_Ceq('He', Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg'), Ceq_unit='cc/g') == 4.004634568050064e-08 # <- "
-    assert calc_Ceq('He', Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg'), Ceq_unit='g/mol') == 1.2876990243812647e-10 # <- "
-    assert calc_Ceq('He', Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg'), Ceq_unit='mol/m^3') == 1.828067122190318e-06 # <- "
+    assert calc_Ceq('He', Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg'), magnitude=True) == 1.785720915716375e-09 # <- this will likely fail in future due to changing the default value of ret_quant; be sure to update appropriately
+    assert calc_Ceq('He', Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg'), units='ccSTP_g/g_w', magnitude=True) == 4.004634568050063e-08 # <- "
+    assert calc_Ceq('He', Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg'), units='g_g/mol_w', magnitude=True) == 1.2876489916705044e-10 # <- "
+    assert calc_Ceq('He', Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg'), units='mol_g/m3_w', magnitude=True) == 1.8280671221903182e-06 # <- "
 
-    assert calc_Ceq('He', Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg'), ret_quant=True) == Q(4.004634568050064e-08, 'cc/g')
-    assert calc_Ceq('He', Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg'), Ceq_unit='cc/g', ret_quant=True) == Q(4.004634568050064e-08, 'cc/g')
-    assert calc_Ceq('He', Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg'), Ceq_unit='g/mol', ret_quant=True) == Q(1.2876990243812647e-10, 'g/mol')
-    assert calc_Ceq('He', Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg'), Ceq_unit='mol/m^3', ret_quant=True) == Q(1.828067122190318e-06, 'mol/m^3')
+    assert calc_Ceq('He', Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg')) == Q(1.785720915716375e-09, 'mol_g/kg_w')
+    assert calc_Ceq('He', Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg'), units='ccSTP_g/g_w') == Q(4.004634568050063e-08, 'ccSTP_g/g_w')
+    assert calc_Ceq('He', Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg'), units='g_g/mol_w') == Q(1.2876489916705044e-10, 'g_g/mol_w')
+    assert calc_Ceq('He', Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg'), units='mol_g/m3_w') == Q(1.8280671221903182e-06, 'mol_g/m3_w')
 
-    assert all(calc_Ceq(['He', 'Ne'], Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg')) == np.array([4.004634568050064e-08, 1.7391096248593038e-07]))
-    assert all(calc_Ceq(['He', 'Ne'], Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg'), Ceq_unit='mol/m^3') == np.array([1.828067122190318e-06, 7.939178580807624e-06]))
-    assert all(calc_Ceq(['He', 'Ne'], Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg'), ret_quant=True) == Q([4.004634568050064e-08, 1.7391096248593038e-07], 'cc/g'))
-    assert all(calc_Ceq(['He', 'Ne'], Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg'), Ceq_unit='mol/m^3', ret_quant=True) == Q([1.828067122190318e-06, 7.939178580807624e-06], 'mol/m^3'))
+    assert all(calc_Ceq(['He', 'Ne'], Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg'), magnitude=True) == np.array([1.785720915716375e-09, 7.75527171473283e-09]))
+    assert all(calc_Ceq(['He', 'Ne'], Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg'), units='mol_g/m3_w', magnitude=True) == np.array([1.8280671221903182e-06, 7.939178580807624e-06]))
+    assert all(calc_Ceq(['He', 'Ne'], Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg')) == Q([1.785720915716375e-09, 7.75527171473283e-09], 'mol_g/kg_w'))
+    assert all(calc_Ceq(['He', 'Ne'], Q(278.15, 'K'), Q(3, 'percent'), Q(744.799893891099, 'mmHg'), units='mol_g/m3_w') == Q([1.8280671221903182e-06, 7.939178580807624e-06], 'mol_g/m3_w'))
 
 def test_calc_Ceq_mixed():
-    assert calc_Ceq('He', 5, Q(3, 'percent'), Q(744.799893891099, 'mmHg')) == 4.004634568050064e-08 # <- this will likely fail in future due to changing the default value of ret_quant; be sure to update appropriately
-    assert calc_Ceq('He', 5, Q(3, 'percent'), Q(744.799893891099, 'mmHg'), Ceq_unit='cc/g') == 4.004634568050064e-08 # <- "
-    assert calc_Ceq('He', 5, Q(3, 'percent'), Q(744.799893891099, 'mmHg'), Ceq_unit='g/mol') == 1.2876990243812647e-10 # <- "
-    assert calc_Ceq('He', 5, Q(3, 'percent'), Q(744.799893891099, 'mmHg'), Ceq_unit='mol/m^3') == 1.828067122190318e-06 # <- "
+    assert calc_Ceq('He', 5, Q(3, 'percent'), Q(744.799893891099, 'mmHg'), magnitude=True) == 1.785720915716375e-09 # <- this will likely fail in future due to changing the default value of ret_quant; be sure to update appropriately
+    assert calc_Ceq('He', 5, Q(3, 'percent'), Q(744.799893891099, 'mmHg'), units='ccSTP_g/g_w', magnitude=True) == 4.004634568050063e-08 # <- "
+    assert calc_Ceq('He', 5, Q(3, 'percent'), Q(744.799893891099, 'mmHg'), units='g_g/mol_w', magnitude=True) == 1.2876489916705044e-10 # <- "
+    assert calc_Ceq('He', 5, Q(3, 'percent'), Q(744.799893891099, 'mmHg'), units='mol_g/m3_w', magnitude=True) == 1.8280671221903182e-06 # <- "
 
-    assert calc_Ceq('He', Q(278.15, 'K'), 30, Q(744.799893891099, 'mmHg'), ret_quant=True) == Q(4.004634568050064e-08, 'cc/g')
-    assert calc_Ceq('He', Q(278.15, 'K'), 30, Q(744.799893891099, 'mmHg'), Ceq_unit='cc/g', ret_quant=True) == Q(4.004634568050064e-08, 'cc/g')
-    assert calc_Ceq('He', Q(278.15, 'K'), 30, Q(744.799893891099, 'mmHg'), Ceq_unit='g/mol', ret_quant=True) == Q(1.2876990243812647e-10, 'g/mol')
-    assert calc_Ceq('He', Q(278.15, 'K'), 30, Q(744.799893891099, 'mmHg'), Ceq_unit='mol/m^3', ret_quant=True) == Q(1.828067122190318e-06, 'mol/m^3')
+    assert calc_Ceq('He', Q(278.15, 'K'), 30, Q(744.799893891099, 'mmHg')) == Q(1.785720915716375e-09, 'mol_g/kg_w')
+    assert calc_Ceq('He', Q(278.15, 'K'), 30, Q(744.799893891099, 'mmHg'), units='ccSTP_g/g_w') == Q(4.004634568050063e-08, 'ccSTP_g/g_w')
+    assert calc_Ceq('He', Q(278.15, 'K'), 30, Q(744.799893891099, 'mmHg'), units='g_g/mol_w') == Q(1.2876489916705044e-10, 'g_g/mol_w')
+    assert calc_Ceq('He', Q(278.15, 'K'), 30, Q(744.799893891099, 'mmHg'), units='mol_g/m3_w') == Q(1.8280671221903182e-06, 'mol_g/m3_w')
 
-    assert all(calc_Ceq(['He', 'Ne'], Q(278.15, 'K'), Q(3, 'percent'), 0.98) == np.array([4.004634568050064e-08, 1.7391096248593038e-07]))
-    assert all(calc_Ceq(['He', 'Ne'], Q(278.15, 'K'), Q(3, 'percent'), 0.98, Ceq_unit='mol/m^3') == np.array([1.828067122190318e-06, 7.939178580807624e-06]))
-    assert all(calc_Ceq(['He', 'Ne'], Q(278.15, 'K'), Q(3, 'percent'), 0.98, ret_quant=True) == Q([4.004634568050064e-08, 1.7391096248593038e-07], 'cc/g'))
-    assert all(calc_Ceq(['He', 'Ne'], Q(278.15, 'K'), Q(3, 'percent'), 0.98, Ceq_unit='mol/m^3', ret_quant=True) == Q([1.828067122190318e-06, 7.939178580807624e-06], 'mol/m^3'))
+    assert all(calc_Ceq(['He', 'Ne'], Q(278.15, 'K'), Q(3, 'percent'), 0.98, magnitude=True) == np.array([1.785720915716375e-09, 7.75527171473283e-09]))
+    assert all(calc_Ceq(['He', 'Ne'], Q(278.15, 'K'), Q(3, 'percent'), 0.98, units='mol_g/m3_w', magnitude=True) == np.array([1.8280671221903182e-06, 7.939178580807624e-06]))
+    assert all(calc_Ceq(['He', 'Ne'], Q(278.15, 'K'), Q(3, 'percent'), 0.98) == Q([1.785720915716375e-09, 7.75527171473283e-09], 'mol_g/kg_w'))
+    assert all(calc_Ceq(['He', 'Ne'], Q(278.15, 'K'), Q(3, 'percent'), 0.98, units='mol_g/m3_w') == Q([1.8280671221903182e-06, 7.939178580807624e-06], 'mol_g/m3_w'))
 
 
 # T-derivatives

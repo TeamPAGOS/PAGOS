@@ -419,6 +419,6 @@ def _perform_single_fit(objfunc, obs, errs, units, obs_params_values, tracers, o
         all_params.add(fit_params[i], init_guess[i], True, bounds[i][0], bounds[i][1])
     
     # perform minimisation and return
-    M = minimize(objfunc, all_params, args=(tracers_tomin, obs_tomin, errs_tomin), method='leastsq', nan_policy='omit', Dfun=jacfunc)
+    M = minimize(objfunc, all_params, args=(tracers_tomin, obs_tomin, errs_tomin), method='leastsq', nan_policy='omit', Dfun=jacfunc)                                                     
     return M.params
 

@@ -1,0 +1,5 @@
+C:\Users\scopi\.venv\PAGOS_venv\Scripts\Activate.ps1
+pyest
+
+to test specific file:
+pytest -k [filename]

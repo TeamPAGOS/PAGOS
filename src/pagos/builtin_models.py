@@ -3,7 +3,7 @@ Built-in gas exchange models for PAGOS.
 """
 from pint import Quantity
 from collections.abc import Iterable
-from pagos.gas import abn, ice, calc_Ceq, calc_dCeq_dT, calc_Sc
+from pagos.gas import abn, ice, calc_Ceq, calc_dCeq_dT, calc_Sc, mv
 from pagos.water import calc_dens, calc_kinvisc, calc_vappres
 import numpy as np
 
@@ -28,7 +28,8 @@ def ua(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quanti
     :return: Concentration of gas(es) calculated with the model
     :rtype: Quantity | Iterable[Quantity]
     """
-    return calc_Ceq(gas, T, S, p) + A * abn(gas)
+    mvol = mv(gas)
+    return calc_Ceq(gas, T, S, p, magnitude=True) * mvol * 1e-3 + A * abn(gas)
 
 
 def pr(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quantity, A:float|Quantity, FPR:float|Quantity, beta:float|Quantity) -> Quantity|Iterable[Quantity]:
@@ -60,11 +61,12 @@ def pr(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quanti
     :return: Concentration of gas(es) calculated with the model
     :rtype: Quantity | Iterable[Quantity]
     """
+    mvol = mv(gas)
     kinvisc = calc_kinvisc(T, S, magnitude=True)
     schmidt = calc_Sc(gas, T, S, magnitude=True)
     diff = kinvisc/schmidt
     diffNe = kinvisc/calc_Sc('Ne', T, S, magnitude=True)
-    return calc_Ceq(gas, T, S, p) + A * abn(gas)  * np.exp(-FPR * (diff/diffNe)**beta)
+    return calc_Ceq(gas, T, S, p, magnitude=True) * mvol * 1e-3 + A * abn(gas)  * np.exp(-FPR * (diff/diffNe)**beta)
 
 
 def pd(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quantity, A:float|Quantity, FPD:float|Quantity, beta:float|Quantity) -> Quantity|Iterable[Quantity]:
@@ -96,11 +98,12 @@ def pd(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quanti
     :return: Concentration of gas(es) calculated with the model
     :rtype: Quantity | Iterable[Quantity]
     """
+    mvol = mv(gas)
     kinvisc = calc_kinvisc(T, S, magnitude=True)
     schmidt = calc_Sc(gas, T, S, magnitude=True)
     diff = kinvisc/schmidt
     diffNe = kinvisc/calc_Sc('Ne', T, S, magnitude=True)
-    return (calc_Ceq(gas, T, S, p) + A * abn(gas))  * np.exp(-FPD * (diff/diffNe)**beta)
+    return (calc_Ceq(gas, T, S, p, magnitude=True) * mvol * 1e-3 + A * abn(gas))  * np.exp(-FPD * (diff/diffNe)**beta)
 
 
 def od(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quantity, A:float|Quantity, POD:float|Quantity) -> Quantity|Iterable[Quantity]:
@@ -127,7 +130,8 @@ def od(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quanti
     :return: Concentration of gas(es) calculated with the model
     :rtype: Quantity | Iterable[Quantity]
     """
-    return calc_Ceq(gas, T, S, p) * POD + A * abn(gas)
+    mvol = mv(gas)
+    return calc_Ceq(gas, T, S, p, magnitude=True) * mvol * 1e-3 * POD + A * abn(gas)
 
 
 def ce(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quantity, A:float|Quantity, F:float|Quantity) -> Quantity|Iterable[Quantity]:
@@ -154,7 +158,8 @@ def ce(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quanti
     :return: Concentration of gas(es) calculated with the model
     :rtype: Quantity | Iterable[Quantity]
     """
-    ceq = calc_Ceq(gas, T, S, p)
+    mvol = mv(gas)
+    ceq = calc_Ceq(gas, T, S, p, magnitude=True) * mvol * 1e-3
     z = abn(gas)
     return ceq + (1 - F) * A * z / (1 + F * A * z / ceq)
 
@@ -185,9 +190,10 @@ def taylor_swif(gas:str|Iterable[str], T_r:float|Quantity, S:float|Quantity, p:f
     :return: Concentration of gas(es) calculated with the model
     :rtype: Quantity | Iterable[Quantity]
     """
+    mvol = mv(gas)
     chi = abn(gas)
     kappa = ice(gas)
-    Ceq = calc_Ceq(gas, T_r, S, p, 'cc/g')
+    Ceq = calc_Ceq(gas, T_r, S, p, magnitude=True) * mvol * 1e-3
     # C calculations
     C = (1 - R * (kappa - 1)) * (Ceq + A*chi)
     return C
@@ -219,9 +225,10 @@ def taylor_swift(gas:str|Iterable[str], T_r:float|Quantity, S:float|Quantity, p:
     :return: Concentration of gas(es) calculated with the model.
     :rtype: Quantity | Iterable[Quantity]
     """
+    mvol = mv(gas)
     chi = abn(gas)
     kappa = ice(gas)
-    Ceq = calc_Ceq(gas, T_r, S, p, 'cc/g')
+    Ceq = calc_Ceq(gas, T_r, S, p, magnitude=True) * mvol * 1e-3
     # C calculations
     C = (1 - R * (kappa**2 - 1)) * (Ceq + A*chi)
     return C
@@ -252,9 +259,10 @@ def dwarf(gas:str|Iterable[str], T_r:float|Quantity, S:float|Quantity, p:float|Q
     :return: Concentration of gas(es) calculated with the model.
     :rtype: Quantity | Iterable[Quantity]
     """
+    mvol = mv(gas)
     chi = abn(gas)
     kappa = ice(gas)
-    Ceq = calc_Ceq(gas, T_r, S, p, 'cc/g')
+    Ceq = calc_Ceq(gas, T_r, S, p, magnitude=True) * mvol * 1e-3
     # C calculation
     C = 1 / (1 + omega*(kappa - 1)) * (Ceq + zeta * chi)
     return C
@@ -291,13 +299,14 @@ def qs_dwarf(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|
     :return: Concentration of gas(es) calculated with the model.
     :rtype: Quantity | Iterable[Quantity]
     """
+    mvol = mv(gas)
     chi = abn(gas)
     kappa = ice(gas)
     q = T-T_r
-    Ceq_T = calc_Ceq(gas, T, S, p, 'cc/g')
+    Ceq_T = calc_Ceq(gas, T, S, p, magnitude=True) * mvol * 1e-3
     dCeq_T_dT = calc_dCeq_dT(gas, T, S, p, 'cc/g/K')
     invpref = 1 + (kappa-1)*omega + q*dCeq_T_dT/Ceq_T
-    Ceq_T_r = calc_Ceq(gas, T_r, S, p, 'cc/g')
+    Ceq_T_r = calc_Ceq(gas, T_r, S, p, magnitude=True) * mvol * 1e-3
     # C calculation
     C = 1/invpref * (Ceq_T_r + zeta*chi)
     return C

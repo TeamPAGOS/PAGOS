@@ -339,12 +339,12 @@ CEQUNIT_CACHE = dict()
 # TODO is Iterable[Quantity] here the best way, or should it specify that they have to be numpy arrays?
 # TODO is instead a dict output the best choice for the multi-gas option? All other multi-gas functionalities in this program just spit out arrays... i.e., prioritise clarity or consistency? 
 @_possibly_iterable
-@wraptpint(None, (None, 'degC', 'permille', 'atm', None, None, None), strict=False)
-def calc_Ceq(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quantity, Ceq_unit:str|Unit='cc/g', ret_quant:bool=False, ab='default') -> float|Iterable[float]|Quantity|Iterable[Quantity]:
+@wraptpint('mol_gas/kg_water', (None, 'degC', 'permille', 'atm', None), strict=False)
+def calc_Ceq(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quantity, ab='default') -> float|Iterable[float]|Quantity|Iterable[Quantity]:
     """Calculate the waterside equilibrium concentration Ceq of a given gas at water
     temperature T, salinity S and airside pressure p.\\
     **Default input units** --- `T`:°C, `S`:‰, `p`:atm\\
-    **Output units** --- None
+    **Default output units** --- mol_gas/kg_water
 
     :param gas: Gas(es) for which Ceq should be calculated
     :type gas: str | Iterable[str]
@@ -354,27 +354,18 @@ def calc_Ceq(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|
     :type S: float | Quantity
     :param p: Pressure
     :type p: float | Quantity
-    :param Ceq_unit: Units in which Ceq should be expressed
-    :type Ceq_unit: str | Unit
-    :param ret_quant: Whether to return the result as a Pint Quantity instead of just a float, defaults to False
-    :type ret_quant: bool, optional
     :raises ValueError: If the units given in Ceq_unit are unimplemented
     :return: Waterside equilibrium concentration Ceq of the given gas
     :rtype: float | Iterable[float] | Quantity | Iterable[Quantity]
     """
-    # molar volume and molar mass
-    mvol = mv(gas)
-    mmass = mm(gas)
     # vapour pressure over the water, calculated according to Dyck and Peschke 1995 (atm)
     e_w = calc_vappres(T, magnitude=True) / 1013.25
-    # density of the water (kg/m3)
-    rho = calc_dens(T, S, magnitude=True)
-
     # calculation of C*, the gas solubility/water-side concentration expressed in units of mol/kg
     Cstar = calc_Cstar(gas, T, S, ab)
     # factor to account for pressure
     pref = (p - e_w) / (1 - e_w)
 
+    return pref * Cstar
     """
     Cache-and-compare system, written by Kai Riedmiller (Heidelberg Scientific Software Centre 
     (https://www.ssc.uni-heidelberg.de/en/what-the-scientific-software-center-is-all-about/meet-our-team))
@@ -391,7 +382,7 @@ def calc_Ceq(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|
     fitting procedures, this meant that almost 1/3 of the entire execution time was spent inside
     is_compatible_with.
     """
-    global CEQUNIT_CACHE
+    """global CEQUNIT_CACHE
     id = hash(Ceq_unit)
     if cache_hit := CEQUNIT_CACHE.get(id): # if the hashed Ceq_unit is in our cache...
         compat_unit, unconverted_unit, unit_change = cache_hit # access the relevant values in the cache
@@ -438,6 +429,11 @@ def calc_Ceq(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|
         ret = pref * mmass * rho * Cstar * 1e-3  # 1e-3: g/m^3 -> kg/m^3
     else:
         raise ValueError("Invalid/unimplemented value for unit. Try something like \"mol/kg\", \"mol/cc\" or \"cc/g\".")
+    
+    if not unit_change:
+        return ret * unconverted_unit
+    else:
+        return _sto(ret * unconverted_unit, Ceq_unit)
 
     # return, after conversion if necessary - written like this to avoid _sto() for speed reasons
     if not ret_quant and not unit_change:
@@ -447,7 +443,7 @@ def calc_Ceq(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|
     elif not unit_change:
         return ret * unconverted_unit
     else:
-        return _sto(ret * unconverted_unit, Ceq_unit)
+        return _sto(ret * unconverted_unit, Ceq_unit)"""
 
 
 # cache to hold dCeq_dT_units if they have previously been used so that Unit.is_compatible_with()
@@ -802,17 +798,20 @@ def calc_dCeq_dp(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, 
         return _sto(ret * unconverted_unit, dCeq_dp_unit)
 
 
+# cache to hold solcoeff_type if they have previously been used so that Unit.is_compatible_with()
+# is called as infrequently as possible (it gets expensive when running fitting routines)
+SCUNIT_CACHE = dict()
 @_possibly_iterable
-@wraptpint(None, (None, 'degC', 'permille', 'atm', None, None, None), strict=False)
-def calc_solcoeff(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, solcoeff_type:str='dimensionless', ret_quant:bool=False, ab='default') -> float|Iterable[float]|Quantity|Iterable[Quantity]:
+@wraptpint('LSTP_gas/L_water', (None, 'degC', 'permille', 'atm', None, None), strict=False)
+def calc_solcoeff(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, solcoeff_type:str='dimensionless', ab='default') -> float|Iterable[float]|Quantity|Iterable[Quantity]:
     """Calculate the solubility coefficient of a gas in water at water temperature T, salinity S and airside pressure p.\\
     **Default input units** --- `T`:°C, `S`:‰, `p`:atm\\
     **Output units** --- None\\
     The type of solubility coefficient (`solcoeff_type`) can be:
-    * dimensionless (`['dimless', 'dimensionless', 'L']`)
-    * amount gas / volume water / partial pressure (`['nv', 'Knv', 'nvp', 'Knvp']`)
-    * STP volume gas / volume water / partial pressure (`['vv', 'Kvv', 'vvp', 'Kvvp']`)
-    * amount gas / amount water / partial pressure (`['nn', 'Knn', 'nnp', 'Knnp']`)
+    * dimensionless (`'dimensionless'`, `''`)
+    * amount gas / volume water / partial pressure (`'mol/L/Pa'`)
+    * STP volume gas / volume water / partial pressure (`'Pa^-1'`)
+    * amount gas / amount water / partial pressure (`Pa^-1`)
 
     :param gas: Gas(es) for which the solubility coefficient should be calculated.
     :type gas: str
@@ -822,10 +821,8 @@ def calc_solcoeff(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity,
     :type S: float | Quantity
     :param p: Pressure
     :type p: float | Quantity
-    :param solcoeff_type: Type of solubility coefficient, defaults to 'dimensionless'
+    :param solcoeff_type: Units of solubility coefficient, defaults to 'dimensionless'
     :type solcoeff_type: str, optional
-    :param ret_quant: Whether to return the result as a Pint Quantity instead of just a float, defaults to False
-    :type ret_quant: bool, optional
     :raises ValueError: If the type of solubility coefficient is unimplemented
     :return: Solubility coefficient of the given gas
     :rtype: float | Iterable[float] | Quantity | Iterable[Quantity]
@@ -842,9 +839,48 @@ def calc_solcoeff(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity,
     # gas-side concentration
     C_g = 100 * ab * (p*1013.25 - e_w) / MGC / T_K # x100 to convert from hPa mol / J to mol / m^3
     # water-side concentration
-    C_w = calc_Ceq(gas, T, S, p, 'mol/m^3', ab, magnitude=True)
+    C_w = calc_Ceq(gas, T, S, p, ab=ab, magnitude=True, units='mol_gas/m3_water')
     # calculate Ostwald coefficient L [L_g / L_w]
     L = C_w / C_g
+
+    return L
+
+    """global SCUNIT_CACHE
+    id = hash(solcoeff_type)
+    if cache_hit := SCUNIT_CACHE.get(id): # if the hashed solcoeff_type is in our cache...
+        compat_unit, unconverted_unit = cache_hit # access the relevant values in the cache
+    else:
+        if solcoeff_type in ['dimless', 'dimensionless', 'L']:  # dimensionless
+            compat_unit = UEnum.DIMLESS
+            unconverted_unit = u_dimless
+        elif solcoeff_type in ['nv', 'Knv', 'nvp', 'Knvp']:  # amount gas / volume water / partial pressure
+            compat_unit = UEnum.MOL_CC_ATM
+            unconverted_unit = u_mol_m3_Pa
+        elif solcoeff_type in ['vv', 'Kvv', 'vvp', 'Kvvp']:  # STP volume gas / volume water / partial pressure
+            compat_unit = UEnum.PER_PA
+            unconverted_unit = u_perPa
+        elif solcoeff_type in ['nn', 'Knn', 'nnp', 'Knnp']:  # amount gas / amount water / partial pressure
+            compat_unit = UEnum.PER_PA
+            unconverted_unit = u_perPa
+        else:
+            raise ValueError("Invalid/unimplemented value for unit. Try something like \"mol/L/Pa\", \"dimensionless\" or \"Pa^-1\".")
+        
+        SCUNIT_CACHE[id] = (compat_unit, unconverted_unit) # add the solcoeff_type to the cache if it's not already there
+    
+    # return equilibrium concentration with desired units
+    if solcoeff_type in ['dimless', 'dimensionless', 'L']:
+        ret = L
+    elif solcoeff_type in ['nv', 'Knv', 'nvp', 'Knvp']:     # amount gas / volume water / partial pressure
+        ret = L / MGC / T_K
+    elif solcoeff_type in ['vv', 'Kvv', 'vvp', 'Kvvp']:     # STP volume gas / volume water / partial pressure
+        ret = L * TPW / PAT / T_K
+    elif solcoeff_type in ['nn', 'Knn', 'nnp', 'Knnp']:     # amount gas / amount water / partial pressure
+        rho = calc_dens(T, S)
+        ret = 0.001 * L * MMW / MGC / T_K / rho
+    else:
+        raise ValueError("Invalid/unimplemented value for solcoeff_type. Available options: 'L' (dimensionless), 'Knv' (mol/m3/Pa), 'Kvv' (m3_STP/m3_w/Pa), 'Knn (mol_g/mol_w/Pa)'.")
+    
+    return ret * unconverted_unit"""
 
     # TODO reformulate this using CONTEXTS? - in this case differentiating between mol_w and mol_g so that units can be used instead of arbitrary solcoeff_type argument (see pint Github)
     if solcoeff_type in ['dimless', 'dimensionless', 'L']:
@@ -863,8 +899,5 @@ def calc_solcoeff(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity,
     else:
         raise ValueError("Invalid/unimplemented value for solcoeff_type. Available options: 'L' (dimensionless), 'Knv' (mol/m3/Pa), 'Kvv' (m3_STP/m3_w/Pa), 'Knn (mol_g/mol_w/Pa)'.")
     
-    # return, after unit implementation if required:
-    if not ret_quant:
-        return ret
-    else:
-        return ret * unit_out
+    # return after unit implementation:
+    return ret# * unit_out
