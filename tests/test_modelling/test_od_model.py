@@ -11,7 +11,7 @@ ODModel = GasExchangeModel(od, ['degC', 'permille', 'atm', 'ccSTP_g/g_w', ''], '
 
 def test_od_model_with_preset_data():
     OD_fit = ODModel.fit(preset_data, ['T', 'A', 'POD'], [15, 5e-5, 0.5], NOBLEGASES, tqdm_bar=False)
-    OD_fit = OD_fit.applymap(lambda x: snv(x)) # convert to nominal values
+    OD_fit = OD_fit.map(lambda x: snv(x)) # convert to nominal values
     np.testing.assert_allclose(OD_fit, preset_data[['T', 'A', 'POD']], rtol=1e-2)
 
 def test_od_model_with_single_preset_data():

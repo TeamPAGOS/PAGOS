@@ -65,56 +65,84 @@ u.enable_contexts('pc')
 
 # common units that PAGOS methods will access. We define them explicitly here to avoid many
 # __getattr__ calls
-u_mol = u.mol
-u_kg = u.kg
-u_cc = u.cc
-u_g = u.g
-u_m3 = u.m**3
+u_mol_gas = u.mol_gas
+u_kg_water = u.kg_water
+u_ccSTP_gas = u.ccSTP_gas
+u_g_gas = u.g_gas
+u_g_water = u.g_water
+u_m3_water = u.m3_water
+u_mol_water = u.mol_water
 u_K = u.K
 u_permille = u.permille
 u_atm = u.atm
+u_mbar = u.mbar
 u_Pa = u.Pa
 u_dimless = u.dimensionless
+u_m = u.m
+u_s = u.s
 
 # common unit combinations to avoid many __truediv__ calls
+# used in calc_dens
+uww_kg_m3 = u_kg_water / u_m3_water
+
+# used in calc_dens_Tderiv
+uww_kg_m3_K = u_kg_water / u_m3_water / u_K
+
+# used in calc_dens_Sderiv
+uww_kg_m3_pml = u_kg_water / u_m3_water / u_permille
+
+# used in calc_vappres_Tderiv
+u_mbar_K = u_mbar / u_K
+
+# used in calc_kinvisc
+u_m2_s = u_m**2 / u_s
+
 # used in calc_Ceq
-u_mol_kg = u_mol / u_kg
-u_mol_g = u_mol / u_g
-u_mol_cc = u_mol / u_cc
-u_kg_mol = u_kg / u_mol
-u_cc_mol = u_cc / u_mol
-u_cc_g = u_cc / u_g
-u_kg_m3 = u_kg / u_m3
+ugw_mol_kg = u_mol_gas / u_kg_water         # mol / kg
+ugw_ccSTP_g = u_ccSTP_gas / u_g_water       # ccSTP / g
+ugw_g_g = u_g_gas / u_g_water               # g / g
+ugw_mol_m3 = u_mol_gas / u_m3_water         # mol / m3
+ugw_ccSTP_m3 = u_ccSTP_gas / u_m3_water     # ccSTP / m3
+ugw_g_m3 = u_g_gas / u_m3_water             # g / m3
+ugw_mol_mol = u_mol_gas / u_mol_water       # mol / mol
+ugw_ccSTP_mol = u_ccSTP_gas / u_mol_water   # ccSTP / mol
+ugw_g_mol = u_g_gas / u_mol_water           # g / mol
 
 # used in calc_dCeq_dT
-u_mol_kg_K = u_mol / u_kg / u_K
-u_mol_g_K = u_mol / u_g / u_K
-u_mol_cc_K = u_mol / u_cc / u_K
-u_kg_mol_K = u_kg / u_mol / u_K
-u_cc_mol_K = u_cc / u_mol / u_K
-u_cc_g_K = u_cc / u_g / u_K
-u_kg_m3_K = u_kg / u_m3 / u_K
+ugw_mol_kg_K = u_mol_gas / u_kg_water / u_K         # mol / kg / K
+ugw_ccSTP_g_K = u_ccSTP_gas / u_g_water / u_K       # ccSTP / g / K
+ugw_g_g_K = u_g_gas / u_g_water / u_K               # g / g / K
+ugw_mol_m3_K = u_mol_gas / u_m3_water / u_K         # mol / m3 / K
+ugw_ccSTP_m3_K = u_ccSTP_gas / u_m3_water / u_K     # ccSTP / m3 / K
+ugw_g_m3_K = u_g_gas / u_m3_water / u_K             # g / m3 / K
+ugw_mol_mol_K = u_mol_gas / u_mol_water / u_K       # mol / mol / K
+ugw_ccSTP_mol_K = u_ccSTP_gas / u_mol_water / u_K   # ccSTP / mol / K
+ugw_g_mol_K = u_g_gas / u_mol_water / u_K       # g / mol / K
 
 # used in calc_dCeq_dS
-u_mol_kg_permille = u_mol / u_kg / u_permille
-u_mol_g_permille = u_mol / u_g / u_permille
-u_mol_cc_permille = u_mol / u_cc / u_permille
-u_kg_mol_permille = u_kg / u_mol / u_permille
-u_cc_mol_permille = u_cc / u_mol / u_permille
-u_cc_g_permille = u_cc / u_g / u_permille
-u_kg_m3_permille = u_kg / u_m3 / u_permille
+ugw_mol_kg_pml = u_mol_gas / u_kg_water / u_permille         # mol / kg / permille
+ugw_ccSTP_g_pml = u_ccSTP_gas / u_g_water / u_permille       # ccSTP / g / permille
+ugw_g_g_pml = u_g_gas / u_g_water / u_permille               # g / g / permille
+ugw_mol_m3_pml = u_mol_gas / u_m3_water / u_permille         # mol / m3 / permille
+ugw_ccSTP_m3_pml = u_ccSTP_gas / u_m3_water / u_permille     # ccSTP / m3 / permille
+ugw_g_m3_pml = u_g_gas / u_m3_water / u_permille             # g / m3 / permille
+ugw_mol_mol_pml = u_mol_gas / u_mol_water / u_permille       # mol / mol / permille
+ugw_ccSTP_mol_pml = u_ccSTP_gas / u_mol_water / u_permille   # ccSTP / mol / permille
+ugw_g_mol_pml = u_g_gas / u_mol_water / u_permille       # g / mol / permille
 
 # used in calc_dCeq_dp
-u_mol_kg_atm = u_mol / u_kg / u_atm
-u_mol_g_atm = u_mol / u_g / u_atm
-u_mol_cc_atm = u_mol / u_cc / u_atm
-u_kg_mol_atm = u_kg / u_mol / u_atm
-u_cc_mol_atm = u_cc / u_mol / u_atm
-u_cc_g_atm = u_cc / u_g / u_atm
-u_kg_m3_atm = u_kg / u_m3 / u_atm
+ugw_mol_kg_atm = u_mol_gas / u_kg_water / u_atm         # mol / kg / atm
+ugw_ccSTP_g_atm = u_ccSTP_gas / u_g_water / u_atm       # ccSTP / g / atm
+ugw_g_g_atm = u_g_gas / u_g_water / u_atm               # g / g / atm
+ugw_mol_m3_atm = u_mol_gas / u_m3_water / u_atm         # mol / m3 / atm
+ugw_ccSTP_m3_atm = u_ccSTP_gas / u_m3_water / u_atm     # ccSTP / m3 / atm
+ugw_g_m3_atm = u_g_gas / u_m3_water / u_atm             # g / m3 / atm
+ugw_mol_mol_atm = u_mol_gas / u_mol_water / u_atm       # mol / mol / atm
+ugw_ccSTP_mol_atm = u_ccSTP_gas / u_mol_water / u_atm   # ccSTP / mol / atm
+ugw_g_mol_atm = u_g_gas / u_mol_water / u_atm       # g / mol / atm
 
 # used in calc_solcoeff
-u_mol_m3_Pa = u_mol / u_m3 / u_Pa
+u_mol_m3_Pa = u_mol_gas / u_m3_water / u_Pa
 u_perPa = u_Pa ** -1
 
 
@@ -123,34 +151,71 @@ class UEnum(Enum):
     DIMLESS = auto()
     PER_PA = auto()
 
-    MOL_KG = auto()
-    MOL_CC = auto()
-    CC_G = auto()
-    KG_MOL = auto()
-    CC_MOL = auto()
-    KG_M3 = auto()
+    PA = auto()
+    PA_K = auto()
+    MBAR = auto()
+    MBAR_K = auto()
 
-    MOL_KG_K = auto()
-    MOL_CC_K = auto()
-    CC_G_K = auto()
-    KG_MOL_K = auto()
-    CC_MOL_K = auto()
-    KG_M3_K = auto()
+    M2_S = auto()
 
-    MOL_KG_PERMILLE = auto()
-    MOL_CC_PERMILLE = auto()
-    CC_G_PERMILLE = auto()
-    KG_MOL_PERMILLE = auto()
-    CC_MOL_PERMILLE = auto()
-    KG_M3_PERMILLE = auto()
+    WW_KG_M3 = auto()
+    WW_KG_M3_K = auto()
+    WW_KG_M3_PML = auto()
 
-    MOL_KG_ATM = auto()
-    MOL_CC_ATM = auto()
-    CC_G_ATM = auto()
-    KG_MOL_ATM = auto()
-    CC_MOL_ATM = auto()
-    KG_M3_ATM = auto()
+    GW_MOL_KG = auto()
+    GW_CCSTP_G = auto()
+    GW_G_G = auto()
+    GW_MOL_M3 = auto()
+    GW_CCSTP_M3 = auto()
+    GW_G_M3 = auto()
+    GW_MOL_MOL = auto()
+    GW_CCSTP_MOL = auto()
+    GW_G_MOL = auto()
 
+    GW_MOL_KG_K = auto()
+    GW_CCSTP_G_K = auto()
+    GW_G_G_K = auto()
+    GW_MOL_M3_K = auto()
+    GW_CCSTP_M3_K = auto()
+    GW_G_M3_K = auto()
+    GW_MOL_MOL_K = auto()
+    GW_CCSTP_MOL_K = auto()
+    GW_G_MOL_K = auto()
+
+    GW_MOL_KG_PML = auto()
+    GW_CCSTP_G_PML = auto()
+    GW_G_G_PML = auto()
+    GW_MOL_M3_PML = auto()
+    GW_CCSTP_M3_PML = auto()
+    GW_G_M3_PML = auto()
+    GW_MOL_MOL_PML = auto()
+    GW_CCSTP_MOL_PML = auto()
+    GW_G_MOL_PML = auto()
+
+    GW_MOL_KG_ATM = auto()
+    GW_CCSTP_G_ATM = auto()
+    GW_G_G_ATM = auto()
+    GW_MOL_M3_ATM = auto()
+    GW_CCSTP_M3_ATM = auto()
+    GW_G_M3_ATM = auto()
+    GW_MOL_MOL_ATM = auto()
+    GW_CCSTP_MOL_ATM = auto()
+    GW_G_MOL_ATM = auto()
+
+# unit caches
+DENSUNIT_CACHE = dict()
+DT_DENSUNIT_CACHE = dict()
+DS_DENSUNIT_CACHE = dict()
+VPUNIT_CACHE = dict()
+DT_VPUNIT_CACHE = dict()
+KVUNIT_CACHE = dict()
+
+SCUNIT_CACHE = dict()
+CEQUNIT_CACHE = dict()
+DT_CEQUNIT_CACHE = dict()
+DS_CEQUNIT_CACHE = dict()
+DP_CEQUNIT_CACHE = dict()
+HENUNIT_CACHE = dict()
 
 """
 FUNCTIONS FOR CALCULATING PROPERTIES OF SEAWATER

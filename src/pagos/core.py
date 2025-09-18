@@ -2,7 +2,6 @@
 Core functions for the PAGOS package. The Quantity shorthand `Q()` is included here, as well as
 some internal functions/decorators.
 """
-
 from pint import Quantity
 from pint import Unit
 from uncertainties import ufloat
@@ -150,16 +149,14 @@ def _possibly_iterable(func, instance:object, args, kwargs) -> Callable:
         raise
 
 
-CONVERSION_CACHE = dict()
-def wraptpint(  # signature copied from pint wraps()
-    ret_units: str | Unit | Iterable[str | Unit | None] | None,
+def wraptpint(  # signature copied from pint wraps() - but removed return units as this should always be specified in the signature of the wrapped function anyway
     arg_units: str | Unit | Iterable[str | Unit | None] | None,
     strict: bool,
 ):
     """Alternative to pint wraps() functionality that preserves function signature.
 
-    :param ret_units: units of value returned by function
-    :type ret_units: str | Unit | Iterable[str | Unit | None] | None
+    :param default_ret_units: default units of value returned by function
+    :type default_ret_units: str | Unit | Iterable[str | Unit | None] | None
     :param arg_units: units of input arguments to function
     :type arg_units: str | Unit | Iterable[str  |  Unit  |  None] | None
     :param strict: indicates that only `Quantity`s are to be accepted, defaults to True
@@ -171,61 +168,13 @@ def wraptpint(  # signature copied from pint wraps()
         # option to bypass the wrapping if the functionality is disabled
         # EXPERIMENTAL
         if not _is_wp_enabled():
-            try:                                    # TODO there are a few places in the code where kwarg popping is done like: kwargs_to_func = {k:kwargs[k] for k in kwargs if k != <kwarg to remove>}
-                kwargs.pop('magnitude')             #   where possible (not always, see the block below for example) should all look like this instead, I think - it seems better
-            except:
-                pass
-            try:
-                kwargs.pop('units')
-            finally:
-                return func(*args, **kwargs)
+            return func(*args, **kwargs)
         else:
-            ru, au = ret_units, arg_units
-            """if ru == 'UD':
-                try:
-                    ru = kwargs['units']
-                    kwargs.pop('units')
-                except:
-                    ru = None"""
-            
+            # option to convert the input units if the user has provided non-default ones
             # function wrapped for units in and out
-            unitwrapped = u.wraps(ret=ru, args=au, strict=strict)(func)
-
-            # option to return the magnitude if the user desires (alternative to Quantity.magnitude)
-            if 'magnitude' in kwargs and kwargs['magnitude']:
-                    kwargs.pop('magnitude')
-                    return_mag = True
-            else:
-                try:
-                    kwargs.pop('magnitude') # still have to try this because user could have written magnitude=False
-                    return_mag = False
-                except:
-                    return_mag = False
-                    
-            # option to convert the output if the user desires
-            if 'units' in kwargs:
-                to_these_units = kwargs['units']
-                kwargs.pop('units')
-                a_dict = {k:v for k, v in zip(func.__code__.co_varnames, args) if k in ['gas', 'T', 'S']} # this function's args that are relevant for conversion in the pc context
-                k_dict = {k:kwargs[k] for k in func.__code__.co_varnames if k in kwargs and k in ['gas', 'T', 'S']} # this function's kwargs that are relevant for conversions in the pc context
-                kwargs_to_conversion_func = a_dict | k_dict
-
-                # make sure the kwargs for the conversion context pc are not quantities
-                if isinstance(kwargs_to_conversion_func['T'], Quantity):
-                    kwargs_to_conversion_func['T'] = kwargs_to_conversion_func['T'].to('degC').magnitude
-                if isinstance(kwargs_to_conversion_func['S'], Quantity):
-                    kwargs_to_conversion_func['S'] = kwargs_to_conversion_func['S'].to('permille').magnitude
-                
-                quant_out = sto(unitwrapped(*args, **kwargs), to_these_units, **kwargs_to_conversion_func)
-            else:
-                quant_out = unitwrapped(*args, **kwargs)
-
-            # NOTE: not sure about this way of doing things; doesn't this double the work of the magnitude check by
-            # having an if-statement bfore and after the unit section?
-            if return_mag:
-                return quant_out.magnitude
-            else:
-                return quant_out
+            # skip conversion of output units as this should already be hardcoded in every function decorated with this
+            unitwrapped = u.wraps(ret=None, args=arg_units, strict=strict)(func)
+            return unitwrapped(*args, **kwargs)
     return wrapper
 
 """

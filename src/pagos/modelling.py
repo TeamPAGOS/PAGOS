@@ -290,7 +290,7 @@ class GasExchangeModel:
 
                 fitted_params = _perform_single_fit(objfunc, vi, ei, ui, opi, tracers_used, dont_fit_these_args, to_fit, init_guess, constraints, def_fit_param_units, self.default_units_out, jacfunc)
                 for j, tf in enumerate(to_fit):
-                    ret.loc[i][tf] = _Q(fitted_params[tf].value, def_fit_param_units[j], fitted_params[tf].stderr)        
+                    ret.loc[i, tf] = _Q(fitted_params[tf].value, def_fit_param_units[j], fitted_params[tf].stderr)        
         else:
             # fit procedure if the data is a single tuple
             obs_tracers, obs_tr_errs, obs_tr_units, obs_params = data
