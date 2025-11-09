@@ -471,7 +471,7 @@ def calc_Ceq(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|
     elif compat_unit == UEnum.GW_CCSTP_M3:
         rho = calc_dens(T, S, magnitude=True)
         mvol = mv(gas)
-        ret = pref * mvol * rho * Cstar * 1e-3  # *1e-3: cc/(1000 m3) -> cc/m3
+        ret = pref * mvol * rho * Cstar
     elif compat_unit == UEnum.GW_G_MOL:
         mmass = mm(gas)
         ret = pref * mmass * MMW * Cstar * 1e-3  # *1e-3: g/kmol -> g/mol
@@ -614,7 +614,7 @@ def calc_dCeq_dT(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, 
     elif compat_unit == UEnum.GW_CCSTP_M3_K:
         rho = calc_dens(T, S, magnitude=True)
         mvol = mv(gas)
-        ret = (dCeq_dT_molkgK * mvol * rho + pref * Cstar * mvol * drho_dT) * 1e-3 # *1e-3: cc/(1000 m3)/K -> cc/m3/K
+        ret = (dCeq_dT_molkgK * mvol * rho + pref * Cstar * mvol * drho_dT)
     elif compat_unit == UEnum.GW_G_MOL_K:
         mmass = mm(gas)
         ret = dCeq_dT_molkgK * mmass * MMW * 1e-3  # *1e-3: g/kmol/K -> g/mol/K
@@ -754,7 +754,7 @@ def calc_dCeq_dS(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, 
         rho = calc_dens(T, S, magnitude=True)
         drho_dS = calc_dens_Sderiv(T, S, magnitude=True)
         mvol = mv(gas)
-        ret = (dCeq_dS_molkgpm * mvol * rho + pref * Cstar * mvol * drho_dS) * 1e-3 # *1e-3: cc/(1000 m3)/permille -> cc/m3/permille
+        ret = (dCeq_dS_molkgpm * mvol * rho + pref * Cstar * mvol * drho_dS)
     elif compat_unit == UEnum.GW_CCSTP_MOL_PML:
         mvol = mv(gas)
         ret = dCeq_dS_molkgpm * MMW * mvol * 1e-3  # *1e-3: cc/kmol/permille -> cc/mol/permille
@@ -884,7 +884,7 @@ def calc_dCeq_dp(gas:str, T:float|Quantity, S:float|Quantity, p:float|Quantity, 
     elif compat_unit == UEnum.GW_CCSTP_M3_ATM:
         rho = calc_dens(T, S, magnitude=True)
         mvol = mv(gas)
-        ret = pref * Cstar * mvol * rho * 1e-3 # *1e-3: cc/(1000 m3)/permille -> cc/m3/permille
+        ret = pref * Cstar * mvol * rho
     elif compat_unit == UEnum.GW_G_MOL_ATM:
         mmass = mm(gas)
         ret = pref * Cstar * mmass * MMW * 1e-3  # *1e-3: g/kmol/atm -> g/mol/atm
