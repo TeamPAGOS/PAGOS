@@ -9,7 +9,6 @@ projects/
 launch.json
 __pycache__/
 pagos.egg-info/
-pyproject.toml
 .coverage
 # gh page
 site/

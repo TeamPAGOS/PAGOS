@@ -154,9 +154,7 @@ def wraptpint(  # signature copied from pint wraps() - but removed return units 
     strict: bool,
 ):
     """Alternative to pint wraps() functionality that preserves function signature.
-
-    :param default_ret_units: default units of value returned by function
-    :type default_ret_units: str | Unit | Iterable[str | Unit | None] | None
+    
     :param arg_units: units of input arguments to function
     :type arg_units: str | Unit | Iterable[str  |  Unit  |  None] | None
     :param strict: indicates that only `Quantity`s are to be accepted, defaults to True
