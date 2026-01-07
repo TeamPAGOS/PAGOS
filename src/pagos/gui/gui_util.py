@@ -1,10 +1,9 @@
-'''
+"""
 Some utilities to be used in GUI handling that I did not want to clutter up the maingui.py file.
-'''
+"""
 
 import re
-from qtpy.QtWidgets import QTableWidgetSelectionRange
-from magicgui.widgets import Table
+
 
 # NOTE I suck at regex and asked Perplexity to do this.. so there is a chance it is garbage. Proceed with caution
 # Simplify the text of built-in model code, to remove docstrings and type hints. This is used only once in gui_util
