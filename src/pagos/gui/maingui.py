@@ -27,6 +27,7 @@ custom_model_name_placeholder = "Custom..."
 custom_model_code_placeholder = "def custommodel(gas, ...):"
 
 
+# TODO: allow file importing for the models! (drag and drop also?)
 class Main:
     def __init__(self):
         # some background variables
@@ -59,8 +60,6 @@ class Main:
             self.left.modelfield.value = (
                 self.left.modelfield.value
             )  # <- refresh so that the mono font is applied
-            self.left.bgcodefield.native.setFontFamily("mono")
-            self.left.bgcodefield.value = self.left.bgcodefield.value
         except:  # noqa: E722
             print("WARNING: Could not set font of model field, keeping default.")
         self.left.modelfield.native.setTabStopDistance(35.0)
@@ -116,7 +115,6 @@ class Main:
         self.left.modelselect.visible = True
         self.left.modelfield.visible = True
         self.left.select_to_fit.visible = True
-        self.left.bgcodefield.visible = True
 
     # TODO I'm not sure that these the suppression bools below are the correct way to go about the behaviour I want
     # (resetting to custom_model_name_placeholder without changing the modelfield when the user makes a change), but
@@ -159,14 +157,33 @@ class Main:
         if self.current_selected_model == custom_model_name_placeholder:
             self.saved_custom_model_code = self.current_model_code
 
-        # translate typed code into code object
+        # get name of function using regex
+        funccode_regex = r"(def \b\w+\b\((.+|())\):((\n\t.+)+|.+))"  # matches the whole function definition and body "def <funcname>(...): ..."
+        funcname_regex = (
+            r"(?<=def\s)\w+(?=\()"  # matches only the function name "<funcname>"
+        )
+
         try:
-            self.comp_mod = compile(self.saved_custom_model_code, "<string>", "exec")
-        except SyntaxError as e:
-            self.left.errmsgs.value = e.msg
-            self.left.errmsgs.visible = True
-        # TODO how is the function going to be called? If I just do exec(self.comp_mod), it will define a function of ARBITRARY USER-DEFINED name!
-        # will the model function always have to have the same name? That would be easier than parsing out the name, surely?
+            funccode = re.findall(funccode_regex, self.saved_custom_model_code)[-1][
+                0
+            ]  # finds the LAST def statement
+            funcname = re.findall(
+                funcname_regex, funccode
+            )  # finds the corresponding function name
+
+            # translate typed code into code object
+            try:
+                self.comp_mod = compile(
+                    self.saved_custom_model_code, "<string>", "exec"
+                )
+            except SyntaxError as se:
+                self.left.errmsgs.value = (
+                    "Current input contains no valid function definition"
+                )
+                self.left.errmsgs.visible = True
+        except IndexError as ie:
+            pass
+            # TODO do something here? or is it fine just passing?
 
         # update fit-parameter selection list
 
@@ -437,7 +454,6 @@ class Main:
             "visible": False,
             "value": custom_model_code_placeholder,
         },
-        bgcodefield={"widget_type": "TextEdit", "visible": False, "value": ""},
     )
     def left_fac(
         self,
@@ -446,7 +462,6 @@ class Main:
         select_to_fit,
         errmsgs: str,
         modelfield: str,
-        bgcodefield: str,
     ):
         pass
 
