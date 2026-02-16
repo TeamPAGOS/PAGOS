@@ -158,13 +158,14 @@ class Main:
             self.saved_custom_model_code = self.current_model_code
 
         # get name of function using regex
-        funccode_regex = r"(def \b\w+\b\((.+|())\):((\n\t.+)+|.+))"  # matches the whole function definition and body "def <funcname>(...): ..."
+        funccode_regex = r"(def \b\w+\b\((.+|())\)(:| :)((\n\s.+)+|.+))"  # matches the whole function definition and body "def <funcname>(...): ..."
         funcname_regex = (
             r"(?<=def\s)\w+(?=\()"  # matches only the function name "<funcname>"
         )
 
+        # tries to compile the current code inside the modelfield into something runnable
         try:
-            funccode = re.findall(funccode_regex, self.saved_custom_model_code)[-1][
+            funccode = re.findall(funccode_regex, self.current_model_code)[-1][
                 0
             ]  # finds the LAST def statement
             funcname = re.findall(
@@ -173,19 +174,42 @@ class Main:
 
             # translate typed code into code object
             try:
-                self.comp_mod = compile(
-                    self.saved_custom_model_code, "<string>", "exec"
-                )
+                self.comp_mod = compile(self.current_model_code, "<string>", "exec")
+                self.left.errmsgs.visible = False
+                print("Model code changed. Successful compilation!")
             except SyntaxError as se:
                 self.left.errmsgs.value = (
-                    "Current input contains no valid function definition"
+                    "WARNING: Current input contains a syntax error."
                 )
                 self.left.errmsgs.visible = True
-        except IndexError as ie:
-            pass
-            # TODO do something here? or is it fine just passing?
+                print(
+                    "Model code changed. [!] UNSUCCESSFUL compilation. Error message below."
+                )
+                print(se)
+                # clear fit-parameter selection list
+                self.left.select_to_fit.choices = []
 
-        # update fit-parameter selection list
+            # update fit-parameter selection list
+            # extract all variables in the namespace of the compiled function
+            all_variables_in_model = self.comp_mod.co_consts[0]
+            # filter out only the variables that appeared in the function arguments
+            self.left.select_to_fit.choices = all_variables_in_model.co_varnames[
+                : all_variables_in_model.co_argcount
+            ]
+            # TODO this (above) feels quite hacky - because of how we have set up the def statement regex, there should only ever be one
+            # function defined inside the compiled code object and nothing else, and therefore co_consts[0] should always be this function.
+            # But is there a more robust way?
+        except IndexError as ie:
+            self.left.errmsgs.value = "Current input could not compile."
+            self.left.errmsgs.visible = True
+            print(
+                "Model code changed. [!] UNSUCCESSFUL compilation. Likely due to the code being incomplete. Error message below."
+            )
+            print(ie)
+            # clear fit-parameter selection list
+            self.left.select_to_fit.choices = []
+
+        # FIXME: typing certain things into the modelfield or deleting all the text will break the monospace font and return to default - why does this happen?!
 
     # select tracers or other parameters button callbacks
     def select_tr_or_op(self, mode):
