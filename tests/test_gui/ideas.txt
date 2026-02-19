@@ -1,0 +1,3 @@
+For testing GUI: use unittest.mock - this allows the gui functions to be tested without the burden of actually calling all of PAGOS's functions!
+
+For interaction with the GUI: qtbot (from pytest-qt) simulates clicks etc. 

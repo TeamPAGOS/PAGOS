@@ -11,11 +11,13 @@ from qtpy.QtWidgets import (
 )
 from inspect import isfunction, getmodule, getsource
 import pandas as pd
+import numpy as np
 import re
 
 # pagos imports
 import pagos.builtin_models as pagos_bms
 from pagos.gui.gui_util import remove_docstrings_and_type_hints
+from pagos import modelling as pmod
 
 # globals
 list_of_builtin_models = [
@@ -30,7 +32,7 @@ custom_model_code_placeholder = "def custommodel(gas, ...):"
 # TODO: allow file importing for the models! (drag and drop also?)
 class Main:
     def __init__(self):
-        # some background variables
+        # some variables that will be used later
         self.current_selected_model = custom_model_name_placeholder
         self.saved_custom_model_code = custom_model_code_placeholder
         self.current_model_code = ""
@@ -40,6 +42,8 @@ class Main:
         self.used_other_params = {}
         self.manual_errs = {}
         self.manual_units = {}
+        self.selected_to_fit = []
+        self.comp_mod = None
 
         # set up the left and right hand side of the main window
         self.left = self.left_fac()
@@ -71,10 +75,15 @@ class Main:
         for ch in self.right.manual_units.native.findChildren(QPushButton):
             ch.setVisible(False)
 
-        # callbacks
+        # setup callbacks left
         self.left.modelselect.changed.connect(self.model_selected)
-        # self.left.modelfield.changed.connect(self.code_changed) # TODO why does this not work? Current solution: use native, see below
+        # self.left.modelfield.changed.connect(self.code_changed) # TODO: why does this not work? Current solution: use native, see below
         self.left.modelfield.native.textChanged.connect(self.code_changed)
+        self.left.select_to_fit_button.clicked.connect(
+            self.select_to_fit_button_clicked
+        )
+        self.left.fit_button.clicked.connect(self.perform_fit)
+        # setup callbacks right
         self.right.select_tracers.clicked.connect(
             lambda: self.select_tr_or_op(mode=1)
         )  # TODO: can this cause memory leakage? see https://stackoverflow.com/questions/61871629/memory-profiler-while-using-lambda-expression-to-connect-slots
@@ -88,6 +97,8 @@ class Main:
         )
 
         self.maincontainer.show(run=True)
+
+    ### callbacks for the MENU BAR ###
 
     # file opening callback
     def openfile(self):
@@ -115,12 +126,14 @@ class Main:
         self.left.modelselect.visible = True
         self.left.modelfield.visible = True
         self.left.select_to_fit.visible = True
+        self.left.select_to_fit_button.visible = True
 
-    # TODO I'm not sure that these the suppression bools below are the correct way to go about the behaviour I want
-    # (resetting to custom_model_name_placeholder without changing the modelfield when the user makes a change), but
-    # can't figure out a better way for now.
+    ### callbacks for LEFT hand side ###
 
     # model selection callback
+    # TODO: I'm not sure that these the suppression bools below are the correct way to go about the behaviour I want
+    # (resetting to custom_model_name_placeholder without changing the modelfield when the user makes a change), but
+    # can't figure out a better way for now.
     def model_selected(self, modelname):
         # change the internal current_selected_model (unless suppressed)
         if not self.suppress_selected_model_change:
@@ -168,7 +181,7 @@ class Main:
             funccode = re.findall(funccode_regex, self.current_model_code)[-1][
                 0
             ]  # finds the LAST def statement
-            funcname = re.findall(
+            self.funcname = re.findall(
                 funcname_regex, funccode
             )  # finds the corresponding function name
 
@@ -189,16 +202,7 @@ class Main:
                 # clear fit-parameter selection list
                 self.left.select_to_fit.choices = []
 
-            # update fit-parameter selection list
-            # extract all variables in the namespace of the compiled function
-            all_variables_in_model = self.comp_mod.co_consts[0]
-            # filter out only the variables that appeared in the function arguments
-            self.left.select_to_fit.choices = all_variables_in_model.co_varnames[
-                : all_variables_in_model.co_argcount
-            ]
-            # TODO this (above) feels quite hacky - because of how we have set up the def statement regex, there should only ever be one
-            # function defined inside the compiled code object and nothing else, and therefore co_consts[0] should always be this function.
-            # But is there a more robust way?
+            self.update_fit_param_selection_list()
         except IndexError as ie:
             self.left.errmsgs.value = "Current input could not compile."
             self.left.errmsgs.visible = True
@@ -211,7 +215,88 @@ class Main:
 
         # FIXME: typing certain things into the modelfield or deleting all the text will break the monospace font and return to default - why does this happen?!
 
-    # select tracers or other parameters button callbacks
+    def update_fit_param_selection_list(self):
+        # update fit-parameter selection list
+        if self.comp_mod:  # checks if any valid compiled model code exists
+            # extract all variables in the namespace of the compiled function
+            all_variables_in_model = self.comp_mod.co_consts[0]
+            # filter for only the variables that appeared in the function arguments
+            all_arguments_in_model = all_variables_in_model.co_varnames[
+                : all_variables_in_model.co_argcount
+            ]
+            # TODO: this (above two lines) feels quite hacky - because of how we have set up the def statement regex, there should only ever be one
+            # function defined inside the compiled code object and nothing else, and therefore co_consts[0] should always be this function.
+            # But is there a more robust way?
+
+            # filter out the arguments which the user has selected to read in from data (the so-called "other params")
+            args_without_non_fitted_params = list(
+                set(all_arguments_in_model)
+                - set(self.used_other_params.keys())
+                - set(["gas"])
+            )
+            self.left.select_to_fit.choices = args_without_non_fitted_params
+        else:
+            self.left.select_to_fit.choices = []
+
+    # select parameters for fitting button callback
+    def select_to_fit_button_clicked(self):
+        self.selected_to_fit = self.left.select_to_fit.value
+        if self.selected_to_fit:
+            self.left.fit_button.visible = True
+            self.left.fit_button.text = "Perform fit on " + re.sub(
+                r"[^\w\,\s]", "", str(self.selected_to_fit)
+            )
+        # hide if nothing is selected
+        else:
+            self.left.fit_button.visible = False
+
+    # perform fit button callback
+    def perform_fit(self):
+        ## parsing of manually input units/errors
+        # extract values from manual errors widget and place them in the self.manual_errs dictionary at the corresponding place
+        for entry in self.right.manual_errs._list[:-1]:
+            label = entry.label
+            self.manual_errs[label.split(" ", 1)[1]] = entry.value
+            # split to remove 'err' from string
+        for entry in self.right.manual_units._list[:-1]:
+            label = entry.label
+            self.manual_units[label.split(" ", 1)[1]] = entry.value
+            # split to remove 'unit' from string
+
+        ## creation of final objects passed to the fit
+        # DataFrame of the tracer/known parameter data
+        _temp_union = self.used_tracers | self.used_other_params
+        _temp_data_values = {x: _temp_union[x]["data"] for x in _temp_union}
+        _temp_data_units = {x: 0 for x in _temp_union}  # <- 0 placeholder for empty
+        _temp_data_errors = {x: 0 for x in _temp_union}  # <- 0 placeholder for empty
+
+        for x in _temp_union:
+            _entry = _temp_union[x]
+            if isinstance(e := _entry["errs"], pd.Series):
+                _temp_data_errors[x] = e
+            elif e == "man":
+                _temp_data_errors[x] = self.manual_errs[x]
+            else:
+                raise NotImplementedError(
+                    "the required object is neither the string 'man' nor a Pandas Series. This should not have happened, report back to maintainer!"
+                )
+            if isinstance(u := _entry["units"], pd.Series):
+                _temp_data_units[x] = u
+            elif u == "man":
+                # parse manual unit entry
+                _temp_data_units[x] = self.manual_units[x]
+            else:
+                raise NotImplementedError(
+                    "the required object is neither the string 'man' nor a Pandas Series. This should not have happened, report back to maintainer!"
+                )
+
+        ## passing the collected arguments into PAGOS
+        # gem = pmod.GasExchangeModel(..., ["" for p in self.selected_to_fit], )
+        gem_text = "gem = pmod.GasExchangeModel(%s, )" % self.funcname
+
+    ### callbacks for RIGHT hand side ###
+
+    # select tracers or other parameters button callback
     def select_tr_or_op(self, mode):
         # get user-selected ranges from the table
         selected_ranges = self.right.datatable.native.selectedRanges()
@@ -374,6 +459,8 @@ class Main:
                     for q in self.used_other_params
                     if isman(self.used_other_params[q]["units"])
                 ]
+                self.manual_errs = {k: "" for k in manual_errs}
+                self.manual_units = {k: "" for k in manual_units}
 
                 self.right.manual_errs.value = ["" for entry in manual_errs]
                 self.right.manual_units.value = ["" for entry in manual_units]
@@ -419,6 +506,9 @@ class Main:
                     )
                 )
 
+                # set fit parameter selection widget
+                self.update_fit_param_selection_list()
+
             if n_err_widgs == 0 and n_unit_widgs == 0:
                 finished_select_tracers()
             else:
@@ -440,7 +530,7 @@ class Main:
                     widgets=eu_dialog_widgets, labels=False, scrollable=True
                 )
                 eu_dialog.native.setModal(True)
-                # FIXME CANNOT GET RESIZING TO WORK!!
+                # FIXME: CANNOT GET RESIZING TO WORK!!
                 if eu_dialog.height > 600:
                     eu_dialog.native.resize(eu_dialog.width, 600)
                 eu_dialog.show()
@@ -472,11 +562,23 @@ class Main:
             "visible": False,
         },
         select_to_fit={"widget_type": "Select", "visible": False},
+        select_to_fit_button={
+            "widget_type": "PushButton",
+            "value": False,
+            "text": "Mark selected parameters for fitting",
+            "visible": False,
+        },
         errmsgs={"widget_type": "Label", "value": "ERROR", "visible": False},
         modelfield={
             "widget_type": "TextEdit",
             "visible": False,
             "value": custom_model_code_placeholder,
+        },
+        fit_button={
+            "widget_type": "PushButton",
+            "value": False,
+            "text": "Perform fit",
+            "visible": False,
         },
     )
     def left_fac(
@@ -484,8 +586,10 @@ class Main:
         filename: str,
         modelselect: list,
         select_to_fit,
+        select_to_fit_button: bool,
         errmsgs: str,
         modelfield: str,
+        fit_button: bool,
     ):
         pass
 
@@ -535,6 +639,9 @@ class Main:
         datatable: float,
     ):
         pass
+
+
+# TODO: a lot of stuff in this is hidden until the user inputs correct data or presses a button etc. Is it possible instead to have things simply "greyed out"?
 
 
 Main()
