@@ -3,9 +3,13 @@ Some utilities to be used in GUI handling that I did not want to clutter up the 
 """
 
 import re
+from pandas import Series
 
 
-# NOTE I suck at regex and asked Perplexity to do this.. so there is a chance it is garbage. Proceed with caution
+# NOTE This was made before I really looked into regex, and I had asked Perplexity to do this.. so there is a chance
+# it is garbage. Lord forgive me for I have sinned. Proceed with caution!
+
+
 # Simplify the text of built-in model code, to remove docstrings and type hints. This is used only once in gui_util
 def remove_docstrings_and_type_hints(code):
     # Split string into lines

@@ -43,7 +43,9 @@ class Main:
         self.manual_errs = {}
         self.manual_units = {}
         self.selected_to_fit = []
+        self.fit_param_units = {}
         self.comp_mod = None
+        self.all_model_args_except_gas = []
 
         # set up the left and right hand side of the main window
         self.left = self.left_fac()
@@ -73,6 +75,8 @@ class Main:
         for ch in self.right.manual_errs.native.findChildren(QPushButton):
             ch.setVisible(False)
         for ch in self.right.manual_units.native.findChildren(QPushButton):
+            ch.setVisible(False)
+        for ch in self.left.fitparam_unit_input.native.findChildren(QPushButton):
             ch.setVisible(False)
 
         # setup callbacks left
@@ -216,6 +220,8 @@ class Main:
         # FIXME: typing certain things into the modelfield or deleting all the text will break the monospace font and return to default - why does this happen?!
 
     def update_fit_param_selection_list(self):
+        self.left.fitparam_unit_input.visible = False
+        self.left.select_to_fit.value = []
         # update fit-parameter selection list
         if self.comp_mod:  # checks if any valid compiled model code exists
             # extract all variables in the namespace of the compiled function
@@ -227,6 +233,11 @@ class Main:
             # TODO: this (above two lines) feels quite hacky - because of how we have set up the def statement regex, there should only ever be one
             # function defined inside the compiled code object and nothing else, and therefore co_consts[0] should always be this function.
             # But is there a more robust way?
+
+            # array that needs to be accessed later in perform_fit()
+            self.all_model_args_except_gas = list(
+                set(all_arguments_in_model) - set(["gas"])
+            )
 
             # filter out the arguments which the user has selected to read in from data (the so-called "other params")
             args_without_non_fitted_params = list(
@@ -246,9 +257,23 @@ class Main:
             self.left.fit_button.text = "Perform fit on " + re.sub(
                 r"[^\w\,\s]", "", str(self.selected_to_fit)
             )
-        # hide if nothing is selected
+
+            # show fit parameter unit input widget
+            self.left.fitparam_unit_input.visible = True
+            self.left.fitparam_unit_input.value = ["" for entry in self.selected_to_fit]
+            # hide editing buttons - user should not add or remove anything via this mechanism
+            for ch in self.left.fitparam_unit_input.native.findChildren(QPushButton):
+                ch.setVisible(False)
+            # add labels (not possible in magicgui ListEdit constructor)
+            for entry, val in zip(
+                self.left.fitparam_unit_input[:-1], self.selected_to_fit
+            ):
+                entry.label = val
+
+        # hide widgets if nothing is selected
         else:
             self.left.fit_button.visible = False
+            self.left.fitparam_unit_input.visible = False
 
     # perform fit button callback
     def perform_fit(self):
@@ -263,35 +288,82 @@ class Main:
             self.manual_units[label.split(" ", 1)[1]] = entry.value
             # split to remove 'unit' from string
 
-        ## creation of final objects passed to the fit
-        # DataFrame of the tracer/known parameter data
-        _temp_union = self.used_tracers | self.used_other_params
-        _temp_data_values = {x: _temp_union[x]["data"] for x in _temp_union}
-        _temp_data_units = {x: 0 for x in _temp_union}  # <- 0 placeholder for empty
-        _temp_data_errors = {x: 0 for x in _temp_union}  # <- 0 placeholder for empty
+        # extract values from units on the fit parameters (necessarily user-defined)
+        for entry in self.left.fitparam_unit_input._list[:-1]:
+            label = entry.label
+            self.fit_param_units[label] = entry.value
 
-        for x in _temp_union:
-            _entry = _temp_union[x]
-            if isinstance(e := _entry["errs"], pd.Series):
-                _temp_data_errors[x] = e
-            elif e == "man":
-                _temp_data_errors[x] = self.manual_errs[x]
-            else:
-                raise NotImplementedError(
-                    "the required object is neither the string 'man' nor a Pandas Series. This should not have happened, report back to maintainer!"
-                )
-            if isinstance(u := _entry["units"], pd.Series):
-                _temp_data_units[x] = u
-            elif u == "man":
-                # parse manual unit entry
-                _temp_data_units[x] = self.manual_units[x]
-            else:
-                raise NotImplementedError(
-                    "the required object is neither the string 'man' nor a Pandas Series. This should not have happened, report back to maintainer!"
-                )
+        ## creation of final objects passed to the fit
+        # DataFrames of the tracer/other parameter data values/errors/units
+        _temp_union = self.used_tracers | self.used_other_params
+        _temp_tracer_data_values = {
+            x: self.used_tracers[x]["data"] for x in self.used_tracers
+        }
+        _temp_tracer_data_units = {
+            "units " + x: 0 for x in self.used_tracers
+        }  # <- 0 placeholder for empty
+        _temp_tracer_data_errors = {
+            "errs " + x: 0 for x in self.used_tracers
+        }  # <- 0 placeholder for empty
+        _temp_op_data_values = {
+            x: self.used_other_params[x]["data"] for x in self.used_other_params
+        }
+        _temp_op_data_errors = {
+            "errs " + x: 0 for x in self.used_other_params
+        }  # <- 0 placeholder for empty
+        _temp_op_data_units = {
+            "units " + x: 0 for x in self.used_other_params
+        }  # <- 0 placeholder for empty
+
+        # "Assign B-Values of A into C or Use D If Manual"
+        def abvacudim(A, B, C, D):
+            _c = C.copy()
+            for x in A:
+                _entry = A[x]
+                if isinstance(e := _entry[B], pd.Series):
+                    _c[B + " " + x] = e
+                elif e == "man":
+                    _c[B + " " + x] = D[x]
+                else:
+                    raise NotImplementedError(
+                        "the required object is neither the string 'man' nor a Pandas Series. This should not have happened, report back to maintainer!"
+                    )
+            return _c
+
+        _temp_tracer_data_errors = abvacudim(
+            self.used_tracers, "errs", _temp_tracer_data_errors, self.manual_errs
+        )
+        _temp_tracer_data_units = abvacudim(
+            self.used_tracers, "units", _temp_tracer_data_units, self.manual_units
+        )
+        _temp_op_data_errors = abvacudim(
+            self.used_other_params, "errs", _temp_op_data_errors, self.manual_errs
+        )
+        _temp_op_data_units = abvacudim(
+            self.used_other_params, "units", _temp_op_data_units, self.manual_units
+        )
+
+        df_to_pass_in = pd.DataFrame(
+            _temp_tracer_data_values | _temp_tracer_data_errors | _temp_op_data_values
+        )
 
         ## passing the collected arguments into PAGOS
-        # gem = pmod.GasExchangeModel(..., ["" for p in self.selected_to_fit], )
+        # TODO NEXT: check if this works in the debugger and then write it as an string that can be run with exec()
+        # THEN TODO: add a way for the user to input in initial guesses
+        gem = pmod.GasExchangeModel(
+            ...,
+            [
+                (_temp_op_data_units | self.fit_param_units)[x]
+                for x in self.all_model_args_except_gas
+            ],
+            _temp_tracer_data_units[self.used_tracers[0]],
+        )
+        gem.fit(
+            data=df_to_pass_in,
+            to_fit=self.selected_to_fit,
+            init_guess=np.zeros(len(self.selected_to_fit)),
+            tracers_used=self.used_tracers,
+        )
         gem_text = "gem = pmod.GasExchangeModel(%s, )" % self.funcname
 
     ### callbacks for RIGHT hand side ###
@@ -322,7 +394,7 @@ class Main:
             tracer for tracer in selected_tracers if re.search(unitpattern, tracer)
         )
         if which_errors.intersection(which_units):
-            # proper code to handle this should go here, with warning box rather than CLI output
+            # TODO: proper code to handle this should go here, with warning box rather than CLI output
             print(
                 "CONFLICT: PAGOS could not parse which columns contain error data and which contain unit data!"
             )
@@ -568,6 +640,13 @@ class Main:
             "text": "Mark selected parameters for fitting",
             "visible": False,
         },
+        fitparam_unit_input={
+            "widget_type": "ListEdit",
+            "value": [],
+            "labels": True,
+            "visible": False,
+            "label": "Input units on fit parameters:",
+        },
         errmsgs={"widget_type": "Label", "value": "ERROR", "visible": False},
         modelfield={
             "widget_type": "TextEdit",
@@ -587,6 +666,7 @@ class Main:
         modelselect: list,
         select_to_fit,
         select_to_fit_button: bool,
+        fitparam_unit_input: list[str],
         errmsgs: str,
         modelfield: str,
         fit_button: bool,
