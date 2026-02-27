@@ -39,3 +39,9 @@ def remove_docstrings_and_type_hints(code):
 
     # Join back into a single string
     return "\n".join(l for l in cleaned if l.strip())
+
+
+# shorthand complement function (same as a - b where and b are sets, except this preserves order and a and b are lists/tuples)
+def ordc(a: tuple | list, b: tuple | list) -> list:
+    ord_dict = dict.fromkeys(x for x in a if x not in b)
+    return list(ord_dict.keys())

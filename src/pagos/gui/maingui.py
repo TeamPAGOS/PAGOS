@@ -13,10 +13,11 @@ from inspect import isfunction, getmodule, getsource
 import pandas as pd
 import numpy as np
 import re
+from inspect import signature
 
 # pagos imports
 import pagos.builtin_models as pagos_bms
-from pagos.gui.gui_util import remove_docstrings_and_type_hints
+from pagos.gui.gui_util import remove_docstrings_and_type_hints, ordc
 from pagos import modelling as pmod
 
 # globals
@@ -27,6 +28,7 @@ list_of_builtin_models = [
 ]
 custom_model_name_placeholder = "Custom..."
 custom_model_code_placeholder = "def custommodel(gas, ...):"
+default_setup_field_code = "from pagos.gas import abn, ice, calc_Ceq, calc_dCeq_dT, calc_Sc, mv\nfrom pagos.water import calc_kinvisc"
 
 
 # TODO: allow file importing for the models! (drag and drop also?)
@@ -36,6 +38,7 @@ class Main:
         self.current_selected_model = custom_model_name_placeholder
         self.saved_custom_model_code = custom_model_code_placeholder
         self.current_model_code = ""
+        self.current_setup_code = default_setup_field_code
         self.suppress_codefield_change = False
         self.suppress_selected_model_change = False
         self.used_tracers = {}
@@ -81,6 +84,7 @@ class Main:
 
         # setup callbacks left
         self.left.modelselect.changed.connect(self.model_selected)
+        self.left.setupfield.native.textChanged.connect(self.setup_changed)
         # self.left.modelfield.changed.connect(self.code_changed) # TODO: why does this not work? Current solution: use native, see below
         self.left.modelfield.native.textChanged.connect(self.code_changed)
         self.left.select_to_fit_button.clicked.connect(
@@ -128,6 +132,7 @@ class Main:
         # alter the view of the left hand side
         self.left.filename.value = self.filename
         self.left.modelselect.visible = True
+        self.left.setupfield.visible = True
         self.left.modelfield.visible = True
         self.left.select_to_fit.visible = True
         self.left.select_to_fit_button.visible = True
@@ -158,6 +163,11 @@ class Main:
         # non-suppress the change current_selected_model
         self.suppress_selected_model_change = False
 
+    def setup_changed(self):
+        pass
+
+    # TODO: eventually remove the above?
+
     # code changed callback
     def code_changed(self):
         if (
@@ -168,7 +178,11 @@ class Main:
             self.left.modelselect.value = custom_model_name_placeholder
             self.suppress_codefield_change = False
 
-        self.current_model_code = self.left.modelfield.value
+        # combines the setupfield and modelfield into one code object
+        # if we do not do this, then the global variables defined in the setupfield will not be properly imported for the model function
+        self.current_model_code = (
+            self.left.setupfield.value + "\n" + self.left.modelfield.value
+        )
 
         # save the current code inside the modelfield if the model selected is custom, so that the user can return to it later
         if self.current_selected_model == custom_model_name_placeholder:
@@ -185,24 +199,24 @@ class Main:
             funccode = re.findall(funccode_regex, self.current_model_code)[-1][
                 0
             ]  # finds the LAST def statement
-            self.funcname = re.findall(
-                funcname_regex, funccode
-            )  # finds the corresponding function name
+            self.funcname = re.findall(funcname_regex, funccode)[
+                0
+            ]  # finds the corresponding function name
 
             # translate typed code into code object
             try:
                 self.comp_mod = compile(self.current_model_code, "<string>", "exec")
                 self.left.errmsgs.visible = False
                 print("Model code changed. Successful compilation!")
-            except SyntaxError as se:
+            except (SyntaxError, ModuleNotFoundError) as je:
                 self.left.errmsgs.value = (
-                    "WARNING: Current input contains a syntax error."
+                    "WARNING: Current input contains a %s." % je.__name__
                 )
                 self.left.errmsgs.visible = True
                 print(
                     "Model code changed. [!] UNSUCCESSFUL compilation. Error message below."
                 )
-                print(se)
+                print(je)
                 # clear fit-parameter selection list
                 self.left.select_to_fit.choices = []
 
@@ -224,26 +238,19 @@ class Main:
         self.left.select_to_fit.value = []
         # update fit-parameter selection list
         if self.comp_mod:  # checks if any valid compiled model code exists
-            # extract all variables in the namespace of the compiled function
-            all_variables_in_model = self.comp_mod.co_consts[0]
-            # filter for only the variables that appeared in the function arguments
-            all_arguments_in_model = all_variables_in_model.co_varnames[
-                : all_variables_in_model.co_argcount
-            ]
-            # TODO: this (above two lines) feels quite hacky - because of how we have set up the def statement regex, there should only ever be one
-            # function defined inside the compiled code object and nothing else, and therefore co_consts[0] should always be this function.
-            # But is there a more robust way?
-
-            # array that needs to be accessed later in perform_fit()
-            self.all_model_args_except_gas = list(
-                set(all_arguments_in_model) - set(["gas"])
+            # extract argument names of the compiled function
+            _locals, _globals = {}, {}
+            exec(self.comp_mod, _globals, _locals)
+            all_arguments_in_model = list(
+                signature(_locals[self.funcname]).parameters.keys()
             )
 
+            # array that needs to be accessed later in perform_fit()
+            self.all_model_args_except_gas = ordc(all_arguments_in_model, ["gas"])
+
             # filter out the arguments which the user has selected to read in from data (the so-called "other params")
-            args_without_non_fitted_params = list(
-                set(all_arguments_in_model)
-                - set(self.used_other_params.keys())
-                - set(["gas"])
+            args_without_non_fitted_params = ordc(
+                self.all_model_args_except_gas, list(self.used_other_params.keys())
             )
             self.left.select_to_fit.choices = args_without_non_fitted_params
         else:
@@ -309,62 +316,69 @@ class Main:
             x: self.used_other_params[x]["data"] for x in self.used_other_params
         }
         _temp_op_data_errors = {
-            "errs " + x: 0 for x in self.used_other_params
-        }  # <- 0 placeholder for empty
-        _temp_op_data_units = {
             "units " + x: 0 for x in self.used_other_params
         }  # <- 0 placeholder for empty
+        _temp_op_data_units = {
+            "errs " + x: 0 for x in self.used_other_params
+        }  # <- 0 placeholder for empty
 
-        # "Assign B-Values of A into C or Use D If Manual"
-        def abvacudim(A, B, C, D):
-            _c = C.copy()
+        # "Assign B-Values of A or use C If Manual"
+        # This function is only used here, within perform_fit()
+        def abvacim(A, B, C, add_prefix=True):
+            _r = {}
+            if add_prefix:
+                pref = B + " "
+            else:
+                pref = ""
             for x in A:
                 _entry = A[x]
                 if isinstance(e := _entry[B], pd.Series):
-                    _c[B + " " + x] = e
+                    _r[pref + x] = e[0]
                 elif e == "man":
-                    _c[B + " " + x] = D[x]
+                    _r[pref + x] = C[x]
                 else:
                     raise NotImplementedError(
                         "the required object is neither the string 'man' nor a Pandas Series. This should not have happened, report back to maintainer!"
                     )
-            return _c
+            return _r
 
-        _temp_tracer_data_errors = abvacudim(
-            self.used_tracers, "errs", _temp_tracer_data_errors, self.manual_errs
+        _temp_tracer_data_errors = abvacim(self.used_tracers, "errs", self.manual_errs)
+        _temp_tracer_data_units = abvacim(self.used_tracers, "units", self.manual_units)
+        _temp_op_data_errors = abvacim(self.used_other_params, "errs", self.manual_errs)
+        _temp_op_data_units = abvacim(
+            self.used_other_params, "units", self.manual_units
         )
-        _temp_tracer_data_units = abvacudim(
-            self.used_tracers, "units", _temp_tracer_data_units, self.manual_units
-        )
-        _temp_op_data_errors = abvacudim(
-            self.used_other_params, "errs", _temp_op_data_errors, self.manual_errs
-        )
-        _temp_op_data_units = abvacudim(
-            self.used_other_params, "units", _temp_op_data_units, self.manual_units
-        )
+
+        _temp_default_param_units = [
+            (
+                abvacim(self.used_other_params, "units", self.manual_units, False)
+                | self.fit_param_units
+            )[x]
+            for x in self.all_model_args_except_gas
+        ]
 
         df_to_pass_in = pd.DataFrame(
             _temp_tracer_data_values | _temp_tracer_data_errors | _temp_op_data_values
         )
 
         ## passing the collected arguments into PAGOS
-        # TODO NEXT: check if this works in the debugger and then write it as an string that can be run with exec()
-        # THEN TODO: add a way for the user to input in initial guesses
-        gem = pmod.GasExchangeModel(
-            ...,
-            [
-                (_temp_op_data_units | self.fit_param_units)[x]
-                for x in self.all_model_args_except_gas
-            ],
-            _temp_tracer_data_units[self.used_tracers[0]],
+        # TODO: add a way for the user to input in initial guesses
+        create_model_string = (
+            "\ngem = pmod.GasExchangeModel(%s, _temp_default_param_units, _temp_tracer_data_units['units ' + list(self.used_tracers.keys())[0]])"
+            % self.funcname
         )
-        gem.fit(
-            data=df_to_pass_in,
-            to_fit=self.selected_to_fit,
-            init_guess=np.zeros(len(self.selected_to_fit)),
-            tracers_used=self.used_tracers,
+        fit_model_string = "\nfitresults = gem.fit(data=df_to_pass_in, to_fit=self.selected_to_fit, init_guess=np.zeros(len(self.selected_to_fit)), tracers_used=list(self.used_tracers.keys()))"
+        global_namespace = globals()
+        local_namespace = locals()
+        # combine setup/function definition, GasExchangeModel object creation and fitting procedure all into one executable code object
+        code_to_execute = (
+            self.current_model_code + create_model_string + fit_model_string
         )
-        gem_text = "gem = pmod.GasExchangeModel(%s, )" % self.funcname
+        # execute!
+        exec(
+            code_to_execute, global_namespace, local_namespace
+        )  # FIXME this throws an error that 'mv' is not defined. I don't understand this, as 'mv' is imported in the setupfield and executed alongside the model code... what's going on??
+        print(local_namespace["fitresults"])
 
     ### callbacks for RIGHT hand side ###
 
@@ -648,6 +662,11 @@ class Main:
             "label": "Input units on fit parameters:",
         },
         errmsgs={"widget_type": "Label", "value": "ERROR", "visible": False},
+        setupfield={
+            "widget_type": "TextEdit",
+            "visible": False,
+            "value": default_setup_field_code,
+        },
         modelfield={
             "widget_type": "TextEdit",
             "visible": False,
@@ -668,6 +687,7 @@ class Main:
         select_to_fit_button: bool,
         fitparam_unit_input: list[str],
         errmsgs: str,
+        setupfield: str,
         modelfield: str,
         fit_button: bool,
     ):
@@ -721,7 +741,7 @@ class Main:
         pass
 
 
-# TODO: a lot of stuff in this is hidden until the user inputs correct data or presses a button etc. Is it possible instead to have things simply "greyed out"?
+# TODO: a lot of stuff in this is hidden until the user inputs correct data or presses a button etc. Is it possible instead to have things simply "greyed out"? # SUGGESTION ("enabled" parameter)
 
 
 Main()
