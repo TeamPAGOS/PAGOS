@@ -92,12 +92,10 @@ class Main:
         )
         self.left.fit_button.clicked.connect(self.perform_fit)
         # setup callbacks right
-        self.right.select_tracers.clicked.connect(
-            lambda: self.select_tr_or_op(mode=1)
-        )  # TODO: can this cause memory leakage? see https://stackoverflow.com/questions/61871629/memory-profiler-while-using-lambda-expression-to-connect-slots
+        self.right.select_tracers.clicked.connect(lambda: self.select_tr_or_op(mode=1))
         self.right.select_other_params.clicked.connect(
             lambda: self.select_tr_or_op(mode=2)
-        )  # TODO: see above
+        )
 
         # menu
         self.maincontainer.create_menu_item(
@@ -140,9 +138,6 @@ class Main:
     ### callbacks for LEFT hand side ###
 
     # model selection callback
-    # TODO: I'm not sure that these the suppression bools below are the correct way to go about the behaviour I want
-    # (resetting to custom_model_name_placeholder without changing the modelfield when the user makes a change), but
-    # can't figure out a better way for now.
     def model_selected(self, modelname):
         # change the internal current_selected_model (unless suppressed)
         if not self.suppress_selected_model_change:
