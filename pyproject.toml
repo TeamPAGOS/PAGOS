@@ -7,17 +7,18 @@ name = "pagos"
 version = "0.5.5dev2"
 dependencies = [
   "lmfit>=1.2.2",
+  "magicgui>=0.10.1",
   "matplotlib>=3.8.2",
   "numpy>=1.26.2",
   "pandas>=2.2.0",
   "Pint>=0.24.4",
+  "pyside6>=6.10.2",
+  "qtpy>=2.4.3",
   "tqdm>=4.66.2",
   "uncertainties>=3.1.7",
   "wrapt>=1.16.0",
 ]
-authors = [
-  { name = "Stanley Scott", email = "sscott@iup.uni-heidelberg.de" },
-]
+authors = [{ name = "Stanley Scott", email = "sscott@iup.uni-heidelberg.de" }]
 description = "Python Analysis of Groundwater and Ocean Samples"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -32,6 +33,9 @@ docs = ["mkdocs", "mkdocs-material", "mike"]
 
 [project.urls]
 Homepage = "https://github.com/TeamPAGOS/PAGOS"
+
+[project.scripts]
+pagos = "pagos.gui.maingui:main"
 
 [tools.setuptools]
 packages = ["src"]
