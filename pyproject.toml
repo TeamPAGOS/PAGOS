@@ -39,3 +39,6 @@ pagos = "pagos.gui.maingui:main"
 
 [tools.setuptools]
 packages = ["src"]
+
+[tool.ruff]
+exclude = ["pagos.builtin_models.py"]

@@ -18,7 +18,7 @@ from inspect import signature
 # pagos imports
 import pagos.builtin_models as pagos_bms
 from pagos.gui.gui_util import remove_docstrings_and_type_hints, ordc
-from pagos import modelling as pmod
+from pagos import GasExchangeModel
 
 # globals
 list_of_builtin_models = [
@@ -159,9 +159,7 @@ class Main:
         self.suppress_selected_model_change = False
 
     def setup_changed(self):
-        pass
-
-    # TODO: eventually remove the above?
+        self.current_setup_code = self.left.setupfield.value
 
     # code changed callback
     def code_changed(self):
@@ -173,11 +171,7 @@ class Main:
             self.left.modelselect.value = custom_model_name_placeholder
             self.suppress_codefield_change = False
 
-        # combines the setupfield and modelfield into one code object
-        # if we do not do this, then the global variables defined in the setupfield will not be properly imported for the model function
-        self.current_model_code = (
-            self.left.setupfield.value + "\n" + self.left.modelfield.value
-        )
+        self.current_model_code = self.left.modelfield.value
 
         # save the current code inside the modelfield if the model selected is custom, so that the user can return to it later
         if self.current_selected_model == custom_model_name_placeholder:
@@ -359,21 +353,35 @@ class Main:
         ## passing the collected arguments into PAGOS
         # TODO: add a way for the user to input in initial guesses
         create_model_string = (
-            "\ngem = pmod.GasExchangeModel(%s, _temp_default_param_units, _temp_tracer_data_units['units ' + list(self.used_tracers.keys())[0]])"
+            "\ngem = GasExchangeModel(%s, _temp_default_param_units, _temp_tracer_data_units['units ' + list(self.used_tracers.keys())[0]])"
             % self.funcname
         )
         fit_model_string = "\nfitresults = gem.fit(data=df_to_pass_in, to_fit=self.selected_to_fit, init_guess=np.zeros(len(self.selected_to_fit)), tracers_used=list(self.used_tracers.keys()))"
-        global_namespace = globals()
-        local_namespace = locals()
-        # combine setup/function definition, GasExchangeModel object creation and fitting procedure all into one executable code object
+        # deal with the setup code
+        setup_namespace = {}
+        try:
+            exec(self.current_setup_code, globals(), setup_namespace)
+        except Exception as e:
+            print(f"Failed to execute setup code: {e}")
+            return
+        # combine function definition, GasExchangeModel object creation and fitting procedure all into one executable code object,
+        # taking into account the relevant locals and globals
+        exec_globals = setup_namespace.copy()
+        exec_locals = {
+            "df_to_pass_in": df_to_pass_in,
+            "self": self,
+            "np": np,
+            "pd": pd,
+            "_temp_default_param_units": _temp_default_param_units,
+            "_temp_tracer_data_units": _temp_tracer_data_units,
+            "GasExchangeModel": GasExchangeModel,
+        }
         code_to_execute = (
             self.current_model_code + create_model_string + fit_model_string
         )
         # execute!
-        exec(
-            code_to_execute, global_namespace, local_namespace
-        )  # FIXME this throws an error that 'mv' is not defined. I don't understand this, as 'mv' is imported in the setupfield and executed alongside the model code... what's going on??
-        print(local_namespace["fitresults"])
+        exec(code_to_execute, exec_globals, exec_locals)
+        print(exec_locals["fitresults"])
 
     ### callbacks for RIGHT hand side ###
 
