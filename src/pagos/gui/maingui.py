@@ -4,21 +4,26 @@ from magicgui.widgets import (
     Dialog,
     Label,
 )
-from magicgui.application import use_app
-from qtpy.QtWidgets import (
-    QAbstractItemView,
-    QPushButton,
-)
+from magicgui.application import use_app, _use_app
+from qtpy.QtWidgets import QAbstractItemView, QPushButton, QAction, QMenu, QMenuBar
+from qtpy.QtGui import QFont, QSyntaxHighlighter
 from inspect import isfunction, getmodule, getsource
 import pandas as pd
 import numpy as np
 import re
 from inspect import signature
+import pickle as pkl
 
 # pagos imports
 import pagos.builtin_models as pagos_bms
-from pagos.gui.gui_util import remove_docstrings_and_type_hints, ordc
+from pagos.gui.gui_util import (
+    remove_docstrings_and_type_hints,
+    ordc,
+    make_sure_export_path_valid,
+)
+from pagos.gui.gui_syntax import PythonHighlighter
 from pagos import GasExchangeModel
+from pagos.core import snv, ssd, sgu
 
 # globals
 list_of_builtin_models = [
@@ -35,11 +40,13 @@ default_setup_field_code = "from pagos.gas import abn, ice, calc_Ceq, calc_dCeq_
 class Main:
     def __init__(self):
         # some variables that will be used later
+        self.filename = None
         self.current_selected_model = custom_model_name_placeholder
         self.saved_custom_model_code = custom_model_code_placeholder
         self.current_model_code = ""
         self.current_setup_code = default_setup_field_code
         self.suppress_codefield_change = False
+        self.suppress_setupfield_change = False
         self.suppress_selected_model_change = False
         self.used_tracers = {}
         self.used_other_params = {}
@@ -62,16 +69,8 @@ class Main:
             labels=False,
             name="PAGOS",
         )
+        self.maincontainer.native.setWindowTitle(self.maincontainer.name)  # noqa # TODO don't know why this doesn't automatically happen with the name=... argument above?
 
-        # some individual settings that couldn't be done inside magicgui
-        try:
-            self.left.modelfield.native.setFontFamily("mono")
-            self.left.modelfield.value = (
-                self.left.modelfield.value
-            )  # <- refresh so that the mono font is applied
-        except:  # noqa: E722
-            print("WARNING: Could not set font of model field, keeping default.")
-        self.left.modelfield.native.setTabStopDistance(35.0)
         self.right.datatable.native.setEditTriggers(
             QAbstractItemView.EditTrigger.NoEditTriggers
         )
@@ -97,24 +96,44 @@ class Main:
             lambda: self.select_tr_or_op(mode=2)
         )
 
-        # menu
+        # menu NOTE the menu items after [Import data] are added in the more complicated way because magicgui has a bug where create_menu_item adds an additional "File" menu every time it is called
         self.maincontainer.create_menu_item(
-            "File", "Import data", callback=self.openfile, shortcut="ctrl+o"
+            "File", "Import data", callback=self.openfile, shortcut="ctrl+i"
         )
+        self.saveas_action = QAction(text="&Save as")
+        self.saveas_action.setShortcut("ctrl+s")
+        self.saveas_action.triggered.connect(self.savedataas)
+        self.loadsession_action = QAction(text="&Load session")
+        self.loadsession_action.setShortcut("ctrl+o")
+        self.loadsession_action.triggered.connect(self.loadsession)
+        self.maincontainer._widget._menus["File"].addAction(self.saveas_action)
+        self.maincontainer._widget._menus["File"].addAction(self.loadsession_action)
+
+        # set aesthetics of model and setup text fields
+        # NOTE I did this before with setFontFamily, but that did not seem to work and kept breaking when newlines were typed. This seems to work so far
+        self.left.modelfield.native.setFont(QFont("Mono"))
+        self.left.modelfield.native.setTabStopDistance(35.0)
+        self.left.setupfield.native.setFont(QFont("Mono"))
+        self.left.setupfield.native.setTabStopDistance(35.0)
+        # syntax highlighting
+        self.model_highlight = PythonHighlighter(self.left.modelfield.native.document())
 
         self.maincontainer.show(run=True)
 
     ### callbacks for the MENU BAR ###
 
     # file opening callback
-    def openfile(self):
+    def openfile(self, providedpath=None):
         # loading tip
         self.left.filename.value = "loading data..."
 
-        # open the file dialog object which is part of the MainWindow (TODO: I think???)
-        imported_data_path: str = use_app().get_obj("show_file_dialog")(
-            mode="r", caption="Import data"
-        )
+        if providedpath:  # <- would basically only ever use this if testing
+            imported_data_path = providedpath
+        else:
+            # open the file dialog object which is part of the MainWindow (TODO: I think???)
+            imported_data_path: str = use_app().get_obj("show_file_dialog")(
+                mode="r", caption="Import data", filter="*.csv"
+            )
         raw_dataframe = pd.read_csv(imported_data_path)
 
         # get some information about the file
@@ -134,6 +153,144 @@ class Main:
         self.left.modelfield.visible = True
         self.left.select_to_fit.visible = True
         self.left.select_to_fit_button.visible = True
+
+    # save session as callback NOTE: the save and load functions are currently EXTREMELY long and annoying. A lot of this could be avoided if there were a way to pickle the whole state of the MainWindow object, but many objects, including Widgets, cannot be pickled. Perhaps something TODO in future!
+    def savedataas(self, providedpath=None):
+        if providedpath:  # <- would basically only ever use this if testing
+            save_data_as_path = providedpath
+        else:
+            # open the file dialog object which is part of the MainWindow (TODO: I think???)
+            save_data_as_path: str = use_app().get_obj("show_file_dialog")(
+                mode="w", caption="Save data", filter="*.pag"
+            )
+            save_data_as_path = make_sure_export_path_valid(
+                save_data_as_path, ".pag", "PAGOS_session"
+            )
+            with open(save_data_as_path, "wb") as f:
+                # save the attributes of the Main object itself (cannot save Widget objects here, as they cannot be pickled)
+                to_save_attrs = dict(
+                    filename=self.filename,
+                    current_selected_model=self.current_selected_model,
+                    selected_to_fit=self.selected_to_fit,
+                    fit_param_units=self.fit_param_units,
+                    current_setup_code=self.current_setup_code,
+                    current_model_code=self.current_model_code,
+                )
+                # save the other things (i.e. Widget values)
+                to_save_other = dict(
+                    left_filename=[
+                        self.left.filename.value,
+                        self.left.filename.visible,
+                    ],
+                    left_modelselect=[
+                        self.left.modelselect.value,
+                        self.left.modelselect.visible,
+                    ],
+                    left_select_to_fit=[
+                        self.left.select_to_fit.choices,
+                        self.left.select_to_fit.visible,
+                    ],
+                    left_fitparam_unit_input=[
+                        self.left.fitparam_unit_input.value,
+                        self.left.fitparam_unit_input.visible,
+                    ],
+                    left_setupfield=[
+                        self.left.setupfield.value,
+                        self.left.setupfield.visible,
+                    ],
+                    left_modelfield=[
+                        self.left.modelfield.value,
+                        self.left.modelfield.visible,
+                    ],
+                    left_fit_button=[
+                        self.left.fit_button.text,
+                        self.left.fit_button.visible,
+                    ],
+                    right_man_eu=[self.right.man_eu.value, self.right.man_eu.visible],
+                    right_text_over_tracers1=[
+                        self.right.text_over_tracers1.value,
+                        self.right.text_over_tracers1.visible,
+                    ],
+                    right_text_over_tracers2=[
+                        self.right.text_over_tracers2.value,
+                        self.right.text_over_tracers2.visible,
+                    ],
+                    right_manual_errs=[
+                        self.right.manual_errs.value,
+                        self.right.manual_errs.visible,
+                    ],
+                    right_manual_units=[
+                        self.right.manual_units.value,
+                        self.right.manual_units.visible,
+                    ],
+                    right_datatable=[
+                        self.right.datatable.value,
+                        self.right.datatable.visible,
+                    ],
+                )
+                pkl.dump(
+                    (to_save_attrs, to_save_other),
+                    f,
+                    protocol=pkl.HIGHEST_PROTOCOL,
+                )
+
+    # load session callback NOTE: the save and load functions are currently EXTREMELY long and annoying. A lot of this could be avoided if there were a way to pickle the whole state of the MainWindow object, but many objects, including Widgets, cannot be pickled. Perhaps something TODO in future!
+    def loadsession(self, providedpath=None):
+        if providedpath:  # <- would basically only ever use this if testing
+            load_session_path = providedpath
+        else:
+            # open the file dialog object which is part of the MainWindow (TODO: I think???)
+            load_session_path: str = use_app().get_obj("show_file_dialog")(
+                mode="r", caption="Load session", filter="*.pag"
+            )
+            with open(load_session_path, "rb") as f:
+                # load the saved dictionary of attributes from before
+                loaded_attrs, loaded_other = pkl.load(f)
+                for attr in loaded_attrs:
+                    setattr(self, attr, loaded_attrs[attr])
+                # load the things that cannot be iterated over as easily as the above
+                self.left.filename.value, self.left.filename.visible = loaded_other[
+                    "left_filename"
+                ]
+                self.left.modelselect.value, self.left.modelselect.visible = (
+                    loaded_other["left_modelselect"]
+                )
+                self.left.select_to_fit.choices, self.left.select_to_fit.visible = (
+                    loaded_other["left_select_to_fit"]
+                )
+                (
+                    self.left.fitparam_unit_input.value,
+                    self.left.fitparam_unit_input.visible,
+                ) = loaded_other["left_fitparam_unit_input"]
+                self.left.setupfield.value, self.left.setupfield.visible = loaded_other[
+                    "left_setupfield"
+                ]
+                self.left.modelfield.value, self.left.modelfield.visible = loaded_other[
+                    "left_modelfield"
+                ]
+                self.left.fit_button.text, self.left.fit_button.visible = loaded_other[
+                    "left_fit_button"
+                ]
+                self.right.man_eu.value, self.right.man_eu.visible = loaded_other[
+                    "right_man_eu"
+                ]
+                (
+                    self.right.text_over_tracers1.value,
+                    self.right.text_over_tracers1.visible,
+                ) = loaded_other["right_text_over_tracers1"]
+                (
+                    self.right.text_over_tracers2.value,
+                    self.right.text_over_tracers2.visible,
+                ) = loaded_other["right_text_over_tracers2"]
+                self.right.manual_errs.value, self.right.manual_errs.visible = (
+                    loaded_other["right_manual_errs"]
+                )
+                self.right.manual_units.value, self.right.manual_units.visible = (
+                    loaded_other["right_manual_units"]
+                )
+                self.right.datatable.value, self.right.datatable.visible = loaded_other[
+                    "right_datatable"
+                ]
 
     ### callbacks for LEFT hand side ###
 
@@ -220,8 +377,6 @@ class Main:
             # clear fit-parameter selection list
             self.left.select_to_fit.choices = []
 
-        # FIXME: typing certain things into the modelfield or deleting all the text will break the monospace font and return to default - why does this happen?!
-
     def update_fit_param_selection_list(self):
         self.left.fitparam_unit_input.visible = False
         self.left.select_to_fit.value = []
@@ -244,6 +399,7 @@ class Main:
             self.left.select_to_fit.choices = args_without_non_fitted_params
         else:
             self.left.select_to_fit.choices = []
+        self.left.select_to_fit_button.visible = True
 
     # select parameters for fitting button callback
     def select_to_fit_button_clicked(self):
@@ -358,6 +514,11 @@ class Main:
         )
         fit_model_string = "\nfitresults = gem.fit(data=df_to_pass_in, to_fit=self.selected_to_fit, init_guess=np.zeros(len(self.selected_to_fit)), tracers_used=list(self.used_tracers.keys()))"
         # deal with the setup code
+        # This following is done in this way because exec looks for functions in the global namespace but defines them through def into the local
+        # namespace. The consequence of this is that if we just combined self.current_setup_code with the other code strings in code_to_execute
+        # below, the modules imported in the setup code would be imported into locals, and therefore not accessible when the function is called
+        # at fitting time, because the program will at that point be searching in globals. Therefore, the LOCAL namespace of executed
+        # self.current_setup_code becomes the GLOBAL namespace of executed code_to_execute.
         setup_namespace = {}
         try:
             exec(self.current_setup_code, globals(), setup_namespace)
@@ -382,6 +543,9 @@ class Main:
         # execute!
         exec(code_to_execute, exec_globals, exec_locals)
         print(exec_locals["fitresults"])
+        # TODO NEXT open fit results in new window, show loading bar as fit is performed
+        # NOTE showing a loading bar is going to require some way to communicate between this module and GasExchangeModel.fit(), as we use exec() in self.perform_fit()
+        FitResultsWindow(exec_locals["fitresults"])
 
     ### callbacks for RIGHT hand side ###
 
@@ -745,6 +909,49 @@ class Main:
 
 
 # TODO: a lot of stuff in this is hidden until the user inputs correct data or presses a button etc. Is it possible instead to have things simply "greyed out"? # SUGGESTION ("enabled" parameter)
+
+
+class FitResultsWindow:
+    def __init__(self, fr: pd.DataFrame):
+        # convert raw_dataframe to dict of pandas Series (magicgui cannot handle entire DataFrame):
+        new_df_keys = []
+        for col in fr.columns.values:
+            for entry in (col, col + " err", col + " unit"):
+                new_df_keys.append(entry)
+        fr_as_dict = dict()
+        for k in new_df_keys:
+            whole = fr[(spk := k.split())[0]].to_list()
+            if spk[-1] == "err":
+                fr_as_dict[k] = [ssd(w) for w in whole]
+            elif spk[-1] == "unit":
+                fr_as_dict[k] = [sgu(w) for w in whole]
+            else:
+                fr_as_dict[k] = [snv(w) for w in whole]
+        self.fr_for_export = pd.DataFrame(fr_as_dict)
+
+        self.fit_results_widget = self.frw_fac()
+        self.fit_results_widget.self.bind(self)
+        self.fit_results_widget.table.value = fr_as_dict
+
+        self.windowcontainer = MainWindow(
+            widgets=[self.fit_results_widget],
+            layout="horizontal",
+            labels=False,
+            name="PAGOS - Fit Results Window",
+        )
+        self.windowcontainer.native.setWindowTitle(self.windowcontainer.name)  # noqa # TODO don't know why this doesn't automatically happen with the name=... argument above?
+        self.windowcontainer.show(run=False)
+
+    @magic_factory(
+        table={"widget_type": "Table", "value": None}, call_button="Save Results"
+    )
+    def frw_fac(self, table: float):
+        export_data_path: str = use_app().get_obj("show_file_dialog")(
+            mode="w", caption="Export data"
+        )
+        # force csv file extension and catch case where user cancelled save
+        export_data_path = make_sure_export_path_valid(export_data_path, ".csv", "out")
+        self.fr_for_export.to_csv(export_data_path)
 
 
 Main()

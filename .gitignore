@@ -2,6 +2,7 @@
 *.tab
 *.pyc
 *.pdf
+*.pag
 data/
 dist/
 local/

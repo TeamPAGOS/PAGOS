@@ -45,3 +45,18 @@ def remove_docstrings_and_type_hints(code):
 def ordc(a: tuple | list, b: tuple | list) -> list:
     ord_dict = dict.fromkeys(x for x in a if x not in b)
     return list(ord_dict.keys())
+
+
+# making data exporting robust
+def make_sure_export_path_valid(export_path, required_extension, default_if_none_given):
+    if export_path is not None:
+        if (
+            len(export_path) < (n := len(required_extension))
+            or export_path[-n:] != required_extension
+        ):
+            ret = export_path + required_extension
+        else:
+            ret = export_path
+    else:
+        ret = default_if_none_given + required_extension
+    return ret
