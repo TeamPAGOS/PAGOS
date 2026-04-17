@@ -4,9 +4,9 @@ from magicgui.widgets import (
     Dialog,
     Label,
 )
-from magicgui.application import use_app, _use_app
-from qtpy.QtWidgets import QAbstractItemView, QPushButton, QAction, QMenu, QMenuBar
-from qtpy.QtGui import QFont, QSyntaxHighlighter
+from magicgui.application import use_app
+from qtpy.QtWidgets import QAbstractItemView, QPushButton, QAction
+from qtpy.QtGui import QFont
 from inspect import isfunction, getmodule, getsource
 import pandas as pd
 import numpy as np
@@ -86,9 +86,6 @@ class Main:
         self.left.setupfield.native.textChanged.connect(self.setup_changed)
         # self.left.modelfield.changed.connect(self.code_changed) # TODO: why does this not work? Current solution: use native, see below
         self.left.modelfield.native.textChanged.connect(self.code_changed)
-        self.left.select_to_fit_button.clicked.connect(
-            self.select_to_fit_button_clicked
-        )
         self.left.fit_button.clicked.connect(self.perform_fit)
         # setup callbacks right
         self.right.select_tracers.clicked.connect(lambda: self.select_tr_or_op(mode=1))
@@ -151,8 +148,6 @@ class Main:
         self.left.modelselect.visible = True
         self.left.setupfield.visible = True
         self.left.modelfield.visible = True
-        self.left.select_to_fit.visible = True
-        self.left.select_to_fit_button.visible = True
 
     # save session as callback NOTE: the save and load functions are currently EXTREMELY long and annoying. A lot of this could be avoided if there were a way to pickle the whole state of the MainWindow object, but many objects, including Widgets, cannot be pickled. Perhaps something TODO in future!
     def savedataas(self, providedpath=None):
@@ -185,10 +180,6 @@ class Main:
                     left_modelselect=[
                         self.left.modelselect.value,
                         self.left.modelselect.visible,
-                    ],
-                    left_select_to_fit=[
-                        self.left.select_to_fit.choices,
-                        self.left.select_to_fit.visible,
                     ],
                     left_fitparam_unit_input=[
                         self.left.fitparam_unit_input.value,
@@ -235,6 +226,7 @@ class Main:
                 )
 
     # load session callback NOTE: the save and load functions are currently EXTREMELY long and annoying. A lot of this could be avoided if there were a way to pickle the whole state of the MainWindow object, but many objects, including Widgets, cannot be pickled. Perhaps something TODO in future!
+    # FIXME loading a file spawns individual windows with the fitparam_unit_input values?
     def loadsession(self, providedpath=None):
         if providedpath:  # <- would basically only ever use this if testing
             load_session_path = providedpath
@@ -254,9 +246,6 @@ class Main:
                 ]
                 self.left.modelselect.value, self.left.modelselect.visible = (
                     loaded_other["left_modelselect"]
-                )
-                self.left.select_to_fit.choices, self.left.select_to_fit.visible = (
-                    loaded_other["left_select_to_fit"]
                 )
                 (
                     self.left.fitparam_unit_input.value,
@@ -363,10 +352,8 @@ class Main:
                     "Model code changed. [!] UNSUCCESSFUL compilation. Error message below."
                 )
                 print(je)
-                # clear fit-parameter selection list
-                self.left.select_to_fit.choices = []
 
-            self.update_fit_param_selection_list()
+            self.update_fit_param_list()
         except IndexError as ie:
             self.left.errmsgs.value = "Current input could not compile."
             self.left.errmsgs.visible = True
@@ -374,12 +361,8 @@ class Main:
                 "Model code changed. [!] UNSUCCESSFUL compilation. Likely due to the code being incomplete. Error message below."
             )
             print(ie)
-            # clear fit-parameter selection list
-            self.left.select_to_fit.choices = []
 
-    def update_fit_param_selection_list(self):
-        self.left.fitparam_unit_input.visible = False
-        self.left.select_to_fit.value = []
+    def update_fit_param_list(self):
         # update fit-parameter selection list
         if self.comp_mod:  # checks if any valid compiled model code exists
             # extract argument names of the compiled function
@@ -396,20 +379,12 @@ class Main:
             args_without_non_fitted_params = ordc(
                 self.all_model_args_except_gas, list(self.used_other_params.keys())
             )
-            self.left.select_to_fit.choices = args_without_non_fitted_params
-        else:
-            self.left.select_to_fit.choices = []
-        self.left.select_to_fit_button.visible = True
 
-    # select parameters for fitting button callback
-    def select_to_fit_button_clicked(self):
-        self.selected_to_fit = self.left.select_to_fit.value
-        if self.selected_to_fit:
+            self.selected_to_fit = args_without_non_fitted_params
             self.left.fit_button.visible = True
             self.left.fit_button.text = "Perform fit on " + re.sub(
                 r"[^\w\,\s]", "", str(self.selected_to_fit)
             )
-
             # show fit parameter unit input widget
             self.left.fitparam_unit_input.visible = True
             self.left.fitparam_unit_input.value = ["" for entry in self.selected_to_fit]
@@ -421,9 +396,8 @@ class Main:
                 self.left.fitparam_unit_input[:-1], self.selected_to_fit
             ):
                 entry.label = val
-
-        # hide widgets if nothing is selected
         else:
+            self.selected_to_fit = []
             self.left.fit_button.visible = False
             self.left.fitparam_unit_input.visible = False
 
@@ -760,7 +734,7 @@ class Main:
                 )
 
                 # set fit parameter selection widget
-                self.update_fit_param_selection_list()
+                self.update_fit_param_list()
 
             if n_err_widgs == 0 and n_unit_widgs == 0:
                 finished_select_tracers()
@@ -814,13 +788,6 @@ class Main:
             "value": custom_model_name_placeholder,
             "visible": False,
         },
-        select_to_fit={"widget_type": "Select", "visible": False},
-        select_to_fit_button={
-            "widget_type": "PushButton",
-            "value": False,
-            "text": "Mark selected parameters for fitting",
-            "visible": False,
-        },
         fitparam_unit_input={
             "widget_type": "ListEdit",
             "value": [],
@@ -850,8 +817,6 @@ class Main:
         self,
         filename: str,
         modelselect: list,
-        select_to_fit,
-        select_to_fit_button: bool,
         fitparam_unit_input: list[str],
         errmsgs: str,
         setupfield: str,

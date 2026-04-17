@@ -1,3 +1,7 @@
 For testing GUI: use unittest.mock - this allows the gui functions to be tested without the burden of actually calling all of PAGOS's functions!
+Good for spoofing internal functions so that only the outer functions are tested!
+assert_called_with() asserts whether or not the mock was actually called
 
 For interaction with the GUI: qtbot (from pytest-qt) simulates clicks etc. 
+
+TODO: conftest fixtures!
