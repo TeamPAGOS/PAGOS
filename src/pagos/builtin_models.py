@@ -30,7 +30,6 @@ def ua(gas:str|Iterable[str], T:float|Quantity, S:float|Quantity, p:float|Quanti
     :return: Concentration of gas(es) calculated with the model
     :rtype: Quantity | Iterable[Quantity]
     """
-    mvol = mv(gas)
     return calc_Ceq(gas, T, S, p, magnitude=True, units='ccSTP_g/g_w') + A * abn(gas)
 
 
