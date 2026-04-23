@@ -16,6 +16,8 @@ from tqdm import tqdm
 from inspect import signature
 import re
 import warnings
+from numpy.random import normal
+from tqdm import tqdm
 
 from pagos.core import u as _u, Q as _Q, snv as _snv, sto as _sto
 from pagos.core import _possibly_iterable, _set_possit, _set_wp
@@ -290,6 +292,7 @@ class GasExchangeModel:
         tracers_used: Iterable[str],
         constraints: dict = None,
         tqdm_bar: bool = False,
+        do_warnings: bool = True,
     ) -> pd.DataFrame:
         """Fit the parameters of a `GasExchangeModel` using a `DataFrame` of hydrological observations.
 
@@ -392,7 +395,11 @@ class GasExchangeModel:
         if data_is_df:
             # fit procedure if the data is a DataFrame
             obs_tracers, obs_tr_errs, obs_tr_units, obs_params = _prepare_data(
-                data, tracers_used, dont_fit_these_args, self.default_units_out
+                data,
+                tracers_used,
+                dont_fit_these_args,
+                self.default_units_out,
+                do_warnings,
             )
 
             # perform fit for each row
@@ -480,8 +487,59 @@ class GasExchangeModel:
 
         return ret
 
+    def fit_mc(self, *args, tqdm_mc=False, **kwargs):
+        """
+        Monte-Carlo fit function - works in very much the same way as GaseExchangeModel.fit(), but returns the means and standard deviations of the resultant
+        distributions of results after performing a number of MC runs of the fit.
+        """
+        # TODO make this more efficient than list comprehension!
+        # This will likely have to be done by not repeating self.fit() over and over, but by patching perform_single_fit and wrapping the lmfit.minimize function
 
-def _prepare_data(data: pd.DataFrame, tracers, obs_params, default_units_out):
+        # first mc draw is done independently, so that cols can be extracted
+        r0 = self.fit(*args, **kwargs, do_warnings=False)
+        cols = r0.columns
+        # perform the remaining mc draws
+        if tqdm_mc:
+            results = np.array(
+                [r0.to_numpy()]
+                + [
+                    self.fit(*args, **kwargs, do_warnings=False).to_numpy()
+                    for i in tqdm(range(getNMC() - 1))
+                ]
+            )
+        else:
+            results = np.array(
+                [r0.to_numpy()]
+                + [
+                    self.fit(*args, **kwargs, do_warnings=False).to_numpy()
+                    for i in range(getNMC() - 1)
+                ]
+            )
+        result_nvs = np.apply_along_axis(_snv, 2, results)
+
+        # rearrange into the standard format returned by GasExchangeModel.fit:
+        #   index       param1              param2              param3              ...
+        #   0           Q(val+-err, unit)   Q(val+-err, unit)   Q(val+-err, unit)   ...
+        #   1           Q(val+-err, unit)   Q(val+-err, unit)   Q(val+-err, unit)   ...
+        #   2           Q(val+-err, unit)   Q(val+-err, unit)   Q(val+-err, unit)   ...
+        #   ...         ...                 ...                 ...                 ...
+        # but here, the vals are the mean mc run values, and the errs are the standard deviations of the mc runs
+        result_means = np.mean(result_nvs, axis=0)
+        result_stds = np.std(result_nvs, axis=0)
+
+        mc_results_dict = {
+            c: np.array(
+                [_Q(m, "", s) for m, s in zip(result_means[:, i], result_stds[:, i])]
+            )
+            for i, c in enumerate(cols)
+        }
+
+        return pd.DataFrame(mc_results_dict)
+
+
+def _prepare_data(
+    data: pd.DataFrame, tracers, obs_params, default_units_out, do_warnings=True
+):
     headers = data.columns.to_list()
 
     # finding the instances of the tracer names in headers
@@ -508,19 +566,21 @@ def _prepare_data(data: pd.DataFrame, tracers, obs_params, default_units_out):
         ]
         if len(where_error) == 0:
             tracer_err_index = None
-            warnings.warn(
-                "No columns found for the error on %s, setting all such errors to nan."
-                % (tracername),
-                stacklevel=4,
-            )
+            if do_warnings:
+                warnings.warn(
+                    "No columns found for the error on %s, setting all such errors to nan."
+                    % (tracername),
+                    stacklevel=4,
+                )
         else:
             tracer_err_index = where_error[0]
             if len(where_error) > 1:
-                warnings.warn(
-                    "Multiple columns found for the error on %s, taking '%s'."
-                    % (tracername, headers[tracer_err_index]),
-                    stacklevel=4,
-                )
+                if do_warnings:
+                    warnings.warn(
+                        "Multiple columns found for the error on %s, taking '%s'."
+                        % (tracername, headers[tracer_err_index]),
+                        stacklevel=4,
+                    )
 
         # find the occurrences of a unit indicator
         unitpattern = r"(?:\b|_)(unit|units|dim|dims|dimension|dimensions|dim\.|dim\.s|Unit|Units|Dim|Dims|Dimension|Dimensions|Dim\.|Dim\.s)(?=\b|_)"
@@ -531,19 +591,21 @@ def _prepare_data(data: pd.DataFrame, tracers, obs_params, default_units_out):
         ]
         if len(where_unit) == 0:
             tracer_unit_index = None
-            warnings.warn(
-                "No columns found for the unit of %s, assuming the default units of the function return (%s)."
-                % (tracername, default_units_out),
-                stacklevel=4,
-            )
+            if do_warnings:
+                warnings.warn(
+                    "No columns found for the unit of %s, assuming the default units of the function return (%s)."
+                    % (tracername, default_units_out),
+                    stacklevel=4,
+                )
         else:
             tracer_unit_index = where_unit[0]
             if len(where_unit) > 1:
-                warnings.warn(
-                    "Multiple columns found for the unit of %s, taking '%s'."
-                    % (tracername, headers[tracer_unit_index]),
-                    stacklevel=4,
-                )
+                if do_warnings:
+                    warnings.warn(
+                        "Multiple columns found for the unit of %s, taking '%s'."
+                        % (tracername, headers[tracer_unit_index]),
+                        stacklevel=4,
+                    )
 
         # remove the error and unit indices from the tracer indices so we are (hopefully) left with only the index of the tracer amount
         where_tracername = np.setdiff1d(
@@ -554,11 +616,12 @@ def _prepare_data(data: pd.DataFrame, tracers, obs_params, default_units_out):
         else:
             tracername_index = where_tracername[0]
             if len(where_tracername) > 1:
-                warnings.warn(
-                    "Multiple columns found for the tracer %s, taking '%s'."
-                    % (tracername, headers[tracername_index]),
-                    stacklevel=4,
-                )
+                if do_warnings:
+                    warnings.warn(
+                        "Multiple columns found for the tracer %s, taking '%s'."
+                        % (tracername, headers[tracername_index]),
+                        stacklevel=4,
+                    )
 
         # append the tracer data, errors and units to the external arrays
         obs_foreach_tracer.append(data[headers[tracername_index]].to_numpy())
@@ -587,11 +650,12 @@ def _prepare_data(data: pd.DataFrame, tracers, obs_params, default_units_out):
         else:
             opname_index = where_opname[0]
             if len(where_opname) > 1:
-                warnings.warn(
-                    "Multiple columns found for the parameter %s, taking '%s'."
-                    % (opname, headers[opname_index]),
-                    stacklevel=4,
-                )
+                if do_warnings:
+                    warnings.warn(
+                        "Multiple columns found for the parameter %s, taking '%s'."
+                        % (opname, headers[opname_index]),
+                        stacklevel=4,
+                    )
         obs_foreach_parameter.append(data[headers[opname_index]].to_numpy())
 
     return (
@@ -668,3 +732,78 @@ def _perform_single_fit(
         Dfun=jacfunc,
     )
     return M.params
+
+
+"""
+MONTE CARLO IMPLEMENTATION
+
+Say we have a regular model, such as the ua model from the builtin models:
+
+def ua(gas, T, S, p, A):
+    mvol = mv(gas)
+    return calc_Ceq(gas, T, S, p, magnitude=True, units='ccSTP_g/g_w') + A * abn(gas)
+
+We want to be able to write synactic sugar into this model so that when an MC "switch" is flipped (presumably in GasExchangeModel.fit),
+each function decorated with the sugar becomes part of the MC process. For example:
+
+def ua(gas, T, S, p, A):
+    mvol = mv(gas) @mc(0.01)
+    return calc_Ceq(gas, T, S, p, magnitude=True, units='ccSTP_g/g_w') + A * abn(gas)
+
+becomes parsed on compilation to
+    mvol = mc(mv(gas), 0.01)
+    return ...
+
+Obviously the @-version can only be done in the GUI version, NOT in the command line. For now I will just write the mc() function without
+it being a decorator, then we'll see how to proceed later (TODO).
+"""
+
+NMC = 100
+ENABLE_MC = False
+_MC_OUTER = True
+
+
+def setNMC(nmc):
+    global NMC
+    NMC = nmc
+
+
+def getNMC():
+    return NMC
+
+
+def setEnableMC(val: bool):
+    global ENABLE_MC
+    ENABLE_MC = val
+
+
+def isMCEnabled():
+    return ENABLE_MC
+
+
+def setMCOuter(val: bool):
+    global _MC_OUTER
+    _MC_OUTER = val
+
+
+def isMCOuter():
+    return _MC_OUTER
+
+
+class mc:
+    # TODO make it so ENABLE_MC is true only if running inside GasExchangeModel.fit_mc or .run_mc, not .fit or .run?
+    # TODO NEXT implement mc() into the builtin models and incorporate the errors on the data into the mc process
+    def __init__(self, relative_err):
+        self.relative_err = relative_err
+
+    def __call__(self, obj):
+        if isMCEnabled():
+            if isMCOuter():
+                setMCOuter(False)
+                to_return = obj * normal(1, self.relative_err)
+                setMCOuter(True)
+            else:
+                to_return = obj
+        else:
+            to_return = obj
+        return to_return

@@ -60,3 +60,9 @@ def make_sure_export_path_valid(export_path, required_extension, default_if_none
     else:
         ret = default_if_none_given + required_extension
     return ret
+
+
+# function for 'is x a string and, if so, is x equal to "man"?'
+def isman(x):
+    # this construction avoids "ValueError: The truth value of a Series is ambiguous" from Pandas.
+    return isinstance(x, str) and x == "man"

@@ -5,3 +5,10 @@ assert_called_with() asserts whether or not the mock was actually called
 For interaction with the GUI: qtbot (from pytest-qt) simulates clicks etc. 
 
 TODO: conftest fixtures!
+
+
+important to test:
+
+- that you can initialise everything at all
+- communication between widgets
+- NOT the end results of fitting

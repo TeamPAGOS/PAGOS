@@ -162,9 +162,11 @@ class PythonHighlighter(QSyntaxHighlighter):
             # From '#' until a newline
             (r"#[^\n]*", 0, STYLES["comment"]),
             # mc(...)(...) - monte carlo identifier, opener and closer
-            (r"(mc\([\d\.]+\))((\()((?>[^\(\)]+|(?2))*(\))))", 1, STYLES["mc"]),
-            (r"(mc\([\d\.]+\))((\()((?>[^\(\)]+|(?2))*(\))))", 3, STYLES["mc"]),
-            (r"(mc\([\d\.]+\))((\()((?>[^\(\)]+|(?2))*(\))))", 5, STYLES["mc"]),
+            # TODO bug here where if mc-identifiers are nested -- as in mc(0.1)(mc(0.2)(quantity)) -- only the rightmost bracket is highlighted.
+            # In practice this should never turn up as users should never nest mc tags explicitly, but it is nonetheless annoying
+            (r"(mc\([\d\.]+\))((\()((?>[^\(\)]+|(?2))*)(\)))", 1, STYLES["mc"]),
+            (r"(mc\([\d\.]+\))((\()((?>[^\(\)]+|(?2))*)(\)))", 3, STYLES["mc"]),
+            (r"(mc\([\d\.]+\))((\()((?>[^\(\)]+|(?2))*)(\)))", 5, STYLES["mc"]),
         ]
 
         # Build a QRegularExpression for each pattern
