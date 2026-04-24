@@ -10,6 +10,7 @@ import numpy as np
 from collections.abc import Iterable
 import os
 from pandas import read_csv
+import pickle as pkl
 
 from pagos.core import u as _u, sto as _sto, _possibly_iterable, wraptpint
 from pagos.constants import NOBLEGASES, STABLETRANSIENTGASES, BIOLOGICALGASES
@@ -40,11 +41,15 @@ from pagos.water import (
     calc_vappres_Tderiv,
 )
 from pagos.units import *
+from pagos.modelling import mc
 
 
 # Some data required for calc_Cstar
 this_dir, this_file = os.path.split(__file__)
 ngmethods = ["Jenkins2019", "Weiss1970", "SmithKennedy1983", "HammeEmerson2004"]
+# these are "Monte Carlo coefficients"; not to be confused with PAGOS's built-in MC functionality,
+# these are coefficients of literature solubility functions whose values were determined by least-squares
+# fitting, repeatedly, in an MC-sense.
 mccs = {
     s: read_csv(
         os.path.join(this_dir, f"assets/gas/{s}/Monte Carlo Coefficients.csv"),
@@ -54,6 +59,21 @@ mccs = {
     .to_dict()
     for s in ngmethods
 }
+Cstar_errsurfs = {s: {} for s in ngmethods}
+# pre-determined error surfaces for the Cstar values at different T and S
+for s in Cstar_errsurfs:
+    for g in NOBLEGASES:
+        try:
+            f = open(
+                os.path.join(this_dir, f"assets/gas/{s}/{g}_err_surf.pickle"), "rb"
+            )
+            surface = pkl.load(f)
+            setattr(surface, "bounds_error", False)
+            setattr(surface, "fill_value", 0)
+            Cstar_errsurfs[s][g] = surface
+        except FileNotFoundError as e:
+            pass
+
 possible_coeffs = [
     "A0",
     "AR",
@@ -402,6 +422,8 @@ def calc_Sc(
         return _sto(ret * unconverted_unit, units)
 
 
+# TODO error surfaces only defined between 0 and 30 degrees and 0 and 35 permille! Should add in something to prohibit
+# coming out of these bounds, or at least a warning!
 def calc_Cstar(
     gas: str,
     T: float | Quantity,
@@ -451,7 +473,8 @@ def calc_Cstar(
                 + S * (B0 + B1 * T_N + B2 * T_N**2)
             )
             rhos = calc_dens(T, S, units="kg_w/L_w", magnitude=True)
-            Cstar = Cstar_mL_per_L / rhos / mv(gas)
+            error = Cstar_errsurfs[noblemethod][gas]((T, S))
+            Cstar = mc(error)(Cstar_mL_per_L / rhos / mv(gas))
 
         elif noblemethod == "SmithKennedy1983":
             A0, AR, AL, B0, BR, BL = (
@@ -464,7 +487,10 @@ def calc_Cstar(
                 + S * (B0 + BR / T_N + BL * np.log(T_N))
             )
             vps = calc_vappres(T, units="atm", magnitude=True)
-            Cstar = X_mol_per_mol_per_atmpure * (1 - vps) * abn(gas) / MMW * 1000
+            error = Cstar_errsurfs[noblemethod][gas]((T, S))
+            Cstar = mc(error)(
+                X_mol_per_mol_per_atmpure * (1 - vps) * abn(gas) / MMW * 1000
+            )
 
         elif noblemethod == "HammeEmerson2004":
             if gas == "Ne":
@@ -482,20 +508,24 @@ def calc_Cstar(
                 + D3 * T_s**3
                 + S * (B0 + E1 * T_s + E2 * T_s**2)
             )
-            Cstar = Cstar_umol_or_nmol_per_kg * HE04conv
+            error = Cstar_errsurfs[noblemethod][gas]((T, S))
+            Cstar = mc(error)(Cstar_umol_or_nmol_per_kg * HE04conv)
 
         elif noblemethod == "Jenkins2019":
             A0, AR, AL, A1, B0, B1, B2, C0 = (
                 coeffsdict[gas][c]
                 for c in ["A0", "AR", "AL", "A1", "B0", "B1", "B2", "C0"]
             )
-            Cstar = np.exp(
-                A0
-                + AR / T_N
-                + AL * np.log(T_N)
-                + A1 * T_N
-                + S * (B0 + B1 * T_N + B2 * T_N**2)
-                + S**2 * C0
+            error = Cstar_errsurfs[noblemethod][gas]((T, S))
+            Cstar = mc(error)(
+                np.exp(
+                    A0
+                    + AR / T_N
+                    + AL * np.log(T_N)
+                    + A1 * T_N
+                    + S * (B0 + B1 * T_N + B2 * T_N**2)
+                    + S**2 * C0
+                )
             )
 
         else:

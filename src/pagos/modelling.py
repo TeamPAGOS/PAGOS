@@ -323,6 +323,7 @@ class GasExchangeModel:
             }
 
             modelled_data = self.run_fast(tracers, **paramsdict)
+            resetMCPointer()
 
             # if there is an error associated with every observation, weight by the errors
             if all(e is not None and not np.isnan(e) for e in observed_errors):
@@ -497,24 +498,25 @@ class GasExchangeModel:
 
         # first mc draw is done independently, so that cols can be extracted
         r0 = self.fit(*args, **kwargs, do_warnings=False)
+        resetMCCycles()
         cols = r0.columns
         # perform the remaining mc draws
         if tqdm_mc:
-            results = np.array(
-                [r0.to_numpy()]
-                + [
+            resultsarr = []
+            for i in tqdm(range(getNMC() - 1)):
+                resultsarr.append(
                     self.fit(*args, **kwargs, do_warnings=False).to_numpy()
-                    for i in tqdm(range(getNMC() - 1))
-                ]
-            )
+                )
+                resetMCCycles()
         else:
-            results = np.array(
-                [r0.to_numpy()]
-                + [
+            resultsarr = []
+            for i in range(getNMC() - 1):
+                resultsarr.append(
                     self.fit(*args, **kwargs, do_warnings=False).to_numpy()
-                    for i in range(getNMC() - 1)
-                ]
-            )
+                )
+                resetMCCycles()
+
+        results = np.array([r0.to_numpy()] + resultsarr)
         result_nvs = np.apply_along_axis(_snv, 2, results)
 
         # rearrange into the standard format returned by GasExchangeModel.fit:
@@ -790,17 +792,51 @@ def isMCOuter():
     return _MC_OUTER
 
 
+# this cycles through Monte Carlo values so that a different MC value is not chosen every time an iteration inside fit() is performed
+# TODO write proper explanation on how this works
+_MC_CYCLES = 0
+_MC_POINTER = 0
+_MC_REGISTER: list[float] = []
+
+
+def cycleMC(factor):
+    global _MC_POINTER
+    global _MC_CYCLES
+    if _MC_POINTER == _MC_CYCLES:
+        _MC_CYCLES += 1
+        ret = normal(1, factor)
+        _MC_REGISTER.append(ret)
+    else:
+        ret = _MC_REGISTER[_MC_POINTER]
+    _MC_POINTER += 1
+    return ret
+
+
+def resetMCPointer():
+    global _MC_POINTER
+    _MC_POINTER = 0
+
+
+def resetMCCycles():
+    global _MC_CYCLES
+    global _MC_REGISTER
+    print(_MC_CYCLES, _MC_POINTER, _MC_REGISTER)
+    _MC_CYCLES = 0
+    _MC_REGISTER.clear()
+
+
 class mc:
     # TODO make it so ENABLE_MC is true only if running inside GasExchangeModel.fit_mc or .run_mc, not .fit or .run?
-    # TODO NEXT implement mc() into the builtin models and incorporate the errors on the data into the mc process
     def __init__(self, relative_err):
         self.relative_err = relative_err
 
     def __call__(self, obj):
         if isMCEnabled():
+            # FIXME NEXT: the isMCOuter() functionality does NOT WORK!!! This is because even though the class instances are created in order, the __call__
+            # methods are called from the MIDDLE OUTWARDS!!!
             if isMCOuter():
                 setMCOuter(False)
-                to_return = obj * normal(1, self.relative_err)
+                to_return = obj * cycleMC(self.relative_err)
                 setMCOuter(True)
             else:
                 to_return = obj
