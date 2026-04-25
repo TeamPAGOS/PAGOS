@@ -1,1 +1,1 @@
-include src/pagos/assets/*
+graft src/pagos/assets
