@@ -45,6 +45,8 @@ from pagos.modelling import mc
 
 
 # Some data required for calc_Cstar
+# FIXME MAKE SURE THESE SURFACES ARE CREATED WITH THE SAME SCIPY VERSION AS PAGOS! Also add in contingency so that if the error surfaces
+# are not compatible with the current PAGOS version, that it falls back on some other method.
 this_dir, this_file = os.path.split(__file__)
 ngmethods = ["Jenkins2019", "Weiss1970", "SmithKennedy1983", "HammeEmerson2004"]
 # these are "Monte Carlo coefficients"; not to be confused with PAGOS's built-in MC functionality,
@@ -590,13 +592,14 @@ def calc_Cstar(
 # TODO is Iterable[Quantity] here the best way, or should it specify that they have to be numpy arrays?
 # TODO is instead a dict output the best choice for the multi-gas option? All other multi-gas functionalities in this program just spit out arrays... i.e., prioritise clarity or consistency?
 @_possibly_iterable
-@wraptpint((None, "degC", "permille", "atm", None, None, None), strict=False)
+@wraptpint((None, "degC", "permille", "atm", None, None, None, None), strict=False)
 def calc_Ceq(
     gas: str | Iterable[str],
     T: float | Quantity,
     S: float | Quantity,
     p: float | Quantity,
     ab="default",
+    noblemethod="Jenkins2019",
     units="mol_gas/kg_water",
     magnitude=False,
 ) -> float | Iterable[float] | Quantity | Iterable[Quantity]:
@@ -620,7 +623,7 @@ def calc_Ceq(
     # vapour pressure over the water, calculated according to Dyck and Peschke 1995 (atm)
     e_w = calc_vappres(T, magnitude=True) / 1013.25
     # calculation of C*, the gas solubility/water-side concentration expressed in units of mol/kg
-    Cstar = calc_Cstar(gas, T, S, ab)
+    Cstar = calc_Cstar(gas, T, S, ab, noblemethod)
     # factor to account for pressure
     pref = (p - e_w) / (1 - e_w)
 
