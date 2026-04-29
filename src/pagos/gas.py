@@ -478,7 +478,7 @@ def calc_Cstar(
             )
             rhos = calc_dens(T, S, units="kg_w/L_w", magnitude=True)
             if use_error_surfaces:
-                error = Cstar_errsurfs[noblemethod][gas]((T, S))
+                error = Cstar_errsurfs[noblemethod][gas]((T, S)) / 100
             else:
                 error = 0
             Cstar = mc(error)(Cstar_mL_per_L / rhos / mv(gas))
@@ -495,7 +495,7 @@ def calc_Cstar(
             )
             vps = calc_vappres(T, units="atm", magnitude=True)
             if use_error_surfaces:
-                error = Cstar_errsurfs[noblemethod][gas]((T, S))
+                error = Cstar_errsurfs[noblemethod][gas]((T, S)) / 100
             else:
                 error = 0
             Cstar = mc(error)(
@@ -519,7 +519,7 @@ def calc_Cstar(
                 + S * (B0 + E1 * T_s + E2 * T_s**2)
             )
             if use_error_surfaces:
-                error = Cstar_errsurfs[noblemethod][gas]((T, S))
+                error = Cstar_errsurfs[noblemethod][gas]((T, S)) / 100
             else:
                 error = 0
             Cstar = mc(error)(Cstar_umol_or_nmol_per_kg * HE04conv)
@@ -530,7 +530,7 @@ def calc_Cstar(
                 for c in ["A0", "AR", "AL", "A1", "B0", "B1", "B2", "C0"]
             )
             if use_error_surfaces:
-                error = Cstar_errsurfs[noblemethod][gas]((T, S))
+                error = Cstar_errsurfs[noblemethod][gas]((T, S)) / 100
             else:
                 error = 0
             Cstar = mc(error)(
