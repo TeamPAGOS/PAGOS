@@ -425,6 +425,7 @@ def calc_Sc(
 
 
 # TODO error surfaces only defined between 0 and 30 degrees and 0 and 35 permille! Should add in something to prohibit
+# TODO NEXT: DELETE use_error_surfaces ARGUMENTS FOR THIS AND FOR calc_Ceq; this is ONLY a hotfix before I implement the order-of-call functionality in mc()
 # coming out of these bounds, or at least a warning!
 def calc_Cstar(
     gas: str,
@@ -432,6 +433,7 @@ def calc_Cstar(
     S: float | Quantity,
     ab="default",
     noblemethod="Jenkins2019",
+    use_error_surfaces=True,
 ) -> float:  # TODO calc_Cstar returns a single-valued array due to unumpy... why did I use unumpy here again?
     """Calculate the moist atmospheric equilibrium concentration C* in mol/kg of a given gas at
     temperature T and salinity S.\\
@@ -475,7 +477,10 @@ def calc_Cstar(
                 + S * (B0 + B1 * T_N + B2 * T_N**2)
             )
             rhos = calc_dens(T, S, units="kg_w/L_w", magnitude=True)
-            error = Cstar_errsurfs[noblemethod][gas]((T, S))
+            if use_error_surfaces:
+                error = Cstar_errsurfs[noblemethod][gas]((T, S))
+            else:
+                error = 0
             Cstar = mc(error)(Cstar_mL_per_L / rhos / mv(gas))
 
         elif noblemethod == "SmithKennedy1983":
@@ -489,7 +494,10 @@ def calc_Cstar(
                 + S * (B0 + BR / T_N + BL * np.log(T_N))
             )
             vps = calc_vappres(T, units="atm", magnitude=True)
-            error = Cstar_errsurfs[noblemethod][gas]((T, S))
+            if use_error_surfaces:
+                error = Cstar_errsurfs[noblemethod][gas]((T, S))
+            else:
+                error = 0
             Cstar = mc(error)(
                 X_mol_per_mol_per_atmpure * (1 - vps) * abn(gas) / MMW * 1000
             )
@@ -510,7 +518,10 @@ def calc_Cstar(
                 + D3 * T_s**3
                 + S * (B0 + E1 * T_s + E2 * T_s**2)
             )
-            error = Cstar_errsurfs[noblemethod][gas]((T, S))
+            if use_error_surfaces:
+                error = Cstar_errsurfs[noblemethod][gas]((T, S))
+            else:
+                error = 0
             Cstar = mc(error)(Cstar_umol_or_nmol_per_kg * HE04conv)
 
         elif noblemethod == "Jenkins2019":
@@ -518,7 +529,10 @@ def calc_Cstar(
                 coeffsdict[gas][c]
                 for c in ["A0", "AR", "AL", "A1", "B0", "B1", "B2", "C0"]
             )
-            error = Cstar_errsurfs[noblemethod][gas]((T, S))
+            if use_error_surfaces:
+                error = Cstar_errsurfs[noblemethod][gas]((T, S))
+            else:
+                error = 0
             Cstar = mc(error)(
                 np.exp(
                     A0
@@ -592,7 +606,9 @@ def calc_Cstar(
 # TODO is Iterable[Quantity] here the best way, or should it specify that they have to be numpy arrays?
 # TODO is instead a dict output the best choice for the multi-gas option? All other multi-gas functionalities in this program just spit out arrays... i.e., prioritise clarity or consistency?
 @_possibly_iterable
-@wraptpint((None, "degC", "permille", "atm", None, None, None, None), strict=False)
+@wraptpint(
+    (None, "degC", "permille", "atm", None, None, None, None, None), strict=False
+)
 def calc_Ceq(
     gas: str | Iterable[str],
     T: float | Quantity,
@@ -600,6 +616,7 @@ def calc_Ceq(
     p: float | Quantity,
     ab="default",
     noblemethod="Jenkins2019",
+    use_error_surfaces=True,
     units="mol_gas/kg_water",
     magnitude=False,
 ) -> float | Iterable[float] | Quantity | Iterable[Quantity]:
@@ -623,7 +640,7 @@ def calc_Ceq(
     # vapour pressure over the water, calculated according to Dyck and Peschke 1995 (atm)
     e_w = calc_vappres(T, magnitude=True) / 1013.25
     # calculation of C*, the gas solubility/water-side concentration expressed in units of mol/kg
-    Cstar = calc_Cstar(gas, T, S, ab, noblemethod)
+    Cstar = calc_Cstar(gas, T, S, ab, noblemethod, use_error_surfaces)
     # factor to account for pressure
     pref = (p - e_w) / (1 - e_w)
 

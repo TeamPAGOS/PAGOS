@@ -322,6 +322,17 @@ class GasExchangeModel:
                 for i in range(len(parameter_names))
             }
 
+            # TODO NEXT hotfix for MC, refine this later!
+            if isMCEnabled():
+                # for example, this should definitely not be called every time to get the length!
+                new_obs = np.empty(len(observed_data))
+                for i in range(len(observed_data)):
+                    # can we make mc _possibly_iterable?
+                    new_obs[i] = mc(observed_errors[i] / observed_data[i])(
+                        observed_data[i]
+                    )
+                observed_data = new_obs
+
             modelled_data = self.run_fast(tracers, **paramsdict)
             resetMCPointer()
 
@@ -820,7 +831,7 @@ def resetMCPointer():
 def resetMCCycles():
     global _MC_CYCLES
     global _MC_REGISTER
-    print(_MC_CYCLES, _MC_POINTER, _MC_REGISTER)
+    # print(_MC_CYCLES, _MC_POINTER, _MC_REGISTER)
     _MC_CYCLES = 0
     _MC_REGISTER.clear()
 
@@ -835,9 +846,7 @@ class mc:
             # FIXME NEXT: the isMCOuter() functionality does NOT WORK!!! This is because even though the class instances are created in order, the __call__
             # methods are called from the MIDDLE OUTWARDS!!!
             if isMCOuter():
-                setMCOuter(False)
                 to_return = obj * cycleMC(self.relative_err)
-                setMCOuter(True)
             else:
                 to_return = obj
         else:
