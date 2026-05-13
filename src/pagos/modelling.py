@@ -839,16 +839,26 @@ def resetMCCycles():
 class mc:
     # TODO make it so ENABLE_MC is true only if running inside GasExchangeModel.fit_mc or .run_mc, not .fit or .run?
     def __init__(self, relative_err):
+        # on initialisation, assign the relative standard deviation to the normal distribution associated with this MC process
         self.relative_err = relative_err
+        # if this is the outermost usage of mc(...)(...), then set self.outer to true
+        self.outer = False
+        if isMCOuter():
+            self.outer = True
+        setMCOuter(False)
 
     def __call__(self, obj):
         if isMCEnabled():
-            # FIXME NEXT: the isMCOuter() functionality does NOT WORK!!! This is because even though the class instances are created in order, the __call__
-            # methods are called from the MIDDLE OUTWARDS!!!
-            if isMCOuter():
+            # only if this is the outermost usage of mc(...)(...) will the MC draw be triggered. Otherwise the regular value is returned
+            if self.outer:
                 to_return = obj * cycleMC(self.relative_err)
             else:
                 to_return = obj
         else:
             to_return = obj
         return to_return
+
+    def __del__(self):
+        # reset the global variable which defines if the mc(...)(...) usage is outermost, when the outermost object is destroyed
+        if self.outer:
+            setMCOuter(True)
