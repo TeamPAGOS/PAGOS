@@ -592,9 +592,7 @@ def calc_Cstar(
 # TODO is Iterable[Quantity] here the best way, or should it specify that they have to be numpy arrays?
 # TODO is instead a dict output the best choice for the multi-gas option? All other multi-gas functionalities in this program just spit out arrays... i.e., prioritise clarity or consistency?
 @_possibly_iterable
-@wraptpint(
-    (None, "degC", "permille", "atm", None, None, None, None, None), strict=False
-)
+@wraptpint((None, "degC", "permille", "atm", None, None, None, None), strict=False)
 def calc_Ceq(
     gas: str | Iterable[str],
     T: float | Quantity,
