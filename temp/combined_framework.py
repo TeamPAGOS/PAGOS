@@ -4,6 +4,7 @@ from enum import Enum, auto
 from tqdm import tqdm
 import cProfile
 from time import time
+from timeit import timeit
 from pint import UnitRegistry
 import pint
 from typing import TypeAlias
@@ -371,3 +372,78 @@ class PAGOSCalculator:
         y = self.add_example(x1, x2)
         z = self.mult_example(y, x3)
         return z
+
+
+calc = PAGOSCalculator()
+
+# TODO NEXT IMPLEMENT THIS INTO PAGOS FUNCTIONS AND GUI
+
+# Below code shows the following:
+#
+#  method                           time (s)        x slower than bare floats
+#  bare floats                      0.0968          1
+#  undecorated & using pQ args      8.61            89
+#  decorated with unit_aware        10.2            105
+#  regular pint quantities          227             2345
+"""
+@calc.unit_aware(("cm", "m", "s^-1"), "cm s")
+def some_arithmetic_wrapped(a, b, c):
+    y = a + b - pQ("mm")(300)
+    z = y / c
+    return z
+
+
+def some_arithmetic_unwrapped(a, b, c):
+    a_, b_ = pQ("cm")(a), pQ("m")(b)
+    y = a_ + b_ - pQ("mm")(300)
+    z = y / pQ("s^-1")(c)
+    return z
+
+
+def some_arithmetic_pQ_input(a, b, c):
+    y = a + b - pQ("mm")(300)
+    z = y / c
+    return z
+
+
+def some_arithmetic_floats(a, b, c):
+    y = a + b * 100 - 300 / 10
+    z = y / c
+    return z
+
+
+pintreg = UnitRegistry()
+
+
+def some_arithmetic_pint(a, b, c):
+    y = (
+        pintreg.Quantity(a, "cm")
+        + pintreg.Quantity(b, "m")
+        - pintreg.Quantity(300, "mm")
+    )
+    z = y / pintreg.Quantity(c, "s^-1")
+    return z
+
+
+FAST = False
+some_arithmetic_wrapped(10, 2, 3)
+some_arithmetic_unwrapped(10, 2, 3)
+some_arithmetic_pQ_input(pQ("cm")(10), pQ("m")(2), pQ("s^-1")(3))
+some_arithmetic_floats(10, 2, 3)
+
+FAST = True
+wrappedtime = timeit("some_arithmetic_wrapped(10, 2, 3)", globals=globals())
+unwrappedtime = timeit("some_arithmetic_unwrapped(10, 2, 3)", globals=globals())
+pQinputtime = timeit(
+    'some_arithmetic_pQ_input(pQ("cm")(10), pQ("m")(2), pQ("s^-1")(3))',
+    globals=globals(),
+)
+floatstime = timeit("some_arithmetic_floats(10, 2, 3)", globals=globals())
+pinttime = timeit("some_arithmetic_pint(10, 2, 3)", globals=globals())
+
+print(wrappedtime)
+print(unwrappedtime)
+print(pQinputtime)
+print(floatstime)
+print(pinttime)
+"""
