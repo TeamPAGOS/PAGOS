@@ -313,7 +313,13 @@ class GasExchangeModel:
         """
 
         # input to objective function: all parameters (fitted and set), tracers to calculate, observed data and their errors, parameter and tracer units
-        def objfunc(parameters, tracers, observed_data, observed_errors):
+        def objfunc(
+            parameters,
+            tracers,
+            observed_data,
+            observed_errors,
+            observed_parameter_errors,
+        ):
             # separation of parameter names and values
             parameter_names = list(parameters.valuesdict().keys())
             parameter_values = list(parameters.valuesdict().values())
@@ -332,6 +338,17 @@ class GasExchangeModel:
                         observed_data[i]
                     )
                 observed_data = new_obs
+
+                # TODO also part of hotfix - allowing parameters set by observation to vary with MC
+                new_observed_params = paramsdict.copy()
+                for i in range(len(observed_parameter_errors)):
+                    p = parameter_names[i]
+                    if observed_parameter_errors[i] is not None:
+                        mcdraw_param = mc(observed_parameter_errors[i] / paramsdict[p])(
+                            paramsdict[p]
+                        )
+                        new_observed_params[parameter_names[i]] = mcdraw_param
+                paramsdict = new_observed_params
 
             modelled_data = self.run_fast(tracers, **paramsdict)
             resetMCPointer()
@@ -406,12 +423,14 @@ class GasExchangeModel:
 
         if data_is_df:
             # fit procedure if the data is a DataFrame
-            obs_tracers, obs_tr_errs, obs_tr_units, obs_params = _prepare_data(
-                data,
-                tracers_used,
-                dont_fit_these_args,
-                self.default_units_out,
-                do_warnings,
+            obs_tracers, obs_tr_errs, obs_tr_units, obs_params, obs_params_errs = (
+                _prepare_data(
+                    data,
+                    tracers_used,
+                    dont_fit_these_args,
+                    self.default_units_out,
+                    do_warnings,
+                )
             )
 
             # perform fit for each row
@@ -422,11 +441,12 @@ class GasExchangeModel:
             else:
                 ran = range(len(obs_tracers))
             for i in ran:
-                vi, ei, ui, opi = (
+                vi, ei, ui, opi, opei = (
                     obs_tracers[i],
                     obs_tr_errs[i],
                     obs_tr_units[i],
                     obs_params[i],
+                    obs_params_errs[i],
                 )
 
                 fitted_params = _perform_single_fit(
@@ -435,6 +455,7 @@ class GasExchangeModel:
                     ei,
                     ui,
                     opi,
+                    opei,
                     tracers_used,
                     dont_fit_these_args,
                     to_fit,
@@ -478,6 +499,7 @@ class GasExchangeModel:
                 obs_tr_errs,
                 obs_tr_units,
                 obs_params,
+                obs_params_errs,
                 tracers_used,
                 dont_fit_these_args,
                 to_fit,
@@ -561,6 +583,7 @@ def _prepare_data(
     errs_foreach_tracer = []
     units_foreach_tracer = []
     obs_foreach_parameter = []
+    errs_foreach_parameter = []
     for tracername in tracers:
         # find the occurrences of the tracer name
         tracerpattern = rf"(\s|^)({re.escape(tracername)})(\s|$)"
@@ -669,13 +692,61 @@ def _prepare_data(
                         % (opname, headers[opname_index]),
                         stacklevel=4,
                     )
+
+        # find the occurrences of an error indicator
+        errorpattern = r"(\s|^)(err|errs|error|errors|uncertainty|uncertainties|sigma|sigmas|err\.|err\.s|Err|Errs|Error|Errors|Uncertainty|Uncertainties|Sigma|Sigmas|Err\.|Err\.s)(\s|$)"
+        where_error = [
+            index
+            for index, item in enumerate(headers)
+            if re.search(oppattern, item) and re.search(errorpattern, item)
+        ]
+        if len(where_error) == 0:
+            op_err_index = None
+            if do_warnings:
+                warnings.warn(
+                    "No columns found for the error on %s, setting all such errors to nan."
+                    % (opname),
+                    stacklevel=4,
+                )
+        else:
+            op_err_index = where_error[0]
+            if len(where_error) > 1:
+                if do_warnings:
+                    warnings.warn(
+                        "Multiple columns found for the error on %s, taking '%s'."
+                        % (opname, headers[op_err_index]),
+                        stacklevel=4,
+                    )
+
+        # remove the error and unit indices from the op indices so we are (hopefully) left with only the index of the op amount
+        where_opname = np.setdiff1d(where_opname, where_error)
+        if len(where_opname) == 0:
+            raise KeyError(
+                "No column was found for the observed parameter %s." % (opname)
+            )
+        else:
+            opname_index = where_opname[0]
+            if len(where_opname) > 1:
+                if do_warnings:
+                    warnings.warn(
+                        "Multiple columns found for the observed parameter %s, taking '%s'."
+                        % (opname, headers[opname_index]),
+                        stacklevel=4,
+                    )
+
+        # append the op data and errors and units to the external arrays
         obs_foreach_parameter.append(data[headers[opname_index]].to_numpy())
+        if op_err_index is not None:
+            errs_foreach_parameter.append(data[headers[op_err_index]].to_numpy())
+        else:
+            errs_foreach_parameter.append(np.full(len(data), np.nan, dtype="float64"))
 
     return (
         np.vstack(obs_foreach_tracer).transpose(),
         np.vstack(errs_foreach_tracer).transpose(),
         np.vstack(units_foreach_tracer).transpose(),
         np.vstack(obs_foreach_parameter).transpose(),
+        np.vstack(errs_foreach_parameter).transpose(),
     )
 
 
@@ -685,6 +756,7 @@ def _perform_single_fit(
     errs,
     units,
     obs_params_values,
+    obs_params_errors,
     tracers,
     obs_params,
     fit_params,
@@ -739,7 +811,7 @@ def _perform_single_fit(
     M = minimize(
         objfunc,
         all_params,
-        args=(tracers_tomin, obs_tomin, errs_tomin),
+        args=(tracers_tomin, obs_tomin, errs_tomin, obs_params_errors),
         method="leastsq",
         nan_policy="omit",
         Dfun=jacfunc,

@@ -151,6 +151,7 @@ class GUIData:
 # TODO: allow file importing for the models! (drag and drop also?)
 class Main:
     def __init__(self):
+        print("TEST")
         # some background variables that will be used later
         self.data = GUIData(
             filename=None,
@@ -499,7 +500,7 @@ class Main:
 
         # "Assign B-Values of A or use C If Manual"
         # This function is only used here, within perform_fit()
-        def abvacim(A, B, C, add_prefix=True):
+        def abvacim(A, B, C, add_prefix=True, as_type=str):
             _r = {}
             if add_prefix:
                 pref = B + " "
@@ -508,9 +509,9 @@ class Main:
             for x in A:
                 _entry = A[x]
                 if isinstance(e := _entry[B], pd.Series):
-                    _r[pref + x] = e[0]
+                    _r[pref + x] = e.astype(as_type)[0]
                 elif e == "man":
-                    _r[pref + x] = C[x]
+                    _r[pref + x] = as_type(C[x])
                 else:
                     raise NotImplementedError(
                         "the required object is neither the string 'man' nor a Pandas Series. This should not have happened, report back to maintainer!"
@@ -518,13 +519,13 @@ class Main:
             return _r
 
         _temp_tracer_data_errors = abvacim(
-            self.data.used_tracers, "errs", self.data.manual_errs
+            self.data.used_tracers, "errs", self.data.manual_errs, as_type=float
         )
         _temp_tracer_data_units = abvacim(
             self.data.used_tracers, "units", self.data.manual_units
         )
         _temp_op_data_errors = abvacim(
-            self.data.used_other_params, "errs", self.data.manual_errs
+            self.data.used_other_params, "errs", self.data.manual_errs, as_type=float
         )
         _temp_op_data_units = abvacim(
             self.data.used_other_params, "units", self.data.manual_units
@@ -541,7 +542,10 @@ class Main:
         ]
 
         df_to_pass_in = pd.DataFrame(
-            _temp_tracer_data_values | _temp_tracer_data_errors | _temp_op_data_values
+            _temp_tracer_data_values
+            | _temp_tracer_data_errors
+            | _temp_op_data_values
+            | _temp_op_data_errors
         )
 
         ## passing the collected arguments into PAGOS
