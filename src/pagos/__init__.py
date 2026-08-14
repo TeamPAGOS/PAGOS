@@ -30,6 +30,7 @@ __author__ = "Stanley Scott and Chiara-Marlen Hubner"
 # for ease of use, these could change later
 from .core import u, Q
 from .gas import calc_Ceq, calc_henry, calc_dCeq_dT, calc_Sc
+
 from .water import calc_dens, calc_kinvisc, calc_vappres
 from .modelling import GasExchangeModel
 
@@ -42,3 +43,5 @@ from . import modelling
 from . import builtin_models
 from . import plotting
 from . import pint_monkey_patch
+
+from . import newcore

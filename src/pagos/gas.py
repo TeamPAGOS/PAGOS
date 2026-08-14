@@ -492,7 +492,7 @@ def calc_Cstar(
             error = Cstar_errsurfs[noblemethod][gas]((T, S)) / 100
             Cstar = mc(error)(
                 X_mol_per_mol_per_atmpure * (1 - vps) * abn(gas) / MMW * 1000
-            )
+            )  #
 
         elif noblemethod == "HammeEmerson2004":
             if gas == "Ne":
