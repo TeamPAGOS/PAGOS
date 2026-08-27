@@ -160,3 +160,12 @@ def test_mixed():
     q3 = pQ(6, "g")
     assert q1 + q2 * (q3 - q1) / q3 == pQ(-47964, "kg")
     _set_fast(False)
+
+
+def test_abs():
+    q1 = pQ(-9.81, "m/s^2")
+    assert abs(q1) == pQ(9.81, "m/s^2")
+    _set_fast(True)
+    q1 = pQ(-9.81, "m/s^2")
+    assert abs(q1) == pQ(9.81, "m/s^2")
+    _set_fast(False)

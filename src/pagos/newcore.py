@@ -9,7 +9,6 @@ from collections.abc import Callable
 from functools import wraps
 from enum import Enum, auto
 from numpy.random import normal
-import operator
 
 
 #    ┏━┓╻ ╻┏━┓┏┓╻╺┳╸╻╺┳╸╻ ╻         ┏━┓┏━╸┏━╸╻┏━┓╺┳╸┏━┓╻ ╻   ┏━┓╻ ╻┏━┓╺┳╸┏━╸┏┳┓
@@ -22,16 +21,7 @@ When we are not in fast mode, creating a PAGOS quantity with pQ(...) will create
 However, every time a mathematical operator is called, the conversions (in the case of ADD operators) or combinations
 (in the case of MULTIPLY operators) of the units are *cached*.
 
-When we are in fast mode, a different object is created by pQ(...), namely a FastPAGOSQuantity.
-The cached combinations/conversions are retrieved whenever the operations which were stored by PAGOSQuantity are called!
-Note that this absolutely does not work if any new operations (i.e. conversions which have not been cached) are run - in
-fast mode, all operations must be repeated. This is therefore useful only for scenarios such as Monte Carlo analysis, 
-where repeated operations are the only thing that can happen!
-
-The way this works in practice is that FastPAGOSQuantity will actually extend float, but overwrite its operation methods
-with decorated functions - the decorator in question is @fastpagosbinop. This wrapper handles conversions as quickly as
-possible, more or less lifting code directly from the Pint source, but skipping steps like interpreting units as strings
-etc., as the information about units before and after the operation are stored in the cache.
+When we are in fast mode, the cached conversions/combinations are recalled.
 """
 
 
@@ -50,6 +40,31 @@ class OperationKind(Enum):
     COMPARATIVE = auto()
 
 
+# some resources for warning messages when nonmultiplicative arithmetic is detected
+def op_as_str(opname):
+    op_str_dict = {
+        "__add__": "+",
+        "__sub__": "-",
+        "__mul__": "*",
+        "__truediv__": "/",
+        "__pow__": "^",
+    }
+    try:
+        return op_str_dict[opname]
+    except KeyError:
+        return opname
+
+
+warn_nonmult = True
+
+
+def set_warn_nonmult(value):
+    global warn_nonmult
+    warn_nonmult = value
+
+
+# TODO rename CatchConvert - it does catch and handle conversions but also acts as the generic class to construct Pint Quantity objects,
+# so its functionality is not totally captured by this name.
 class CatchConvert(pint.UnitRegistry.Quantity):
     # pairs of
     #   HASH(a units, b units, operation kind) : (conversion function, result units)
@@ -60,6 +75,11 @@ class CatchConvert(pint.UnitRegistry.Quantity):
     # pairs of
     #   HASH(a units, b units, operation kind) : result units
     mult_combis = {}
+
+    # pairs of
+    #   HASH(a units, b units, operation kind) : delta-a units
+    # for when non-multiplicative units are exponentiated
+    exp_transforms = {}
 
     # single register to hold the details of the last conversion that happened in
     # _convert_magnitude_not_inplace
@@ -92,7 +112,6 @@ class PAGOSQuantity:
 
     def __new__(cls, value, units=None):
         inst = object.__new__(cls)
-        inst.value = value
         # cache system to make sure strings are not redundantly parsed into UnitsContainer objects
         if isinstance(units, str):
             if units in PAGOSQuantity.units_cache:
@@ -104,6 +123,13 @@ class PAGOSQuantity:
             inst.units = units
         else:
             raise NotImplementedError("Type of units passed in is not implemented")
+
+        if isinstance(value, PAGOSQuantity):
+            selfQ = value
+            pint_representation = CatchConvert(selfQ.value, selfQ.units)
+            converted_pint_repr = pint_representation.to(inst.units)
+            value = converted_pint_repr.magnitude
+        inst.value = value
         return inst
 
     # wrapper to convert binary arithmetic operators __add__ (+), __mul__ (*), etc. into ones that can access cached conversions
@@ -130,43 +156,69 @@ class PAGOSQuantity:
                 # if we are in fast mode, use the hash key to obtain an already cached conversion, apply to operand
                 # and return the value
                 if _are_calculations_fast():
-                    # case for addition and subtraction
-                    if operation_kind in {OperationKind.ADD, OperationKind.SUBTRACT}:
-                        conversion_func, result_units = CatchConvert.conversions[id]
-                        converted_operand_value = conversion_func(operand_value)
+                    try:
+                        # case for addition and subtraction
+                        if operation_kind in {
+                            OperationKind.ADD,
+                            OperationKind.SUBTRACT,
+                        }:
+                            conversion_func, result_units = CatchConvert.conversions[id]
+                            converted_operand_value = conversion_func(operand_value)
 
-                        return PAGOSQuantity(
-                            func(self.value, converted_operand_value), result_units
+                            return PAGOSQuantity(
+                                func(self.value, converted_operand_value), result_units
+                            )
+                        # case for multiplication
+                        elif operation_kind in {
+                            OperationKind.MULTIPLY,
+                            OperationKind.LDIVIDE,
+                            OperationKind.RDIVIDE,
+                        }:
+                            combined_units = CatchConvert.mult_combis[id]
+                            return PAGOSQuantity(
+                                func(self.value, operand_value), combined_units
+                            )
+                        # case for exponentiation:
+                        elif operation_kind == OperationKind.EXPONENTIAL:
+                            # transform any non-multiplicative units into delta-units
+                            transformed_self_units = CatchConvert.exp_transforms[id]
+                            # no conversion necessary as exponent must be dimensionless
+                            return PAGOSQuantity(
+                                func(self.value, operand_value),
+                                transformed_self_units**operand_value,
+                            )
+                        # case for comparison:
+                        elif operation_kind == OperationKind.COMPARATIVE:
+                            # in Pint, __eq__ converts the FIRST operand if necessary, unlike __add__/__sub__, which
+                            # convert the SECOND operand. This can get a bit tricky to keep track of, so be careful!
+                            conversion_func = CatchConvert.conversions[id]
+                            converted_self_value = conversion_func(self.value)
+                            return func(converted_self_value, operand_value)
+                    except KeyError:
+                        print(
+                            f"Conversion {(self.units, operand_units, operation_kind)} not found in cache"
                         )
-                    # case for multiplication
-                    elif operation_kind in {
-                        OperationKind.MULTIPLY,
-                        OperationKind.LDIVIDE,
-                        OperationKind.RDIVIDE,
-                    }:
-                        combined_units = CatchConvert.mult_combis[id]
-                        return PAGOSQuantity(
-                            func(self.value, operand_value), combined_units
-                        )
-                    # case for exponentiation:
-                    elif operation_kind == OperationKind.EXPONENTIAL:
-                        # no conversion necessary as exponent must be dimensionless
-                        return PAGOSQuantity(
-                            func(self.value, operand_value), self.units**operand_value
-                        )
-                    # case for comparison:
-                    elif operation_kind == OperationKind.COMPARATIVE:
-                        # in Pint, __eq__ converts the FIRST operand if necessary, unlike __add__/__sub__, which
-                        # convert the SECOND operand. This can get a bit tricky to keep track of, so be careful!
-                        conversion_func = CatchConvert.conversions[id]
-                        converted_self_value = conversion_func(self.value)
-                        return func(converted_self_value, operand_value)
+                        raise
 
                 # if we are not in fast mode, store the conversion in a cache uder the hash key
                 else:
                     # create Pint Quantity objects out of the values and units
                     selfQ = CatchConvert(self.value, self.units)
                     operandQ = CatchConvert(operand_value, operand_units)
+
+                    # if there are non-multiplicative units (e.g. degC), we automatically convert these
+                    # to their delta-equivalents (NOTE: here by subtracting zero, perhaps not the most
+                    # efficient thing to do), and warning the user
+                    unchanged_selfQ = selfQ
+                    unchanged_operandQ = operandQ
+                    warn_about_nm_units = False
+                    if unchanged_selfQ._get_non_multiplicative_units():
+                        warn_about_nm_units = True
+                        selfQ = unchanged_selfQ - CatchConvert(0, selfQ._units)
+                    if unchanged_operandQ._get_non_multiplicative_units():
+                        warn_about_nm_units = True
+                        operandQ = unchanged_operandQ - CatchConvert(0, operandQ._units)
+
                     # case for addition and subtraction
                     if operation_kind in {OperationKind.ADD, OperationKind.SUBTRACT}:
                         # perform Pint addition/subtraction, which does conversions automatically
@@ -180,7 +232,7 @@ class PAGOSQuantity:
                             resultQ._units,
                         )
                         CatchConvert.current_conversion_register = None
-                        return PAGOSQuantity(resultQ._magnitude, resultQ._units)
+                        ret = PAGOSQuantity(resultQ._magnitude, resultQ._units)
                     # case for multiplication
                     elif operation_kind in {
                         OperationKind.MULTIPLY,
@@ -191,12 +243,15 @@ class PAGOSQuantity:
                         resultQ = func(selfQ, operandQ)
                         # store the unit combination
                         CatchConvert.mult_combis[id] = resultQ._units
-                        return PAGOSQuantity(resultQ._magnitude, resultQ._units)
+                        ret = PAGOSQuantity(resultQ._magnitude, resultQ._units)
                     # case for exponentiation:
                     elif operation_kind == OperationKind.EXPONENTIAL:
+                        # need to store any transformations of non-multiplicative units to deltas
+                        # e.g. degC^2 -> delta_degC^2
+                        CatchConvert.exp_transforms[id] = selfQ._units
                         # no conversion necessary as exponent must be dimensionless
                         resultQ = func(selfQ, operandQ)
-                        return PAGOSQuantity(resultQ._magnitude, resultQ._units)
+                        ret = PAGOSQuantity(resultQ._magnitude, resultQ._units)
                     # case for comparison:
                     elif operation_kind == OperationKind.COMPARATIVE:
                         # perform Pint comparison, which does conversions automatically
@@ -207,9 +262,16 @@ class PAGOSQuantity:
                         # otherwise store the conversion (of selfQ to operandQ's units)
                         CatchConvert.conversions[id] = cf
                         CatchConvert.current_conversion_register = None
-                        return resultbool
+                        ret = resultbool
 
-                # TODO: Others such as delta-conversions (e.g. converting degC to K), modulo conversions etc.
+                    # a bit confusing: warn_about_nm_units means "is there anything to warn about?" and warn_nonmult
+                    # means "does the user want to be warned at all?"!
+                    if warn_about_nm_units and warn_nonmult:
+                        print(
+                            f"\nWARNING: While running your function, arithmetic involving non-multiplicative units came up:\n\t{unchanged_selfQ:~P} {op_as_str(func.__name__)} {unchanged_operandQ:~P}.\nThis is technically ambiguous, and PAGOS will convert the offending units to their delta-counterparts:\n\t{selfQ:~P} {op_as_str(func.__name__)} {operandQ:~P} = {resultQ:~P}.\nPlease check that this is the intended behaviour of your function!\nTo disable this warning, run: `set_warn_nonmult(False)` before your code.\n"
+                        )
+
+                    return ret
 
             return wrapper
 
@@ -273,6 +335,22 @@ class PAGOSQuantity:
     def __eq__(self, value):
         return self == value
 
+    @fastpagosbinop(OperationKind.COMPARATIVE)
+    def __gt__(self, value):
+        return self > value
+
+    @fastpagosbinop(OperationKind.COMPARATIVE)
+    def __lt__(self, value):
+        return self < value
+
+    @fastpagosbinop(OperationKind.COMPARATIVE)
+    def __ge__(self, value):
+        return self >= value
+
+    @fastpagosbinop(OperationKind.COMPARATIVE)
+    def __le__(self, value):
+        return self <= value
+
     def _finally_convert_to(self, other):
         """
         Wrapper around to(), only to be called at the end of @unit_aware, instead of every time a Pint operation calls Pint().
@@ -304,6 +382,21 @@ class PAGOSQuantity:
             return f"{self.value} {self.units}"
         elif isinstance(self.value, float):
             return f"{self.value:.9} {self.units}"
+
+    # unary operators
+    def __abs__(self):
+        return PAGOSQuantity(abs(self.value), self.units)
+
+    def __neg__(self):
+        return PAGOSQuantity(-self.value, self.units)
+
+    # numpy operators
+    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+        qs_in = tuple(CatchConvert(inpq.value, inpq.units) for inpq in inputs)
+        result = pint.facets.numpy.quantity.NumpyQuantity.__array_ufunc__(
+            self, ufunc, method, *qs_in, **kwargs
+        )
+        return PAGOSQuantity(result._magnitude, result._units)
 
 
 # set up UnitRegistry class that will create Quantity objects from PAGOSQuantity type
@@ -351,7 +444,7 @@ def pQ(value, units):
 #    ┃┃┃┃ ┃┃┗┫ ┃ ┣╸    ┃  ┣━┫┣┳┛┃  ┃ ┃   ┗━┓┗┳┛┗━┓ ┃ ┣╸ ┃┃┃
 #    ╹ ╹┗━┛╹ ╹ ╹ ┗━╸   ┗━╸╹ ╹╹┗╸┗━╸┗━┛   ┗━┛ ╹ ┗━┛ ╹ ┗━╸╹ ╹
 """
-TODO Better documentation of how the PAGOSCalculator.unitaware and PAGOSCalculator.mc_possible work.
+TODO Better documentation of how the PAGOSCalculator.unitaware and mc_possible work.
 """
 
 
@@ -379,17 +472,17 @@ def mc_possible(dist_std: str | float):
         @wraps(func)
         def wrapper(self, *args, **kwargs):
             reset_tag = False
-            if self.enable_mc:
-                self.enable_mc = False
+            if self._mc_enabled:
+                self._mc_enabled = False
                 reset_tag = True
 
             ret = func(self, *args, **kwargs)
 
             if reset_tag:
-                self.enable_mc = True
+                self._mc_enabled = True
                 reset_tag = False
 
-            if self.enable_mc:
+            if self._mc_enabled:
                 if isinstance(dist_std, float):
                     ret = ret * normal(1, dist_std)
                 elif isinstance(dist_std, str):
@@ -415,7 +508,10 @@ class PAGOSCalculator:
             "combi": lambda base_value: base_value * normal(1, 0.001),
         }
 
-        self.enable_mc = True
+        self._mc_enabled = False
+
+    def set_mc(self, value: bool):
+        self._mc_enabled = value
 
     def make_mcmethod(self, func: Callable, dist_std: float):
         """
@@ -450,8 +546,14 @@ class PAGOSCalculator:
         def _unit_aware(func: Callable):
             @wraps(func)
             def wrapper(*args, **kwargs) -> PAGOSQuantity:
+                # if default_units_in is a single string, make sure we just read that and not each individual character of it!
+                if isinstance(default_units_in, str):
+                    _default_units_in = (default_units_in,)
+                else:
+                    _default_units_in = default_units_in
+                # execute the function with pQ(...) arguments instead of floats
                 result = func(
-                    *(pQ(arg, unit) for unit, arg in zip(default_units_in, args)),
+                    *(pQ(arg, unit) for unit, arg in zip(_default_units_in, args)),
                     **kwargs,
                 )
                 return result._finally_convert_to(units_out)
