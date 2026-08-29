@@ -392,10 +392,17 @@ class PAGOSQuantity:
 
     # numpy operators
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+        # TODO this will be quite slow - in future numpy functions should work as well as
+        # the normal arithmetic functions with caching!!!
+
+        # convert the input PagosQuantity objects into regular Pint Quantity objects
         qs_in = tuple(CatchConvert(inpq.value, inpq.units) for inpq in inputs)
+        # allow Pint to perform calculation on Pint Quantity objects
         result = pint.facets.numpy.quantity.NumpyQuantity.__array_ufunc__(
             self, ufunc, method, *qs_in, **kwargs
         )
+        # cache
+        # return PAGOSQuantity result
         return PAGOSQuantity(result._magnitude, result._units)
 
 
@@ -553,7 +560,10 @@ class PAGOSCalculator:
                     _default_units_in = default_units_in
                 # execute the function with pQ(...) arguments instead of floats
                 result = func(
-                    *(pQ(arg, unit) for unit, arg in zip(_default_units_in, args)),
+                    *(
+                        pQ(arg, unit) if unit is not None else arg
+                        for unit, arg in zip(_default_units_in, args)
+                    ),
                     **kwargs,
                 )
                 return result._finally_convert_to(units_out)

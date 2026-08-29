@@ -2,16 +2,21 @@ import numpy as np
 
 from pagos.newconstants import (
     ABUNDANCES,
+    CFC_WARNERWEISS_85_COEFFS,
     EYRING_36_COEFFS,
     EYRING_36_HAMME_SALT_CORRECTION,
+    K100,
     MGC,
     MOLAR_MASSES,
     MOLAR_VOLUMES,
     NG_JENKINS_19_COEFFS,
+    SF6_BULLISTER_02_COEFFS,
     TPW,
     WANNINKHOF_92_COEFFS,
     WANNINKHOF_92_SALTFACTOR_COEFFS,
+    ArNeN2_HAMMEEMERSON_04_COEFFS,
 )
+from pagos.newcore import pCalc as pC
 from pagos.newwater import calc_kinvisc
 
 PREDEFINED_GASES = ["He", "Ne", "Ar", "Kr", "Xe", "N2", "CFC11", "CFC12", "SF6"]
@@ -57,16 +62,35 @@ class Gas:
             )
 
         # initialise methods
-        # Schmidt number calculation
-        if name in STABLETRANSIENTGASES:
+        # initialise Schmidt number calculation
+        if self.name in STABLETRANSIENTGASES:
             self.calc_Sc = lambda T, S: self.__calc_Sc_W92(T, S)
-        elif name in NOBLEGASES:
+        elif self.name in NOBLEGASES + ["N2"]:
             self.calc_Sc = lambda T, S: self.__calc_Sc_HE17(T, S)
         else:
             self.calc_sc = NotImplementedError(
                 f"calc_Sc is not defined for {self.name}"
             )
+        self.calc_Sc = pC.make_mcmethod(self.calc_Sc, 0.0)
 
+        # initialise C* calculation
+        if self.name in NOBLEGASES:
+            self.calc_Cstar = lambda T, S: self.__calc_Cstar_J19(T, S)
+        elif self.name in {"CFC11", "CFC12"}:
+            self.calc_Cstar = lambda T, S, ab="default": self.__calc_Cstar_WW85(
+                T, S, ab
+            )
+        elif self.name in {"SF6"}:
+            self.calc_Cstar = lambda T, S, ab="default": self.__calc_Cstar_B02(T, S, ab)
+        elif self.name in {"N2"}:
+            self.calc_Cstar = lambda T, S: self.__calc_Cstar_HE04(T, S)
+        else:
+            self.calc_Cstar = NotImplementedError(
+                f"calc_Cstar is not defined for {self.name}"
+            )
+        self.calc_Cstar = pC.make_mcmethod(self.calc_Cstar, 0.0)
+
+    @pC.unit_aware((None, "degC", "permille"), "dimensionless")
     def __calc_Sc_W92(
         self,
         T: float,
@@ -114,6 +138,7 @@ class Gas:
         Sc = saltfactor * (A - B * T + C * T**2 - D * T**3)
         return Sc
 
+    @pC.unit_aware((None, "degC", "permille"), "dimensionless")
     def __calc_Sc_HE17(self, T: float, S: float) -> float:
         """Calculates the Schmidt number Sc of given gas in seawater.\\
         **Default input units** --- `T`:°C, `S`:‰\\
@@ -149,15 +174,112 @@ class Gas:
         Sc = nu_sw / D
         return Sc
 
+    @pC.unit_aware((None, "degC", "permille"), "mol/kg")
+    def __calc_Cstar_J19(self, T: float, S: float) -> float:
+        T_K = T + TPW
+        T_N = T_K / K100
+        A0, AR, AL, A1, B0, B1, B2, C0 = (
+            NG_JENKINS_19_COEFFS[self.name][c]
+            for c in ["A0", "AR", "AL", "A1", "B0", "B1", "B2", "C0"]
+        )
+        Cstar = np.exp(
+            A0
+            + AR / T_N
+            + AL * np.log(T_N)
+            + A1 * T_N
+            + S * (B0 + B1 * T_N + B2 * T_N**2)
+            + S**2 * C0
+        ) * pQ(1, "mol/kg")
+        return Cstar
+
+    @pC.unit_aware((None, "degC", "permille", None), "mol/kg")
+    def __calc_Cstar_WW85(self, T: float, S: float, ab: str = "default") -> float:
+        T_K = T + TPW
+        T_N = T_K / K100
+        a1, a2, a3, a4, b1, b2, b3 = CFC_WARNERWEISS_85_COEFFS[
+            self.name
+        ].values()  # needs S in parts per thousand
+        # TODO adopt for absolute salinity??
+        # abundance
+        if ab == "default":
+            ab = ABUNDANCES[self.name]
+        # C* = F * abundance, concentration calculated from Warner and Weiss 1985
+        Cstar = (
+            np.exp(
+                a1
+                + a2 / T_N
+                + a3 * np.log(T_N)
+                + a4 * T_N**2
+                + S * (b1 + b2 * T_N + b3 * T_N**2)
+            )
+            * ab
+        ) * pQ(1, "mol/kg")
+        return Cstar
+
+    @pC.unit_aware((None, "degC", "permille", None), "mol/kg")
+    def __calc_Cstar_B02(self, T: float, S: float, ab: str = "default") -> float:
+        T_K = T + TPW
+        T_N = T_K / K100
+        a1, a2, a3, b1, b2, b3 = SF6_BULLISTER_02_COEFFS[
+            self.name
+        ].values()  # don't know salinity unit
+        # abundance
+        if ab == "default":
+            ab = ABUNDANCES[self.name]
+        # C* = F*abundance, concentration calculated from Bullister et al. 2002
+        Cstar = (
+            np.exp(a1 + a2 / T_N + a3 * np.log(T_N) + S * (b1 + b2 * T_N + b3 * T_N**2))
+            * ab
+        ) * pQ(1, "mol/kg")
+        return Cstar
+
+    @pC.unit_aware((None, "degC", "permille"), "mol/kg")
+    def __calc_Cstar_HE04(self, T: float, S: float) -> float:
+        T_K = T + TPW
+        A0, A1, A2, A3, B0, B1, B2 = ArNeN2_HAMMEEMERSON_04_COEFFS[
+            self.name
+        ].values()  # PSS salinity
+        # T_s, temperature expression used in the calculation of C*
+        T_s = np.log((pQ(298.15, "degC") - T) / T_K)
+        # C*, concentration calculated from Hamme and Emerson 2004. Multiplication by 10^-6 to have units of mol/kg
+        Cstar = (
+            np.exp(
+                A0
+                + A1 * T_s
+                + A2 * T_s**2
+                + A3 * T_s**3
+                + S * (B0 + B1 * T_s + B2 * T_s**2)
+            )
+            * 1e-6
+        ) * pQ(1, "mol/kg")
+        return Cstar
+
 
 # TESTING
 He = Gas("He")
 CFC12 = Gas("CFC12")
+SF6 = Gas("SF6")
+Kr = Gas("Kr")
+Ar = Gas("Ar")
+Xe = Gas("Xe")
+Ne = Gas("Ne")
+N2 = Gas("N2")
 
 from pagos.newcore import pQ
 from pagos.newcore import set_warn_nonmult
+from pagos.gas import calc_Cstar
 
 set_warn_nonmult(False)
 
 print(He.calc_Sc(pQ(4, "degC"), pQ(8, "permille")))
+print(He.calc_Sc(4, pQ(0.8, "percent")))
 print(CFC12.calc_Sc(pQ(4, "degC"), pQ(8, "permille")))
+
+print(He.calc_Cstar(4, 8), calc_Cstar("He", 4, 8))
+print(CFC12.calc_Cstar(4, 8), calc_Cstar("CFC12", 4, 8))
+print(SF6.calc_Cstar(4, 8), calc_Cstar("SF6", 4, 8))
+print(Kr.calc_Cstar(4, 8), calc_Cstar("Kr", 4, 8))
+print(Ar.calc_Cstar(4, 8), calc_Cstar("Ar", 4, 8))
+print(Xe.calc_Cstar(4, 8), calc_Cstar("Xe", 4, 8))
+print(Ne.calc_Cstar(4, 8), calc_Cstar("Ne", 4, 8))
+print(N2.calc_Cstar(4, 8), calc_Cstar("N2", 4, 8))
