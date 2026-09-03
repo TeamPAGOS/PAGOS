@@ -3,13 +3,16 @@ Core functions for the PAGOS package. The Quantity shorthand `pQ` is included he
 some internal functions/decorators and the framework for regular and fast unit processing.
 """
 
-import pint
-from typing import TypeAlias
 from collections.abc import Callable
-from functools import wraps
 from enum import Enum, auto
+from functools import wraps, reduce
+from typing import TypeAlias
+from operator import mul as opmul, truediv as opdiv
+
+import pint
 from numpy.random import normal
 
+from pagos.newunits import PAGOSDims, PAGOSTransformations, PAGOSUnits
 
 #    ┏━┓╻ ╻┏━┓┏┓╻╺┳╸╻╺┳╸╻ ╻         ┏━┓┏━╸┏━╸╻┏━┓╺┳╸┏━┓╻ ╻   ┏━┓╻ ╻┏━┓╺┳╸┏━╸┏┳┓
 #    ┃┓┃┃ ┃┣━┫┃┗┫ ┃ ┃ ┃ ┗┳┛   ╺╋╸   ┣┳┛┣╸ ┃╺┓┃┗━┓ ┃ ┣┳┛┗┳┛   ┗━┓┗┳┛┗━┓ ┃ ┣╸ ┃┃┃
@@ -81,6 +84,14 @@ class CatchConvert(pint.UnitRegistry.Quantity):
     # for when non-multiplicative units are exponentiated
     exp_transforms = {}
 
+    # pairs of
+    # HASH(a units, b units, *contexts) : conversion function
+    conversions_on_to_call = {}
+
+    # pairs of
+    # HASH(a units, b units, gas) : pre-transforms for PAGOSUnits
+    pre_transforms = {}
+
     # single register to hold the details of the last conversion that happened in
     # _convert_magnitude_not_inplace
     current_conversion_register = None
@@ -90,7 +101,6 @@ class CatchConvert(pint.UnitRegistry.Quantity):
 
     def _convert_magnitude_not_inplace(self, other, *contexts, **ctx_kwargs):
         # can potentially get automatically called when operations are performed, not necessarily only when the user calls .to()!
-
         convfac = self._REGISTRY._get_conversion_factor(self._units, other)
 
         def conv_func(x):
@@ -101,6 +111,9 @@ class CatchConvert(pint.UnitRegistry.Quantity):
         CatchConvert.current_conversion_register = conv_func
 
         return super()._convert_magnitude_not_inplace(other, *contexts, **ctx_kwargs)
+
+    def to(self, other, *contexts, **ctx_kwargs):
+        return super().to(other, *contexts, **ctx_kwargs)
 
 
 class PAGOSQuantity:
@@ -126,7 +139,7 @@ class PAGOSQuantity:
 
         if isinstance(value, PAGOSQuantity):
             selfQ = value
-            pint_representation = CatchConvert(selfQ.value, selfQ.units)
+            pint_representation = ccreg.Quantity(selfQ.value, selfQ.units)
             converted_pint_repr = pint_representation.to(inst.units)
             value = converted_pint_repr.magnitude
         inst.value = value
@@ -203,8 +216,8 @@ class PAGOSQuantity:
                 # if we are not in fast mode, store the conversion in a cache uder the hash key
                 else:
                     # create Pint Quantity objects out of the values and units
-                    selfQ = CatchConvert(self.value, self.units)
-                    operandQ = CatchConvert(operand_value, operand_units)
+                    selfQ = ccreg.Quantity(self.value, self.units)
+                    operandQ = ccreg.Quantity(operand_value, operand_units)
 
                     # if there are non-multiplicative units (e.g. degC), we automatically convert these
                     # to their delta-equivalents (NOTE: here by subtracting zero, perhaps not the most
@@ -214,10 +227,12 @@ class PAGOSQuantity:
                     warn_about_nm_units = False
                     if unchanged_selfQ._get_non_multiplicative_units():
                         warn_about_nm_units = True
-                        selfQ = unchanged_selfQ - CatchConvert(0, selfQ._units)
+                        selfQ = unchanged_selfQ - ccreg.Quantity(0, selfQ._units)
                     if unchanged_operandQ._get_non_multiplicative_units():
                         warn_about_nm_units = True
-                        operandQ = unchanged_operandQ - CatchConvert(0, operandQ._units)
+                        operandQ = unchanged_operandQ - ccreg.Quantity(
+                            0, operandQ._units
+                        )
 
                     # case for addition and subtraction
                     if operation_kind in {OperationKind.ADD, OperationKind.SUBTRACT}:
@@ -363,7 +378,7 @@ class PAGOSQuantity:
             converted_self_value = conversion_func(self.value)
             return PAGOSQuantity(converted_self_value, other)
         else:
-            selfQ = CatchConvert(self.value, self.units)
+            selfQ = ccreg.Quantity(self.value, self.units)
             resultQ = selfQ.to(other)
             conversion_func = CatchConvert.current_conversion_register
 
@@ -396,14 +411,162 @@ class PAGOSQuantity:
         # the normal arithmetic functions with caching!!!
 
         # convert the input PagosQuantity objects into regular Pint Quantity objects
-        qs_in = tuple(CatchConvert(inpq.value, inpq.units) for inpq in inputs)
+        qs_in = tuple(ccreg.Quantity(inpq.value, inpq.units) for inpq in inputs)
         # allow Pint to perform calculation on Pint Quantity objects
         result = pint.facets.numpy.quantity.NumpyQuantity.__array_ufunc__(
             self, ufunc, method, *qs_in, **kwargs
         )
-        # cache
+        # cache system here?
+        ...
         # return PAGOSQuantity result
         return PAGOSQuantity(result._magnitude, result._units)
+
+    # x.to(u) converts x to units u
+    def to(self, other, *contexts, **ctx_kwargs):
+        # cache system to make sure strings are not redundantly parsed into UnitsContainer objects
+        if isinstance(other, str):
+            if other in PAGOSQuantity.units_cache:
+                other = PAGOSQuantity.units_cache[other]
+            else:
+                other = ureg._parse_units_as_container(str_other := other)
+                PAGOSQuantity.units_cache[str_other] = other
+        elif isinstance(other, pint.util.UnitsContainer):
+            pass
+        else:
+            raise NotImplementedError("Type of units passed in is not implemented")
+
+        id = hash((self.units, other, *contexts))
+        if _are_calculations_fast():
+            try:
+                conversion_func = CatchConvert.conversions_on_to_call[id]
+                return PAGOSQuantity(conversion_func(self), other)
+            except KeyError:
+                print(f"Conversion {(self.units, other, *contexts)} not found in cache")
+                raise
+        else:
+            """
+            pre-conversion of PAGOS-specific units; this happens if we have, for example,
+            mole_gas / kg -> gram_gas / kg
+            Even though regular Pint contexts would work for this, there are two issues:
+            1) Context transformations work on their own, but not when in compound units
+               like A / kg -> B / kg,
+            2) Transformations through contexts are hard to intercept with CatchConvert.
+            So we handle it here instead
+            """
+            if any([str(u) in PAGOSUnits for u in self.units]):
+                # match PAGOS-specific units across own units and other units
+                # expand out other into its factors
+
+                _otherunits = list(other.copy().items())
+                _otherunits_factor_sequence = [
+                    [
+                        ureg._parse_units_as_container(pair[0])
+                        for i in range(int(pair[1]))
+                    ]
+                    # this bit deals with non-integer powers
+                    + (
+                        [
+                            ureg._parse_units_as_container(
+                                pair[0] + f"^{pair[1] - int(pair[1])}"
+                            )
+                        ]
+                        if pair[1] - int(pair[1]) != 0
+                        else []
+                    )
+                    for pair in _otherunits
+                    if str(ccreg.Unit(pair[0] + f"^{pair[1]}").dimensionality)
+                    in PAGOSDims
+                ]
+                # flatten and turn into Unit objects (instead of UnitsContainer)
+                _otherunits_factor_sequence = [
+                    ccreg.Unit(x) for xs in _otherunits_factor_sequence for x in xs
+                ]
+
+                PAGOS_transformation_chain = []
+                # TODO delete comment here?
+                """contained_LHS_PAGOS_units = []
+                contained_RHS_PAGOS_units = []"""
+                # store requisite transformations
+                # quite complicated as has to search through combinations of units as well
+                # as single ones on the right hand side
+                for _u in [__u for __u in self.units.items() if __u[0] in PAGOSUnits]:
+                    u = ccreg.Unit(_u[0] + f"^{_u[1]}")
+                    # TODO delete me?
+                    """contained_LHS_PAGOS_units.append(u)"""
+                    i, j, bincount = 0, 0, 1
+                    l = len(_otherunits_factor_sequence)
+                    while j < l:
+                        max_i = sum([2 ** (l - k) for k in range(j + 1)])
+                        while i < max_i:
+                            binselect = [
+                                i
+                                for i, x in enumerate(list(bin(bincount)[2:]))
+                                if int(x) == 1
+                            ]
+                            # to_compare = product of selected single units
+                            to_compare = reduce(
+                                opmul,
+                                [_otherunits_factor_sequence[x] for x in binselect],
+                                ccreg.Unit(""),
+                            )
+                            if to_compare.is_compatible_with(u, pc, **ctx_kwargs):
+                                transformation = PAGOSTransformations[
+                                    hash(
+                                        (
+                                            str(u.dimensionality),
+                                            str(to_compare.dimensionality),
+                                        )
+                                    )
+                                ][2]
+                                # store the transformation of a PAGOSUnit onto the transformation chain
+                                PAGOS_transformation_chain.append(transformation)
+                                # TODO delete comment?
+                                """contained_RHS_PAGOS_units.append(
+                                    ccreg.parse_units_as_container(str(to_compare))
+                                )"""
+                                for popidx in binselect:
+                                    _otherunits_factor_sequence.pop(popidx)
+                                break
+                            bincount += 2**i
+                            i += 1
+                        else:
+                            bincount += 1
+                            i = 0
+                            j += 1
+                            continue
+                        break
+                    else:
+                        raise ValueError(
+                            "There is a mismatch between PAGOS units (subscripted with _g) on either side of the conversion."
+                        )
+            # save the transformation chain into a cache
+            pre_transform_id = hash((self.units, other, ctx_kwargs["gas"]))
+            CatchConvert.pre_transforms[pre_transform_id] = PAGOS_transformation_chain
+
+            # create Pint Quantity objects out of the value and unit
+            selfQ = ccreg.Quantity(self.value, self.units)
+            # perform pre-transformations from PAGOSUnits
+            for tr in PAGOS_transformation_chain:
+                selfQ = tr(ccreg, selfQ, ctx_kwargs["gas"])
+            # TODO delete commented text below?
+            """selfQ = reduce(opdiv, contained_LHS_PAGOS_units, selfQ)
+            # perform Pint conversion, removing PAGOSUnits also from target
+            other = reduce(opdiv, contained_RHS_PAGOS_units, other)"""
+            resultQ = selfQ.to(other, *contexts, **ctx_kwargs)
+            # if a conversion didn't happen (i.e. units were equal), store identity function
+            if not (cf := CatchConvert.current_conversion_register):
+                cf = lambda x: x
+            # otherwise store the conversion
+            CatchConvert.conversions_on_to_call[id] = cf
+            CatchConvert.current_conversion_register = None
+            # return result
+            return PAGOSQuantity(resultQ._magnitude, resultQ._units)
+            # TODO delete commented text below?
+            """# return result, with PAGOSUnits re-included
+            return PAGOSQuantity(
+                resultQ._magnitude,
+                reduce(opmul, contained_RHS_PAGOS_units, resultQ._units),
+            )"""
 
 
 # set up UnitRegistry class that will create Quantity objects from PAGOSQuantity type
@@ -416,9 +579,39 @@ class PAGOSRegistry(pint.registry.GenericUnitRegistry[PAGOSQuantity, pint.Unit])
     Unit: TypeAlias = pint.Unit
 
 
-# two unit registries must exist, so that the different TypeAliases to Quantity are accessible
-# (see https://pint.readthedocs.io/en/stable/advanced/custom-registry-class.html)
+# set up UnitRegistry class that will create Quantity objects from CatchConvert type
+class CatchConvertRegistry(pint.registry.GenericUnitRegistry[CatchConvert, pint.Unit]):
+    """
+    `UnitRegistry` for CatchConvert objects. Only to be used internally.
+    """
+
+    Quantity: TypeAlias = CatchConvert
+    Unit: TypeAlias = pint.Unit
+
+
+ccreg = CatchConvertRegistry()
+
+"""
+THE UNIT REGISTRY
+
+This is the object from which ALL units within PAGOS and with which PAGOS should
+interact will come from. If the user defines another UnitRegistry in their program, and then
+attempts to use PAGOS, it will fail and throw: "ValueError: Cannot operate with Quantity and
+Quantity of different registries."
+"""
+# unit registry
 ureg = PAGOSRegistry()
+
+
+# initialise units
+for key in PAGOSUnits:
+    ureg.define(PAGOSUnits[key])
+    ccreg.define(PAGOSUnits[key])
+pc = pint.Context("pc", defaults={"gas": None})
+# initialise transformations
+for key in PAGOSTransformations:
+    tup = PAGOSTransformations[key]
+    pc.add_transformation(tup[0], tup[1], tup[2])
 
 # global variable controlling whether or not PAGOSQuantity or FastPAGOSQuantity instances will
 # be created when PAGOSQuantityFactory(...) is called (see that class below)
