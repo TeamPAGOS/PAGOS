@@ -1,0 +1,58 @@
+{
+    "gases": {
+        "He": {
+            "name": "He",
+            "abn [mol_g/mol]": 5.24e-6,
+            "vmol [ccSTP_g/mol_g]":22425.8703182828,
+            "mmol [g_g/mol_g]": 4.002602
+        },
+        "Ne":{
+            "name": "Ne",
+            "abn [mol_g/mol]": 18.18e-6,
+            "vmol [ccSTP_g/mol_g]": 22425.8703182828,
+            "mmol [g_g/mol_g]": 20.1797
+        },
+        "Ar": {
+            "name": "Ar",
+            "abn [mol_g/mol]": 0.934e-2,
+            "vmol [ccSTP_g/mol_g]": 22392.5703182828,
+            "mmol [g_g/mol_g]": 39.948
+        },
+        "Kr": {
+            "name": "Kr",
+            "abn [mol_g/mol]": 1.14e-6,
+            "vmol [ccSTP_g/mol_g]": 22352.8703182828,
+            "mmol [g_g/mol_g]": 83.798
+        },
+        "Xe": {
+            "name": "Xe",
+            "abn [mol_g/mol]": 0.087e-6,
+            "vmol [ccSTP_g/mol_g]": 22256.9703182828,
+            "mmol [g_g/mol_g]": 131.293
+        },
+        "CFC11": {
+            "name": "CFC11",
+            "abn [mol_g/mol]": 218e-12,
+            "vmol [ccSTP_g/mol_g]": 23807,
+            "mmol [g_g/mol_g]": 137.37
+        },
+        "CFC12": {
+            "name": "CFC12",
+            "abn [mol_g/mol]": 488e-12,
+            "vmol [ccSTP_g/mol_g]": 21844,
+            "mmol [g_g/mol_g]": 120.91
+        },
+        "SF6": {
+            "name": "SF6",
+            "abn [mol_g/mol]": 11.5e-12,
+            "vmol [ccSTP_g/mol_g]": 22075.5738997,
+            "mmol [g_g/mol_g]": 146.06
+        },
+        "N2": {
+            "name": "N2",
+            "abn [mol_g/mol]": 0.781,
+            "vmol [ccSTP_g/mol_g]": 22403.8633496,
+            "mmol [g_g/mol_g]": 28.0134
+        }
+    }
+}

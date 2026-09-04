@@ -1,12 +1,9 @@
 from pagos.newcore import pQ, ureg
-from pint import Context
+import json
 
-# Triple point of water (K)
-TPW = pQ(273.15, "K")
-# Molar mass of water (g/mol)
-MMW = pQ(18.016, "g/mol")
-# Absolute zero (°C)
-ABZ = pQ(-273.15, "degC")
+# gases json file
+with open("src/pagos/gases.json", "r") as gases_file:
+    gases_info = json.load(gases_file)["gases"]
 # Atmospheric pressure (Pa)
 PAT = pQ(101325, "Pa")
 # Molar gas constant (J/mol/K)
@@ -52,45 +49,23 @@ SHARQAWY_10_COEFFS = {
 
 # constants for gas.py calculations
 ABUNDANCES = {
-    "He": 5.24e-6,
-    "Ne": 18.18e-6,
-    "Ar": 0.934e-2,
-    "Kr": 1.14e-6,
-    "Xe": 0.087e-6,
-    "CFC11": 218e-12,
-    "CFC12": 488e-12,
-    "SF6": 11.5e-12,
-    "N2": 0.781,
+    gases_info[k]["name"]: gases_info[k]["abn [mol_g/mol]"] for k in gases_info
 }
 
 # molar volumes in units of cm3/mol, referenced to 0 degC and 1 atm = 1013.25 mbar, except
-# CFC11, whichreferenced to its boiling point of 297 K
+# CFC11, which is referenced to its boiling point of 297 K
 # Sources: noble gases, Benson & Krause 1976; stable transient gases, NIST
 # NOTE: cannot find them in Benson and Krause
 # TODO more digits for CFCs
 MOLAR_VOLUMES = {
-    "He": pQ(22425.8703182828, "cc/mol"),
-    "Ne": pQ(22424.8703182828, "cc/mol"),
-    "Ar": pQ(22392.5703182828, "cc/mol"),
-    "Kr": pQ(22352.8703182828, "cc/mol"),
-    "Xe": pQ(22256.9703182828, "cc/mol"),
-    "SF6": pQ(22075.5738997, "cc/mol"),
-    "CFC11": pQ(23807, "cc/mol"),
-    "CFC12": pQ(21844, "cc/mol"),
-    "N2": pQ(22403.8633496, "cc/mol"),
+    gases_info[k]["name"]: pQ(gases_info[k]["vmol [ccSTP_g/mol_g]"], "cc/mol")
+    for k in gases_info
 }
 
 # molar masses of the gases (g/mol)
 MOLAR_MASSES = {
-    "He": pQ(4.002602, "g/mol"),
-    "Ne": pQ(20.1797, "g/mol"),
-    "Ar": pQ(39.948, "g/mol"),
-    "Kr": pQ(83.798, "g/mol"),
-    "Xe": pQ(131.293, "g/mol"),
-    "SF6": pQ(146.06, "g/mol"),
-    "CFC11": pQ(137.37, "g/mol"),
-    "CFC12": pQ(120.91, "g/mol"),
-    "N2": pQ(28.0134, "g/mol"),
+    gases_info[k]["name"]: pQ(gases_info[k]["mmol [g_g/mol_g]"], "g/mol")
+    for k in gases_info
 }
 
 # useful normalising constant for solubility constans

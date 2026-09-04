@@ -12,7 +12,7 @@ from operator import mul as opmul, truediv as opdiv
 import pint
 from numpy.random import normal
 
-from pagos.newunits import PAGOSDims, PAGOSTransformations, PAGOSUnits
+from pagos.newunits import PAGOSDimPatterns, PAGOSDims, PAGOSTransformations, PAGOSUnits
 
 #    ┏━┓╻ ╻┏━┓┏┓╻╺┳╸╻╺┳╸╻ ╻         ┏━┓┏━╸┏━╸╻┏━┓╺┳╸┏━┓╻ ╻   ┏━┓╻ ╻┏━┓╺┳╸┏━╸┏┳┓
 #    ┃┓┃┃ ┃┣━┫┃┗┫ ┃ ┃ ┃ ┗┳┛   ╺╋╸   ┣┳┛┣╸ ┃╺┓┃┗━┓ ┃ ┣┳┛┗┳┛   ┗━┓┗┳┛┗━┓ ┃ ┣╸ ┃┃┃
@@ -123,19 +123,35 @@ class PAGOSQuantity:
 
     units_cache = {}
 
-    def __new__(cls, value, units=None):
+    def __new__(cls, value, units=None, gas=None):
         inst = object.__new__(cls)
+
         # cache system to make sure strings are not redundantly parsed into UnitsContainer objects
+        id = hash((units, gas))
         if isinstance(units, str):
-            if units in PAGOSQuantity.units_cache:
-                inst.units = PAGOSQuantity.units_cache[units]
+            if id in PAGOSQuantity.units_cache:
+                inst.units = PAGOSQuantity.units_cache[id]
             else:
                 inst.units = ureg._parse_units_as_container(units)
-                PAGOSQuantity.units_cache[units] = inst.units
+                PAGOSQuantity.units_cache[id] = inst.units
         elif isinstance(units, pint.util.UnitsContainer):
             inst.units = units
         else:
             raise NotImplementedError("Type of units passed in is not implemented")
+
+        # if there are PAGOS units yet to be assigned to a gas, we do that here
+        # e.g. if we called PAGOSQuantity(5, 'mol_gas', 'He'), we get out PAGOSQuantity(5, 'mol_He')
+        if gas:
+            for u in inst.units:
+                if str(ureg.Unit(u).dimensionality) in PAGOSDims:
+                    # replace "_g" or "_gas" with "_<actual gas string", e.g. "_He"
+                    stripped_unit = u.replace("_gas", "_" + gas).replace(
+                        "_g", "_" + gas
+                    )
+                    inst.units = inst.units * ureg._parse_units_as_container(
+                        "(" + stripped_unit + "/" + u + f")^{inst.units[u]}"
+                    )
+            PAGOSQuantity.units_cache[id] = inst.units
 
         if isinstance(value, PAGOSQuantity):
             selfQ = value
@@ -236,6 +252,13 @@ class PAGOSQuantity:
 
                     # case for addition and subtraction
                     if operation_kind in {OperationKind.ADD, OperationKind.SUBTRACT}:
+                        # perform pre-transformation of PAGOS quantities
+                        ...  # HOW WILL WE DECIDE WHICH GAS TO TAKE HERE? Should the gas be stored ON the PAGOSQuantity?
+                        # perhaps the gases should be stored on the units themselves! I.e. 'mol_He' instead of 'mol_gas'
+                        # and when requiring air? Then just 'mol_air'? or 'mol'?
+                        # would have to respectively be converted with multiplication by chi ['mol_He / mol_air'] or ['mol_He / mol']
+                        # dynamic inference about which gas/mixture to use will be very tricky
+
                         # perform Pint addition/subtraction, which does conversions automatically
                         resultQ = func(selfQ, operandQ)
                         # if a conversion didn't happen, store identity function
@@ -453,6 +476,20 @@ class PAGOSQuantity:
             2) Transformations through contexts are hard to intercept with CatchConvert.
             So we handle it here instead
             """
+            # check for "_gas" or "_g" suffixes on units
+            """def _infer_gas_type(self, quant_in, unit_out):
+                # get the gas that we want to convert the generic marker _g or _gas to
+                gas = str(unit_out.dimensionality).removesuffix("]")
+                for dp in PAGOSDimPatterns:
+                    gas = gas.removeprefix(dp[0])
+                # replace the generic marker with the gas string
+                replaced_units = (
+                    str(u := quant_in._units)
+                    .replace("_gas", "_" + gas)
+                    .replace("_g", "_" + gas)
+                )
+                return CatchConvert(quant_in.magnitude, replaced_units + f"^{u[str(u)]}")"""
+
             if any([str(u) in PAGOSUnits for u in self.units]):
                 # match PAGOS-specific units across own units and other units
                 # expand out other into its factors
@@ -474,8 +511,7 @@ class PAGOSQuantity:
                         else []
                     )
                     for pair in _otherunits
-                    if str(ccreg.Unit(pair[0] + f"^{pair[1]}").dimensionality)
-                    in PAGOSDims
+                    if str(ccreg.Unit(pair[0]).dimensionality) in PAGOSDims
                 ]
                 # flatten and turn into Unit objects (instead of UnitsContainer)
                 _otherunits_factor_sequence = [
@@ -483,16 +519,29 @@ class PAGOSQuantity:
                 ]
 
                 PAGOS_transformation_chain = []
-                # TODO delete comment here?
-                """contained_LHS_PAGOS_units = []
-                contained_RHS_PAGOS_units = []"""
+                other_units_replacements = []
                 # store requisite transformations
                 # quite complicated as has to search through combinations of units as well
                 # as single ones on the right hand side
                 for _u in [__u for __u in self.units.items() if __u[0] in PAGOSUnits]:
                     u = ccreg.Unit(_u[0] + f"^{_u[1]}")
-                    # TODO delete me?
-                    """contained_LHS_PAGOS_units.append(u)"""
+
+                    # extract the gas string on the unit
+                    gas_str = reduce(
+                        lambda acc, pat: acc.replace(pat[0], ""),
+                        PAGOSDimPatterns,
+                        str(u.dimensionality).removesuffix("]"),
+                    )
+                    # raise error if attempting to convert from one gas to another
+                    if (
+                        (_g := ctx_kwargs["gas"])
+                        and gas_str not in ["gas", "g"]  # ignore if generic is used
+                        and _g != gas_str
+                    ):
+                        raise ValueError(
+                            f"Tried to convert a quantity of one gas ({gas_str}) to another ({_g})."
+                        )
+
                     i, j, bincount = 0, 0, 1
                     l = len(_otherunits_factor_sequence)
                     while j < l:
@@ -509,23 +558,49 @@ class PAGOSQuantity:
                                 [_otherunits_factor_sequence[x] for x in binselect],
                                 ccreg.Unit(""),
                             )
-                            if to_compare.is_compatible_with(u, pc, **ctx_kwargs):
-                                transformation = PAGOSTransformations[
-                                    hash(
-                                        (
-                                            str(u.dimensionality),
-                                            str(to_compare.dimensionality),
+
+                            # check for "_gas" or "_g" suffixes on to_compare's units
+                            # if they exist, we try to infer that the gas is the same as that provided
+                            # in self.
+                            try:
+                                to_compare_new = reduce(
+                                    opmul,
+                                    (
+                                        ccreg.Unit(
+                                            x.replace("_gas", "_" + gas_str).replace(
+                                                "_g", "_" + gas_str
+                                            )
+                                            + f"^{to_compare._units[str(x)]}"
                                         )
-                                    )
-                                ][2]
-                                # store the transformation of a PAGOSUnit onto the transformation chain
-                                PAGOS_transformation_chain.append(transformation)
-                                # TODO delete comment?
-                                """contained_RHS_PAGOS_units.append(
-                                    ccreg.parse_units_as_container(str(to_compare))
-                                )"""
+                                        for x in to_compare._units
+                                    ),
+                                    ccreg.Unit(""),
+                                )
+                            except:
+                                raise  # TODO deal with exceptions here
+
+                            if to_compare_new.is_compatible_with(u, pc, **ctx_kwargs):
+                                # pop the factor off of the otherunit sequence
+                                # if the conversion is valid, eventually the whole sequence should be popped/
+                                # if something remains, a ValueError is raised (see below)
                                 for popidx in binselect:
                                     _otherunits_factor_sequence.pop(popidx)
+                                other_units_replacements.append(
+                                    (to_compare, to_compare_new)
+                                )
+                                # if the dimensionalities are actually different, perform a transformation
+                                if to_compare_new.dimensionality != u.dimensionality:
+                                    transformation = PAGOSTransformations[
+                                        hash(
+                                            (
+                                                str(u.dimensionality),
+                                                str(to_compare_new.dimensionality),
+                                            )
+                                        )
+                                    ][2]
+                                    # store the transformation of a PAGOSUnit onto the transformation chain
+                                    PAGOS_transformation_chain.append(transformation)
+
                                 break
                             bincount += 2**i
                             i += 1
@@ -548,10 +623,10 @@ class PAGOSQuantity:
             # perform pre-transformations from PAGOSUnits
             for tr in PAGOS_transformation_chain:
                 selfQ = tr(ccreg, selfQ, ctx_kwargs["gas"])
-            # TODO delete commented text below?
-            """selfQ = reduce(opdiv, contained_LHS_PAGOS_units, selfQ)
-            # perform Pint conversion, removing PAGOSUnits also from target
-            other = reduce(opdiv, contained_RHS_PAGOS_units, other)"""
+            # change generic "_g" or "_gas" suffixes to specific ones determined by self
+            for pair in other_units_replacements:
+                other = other / pair[0]._units * pair[1]._units
+            # perform rest of conversion (regular Pint conversions of normal units and prefixes)
             resultQ = selfQ.to(other, *contexts, **ctx_kwargs)
             # if a conversion didn't happen (i.e. units were equal), store identity function
             if not (cf := CatchConvert.current_conversion_register):
@@ -561,12 +636,6 @@ class PAGOSQuantity:
             CatchConvert.current_conversion_register = None
             # return result
             return PAGOSQuantity(resultQ._magnitude, resultQ._units)
-            # TODO delete commented text below?
-            """# return result, with PAGOSUnits re-included
-            return PAGOSQuantity(
-                resultQ._magnitude,
-                reduce(opmul, contained_RHS_PAGOS_units, resultQ._units),
-            )"""
 
 
 # set up UnitRegistry class that will create Quantity objects from PAGOSQuantity type
@@ -628,7 +697,7 @@ def _are_calculations_fast():
 
 
 # shorthand alias
-def pQ(value, units):
+def pQ(value, units, gas=None):
     """
     Generates a unit-aware, MC-capable quantity.
     Usage:
@@ -637,7 +706,7 @@ def pQ(value, units):
     <Quantity(5, 'meter / second')>
     ```
     """
-    return PAGOSQuantity(value, units)
+    return PAGOSQuantity(value, units, gas)
 
 
 #    ┏┳┓┏━┓┏┓╻╺┳╸┏━╸   ┏━╸┏━┓┏━┓╻  ┏━┓   ┏━┓╻ ╻┏━┓╺┳╸┏━╸┏┳┓
