@@ -21,10 +21,10 @@ PAGOSDimPatterns = [
 
 GenericPAGOSTransformations = {
     hash(("[amount_gas]", "[mass_gas]")): (
-        'def __amount_to_mass_[GAS](reg, x, gas): return x * [MOLARMASS] * reg.Quantity(1, "gram_[GAS]/mole_[GAS]")'
+        'def __amount_to_mass_[GAS](reg, x): return x * [MOLARMASS] * reg.Quantity(1, "gram_[GAS]/mole_[GAS]")'
     ),
     hash(("[mass_gas]", "[amount_gas]")): (
-        'def __mass_to_amount_[GAS](reg, x, gas): return x / [MOLARMASS] * reg.Quantity(1, "mole_[GAS]/gram_[GAS]")'
+        'def __mass_to_amount_[GAS](reg, x): return x / [MOLARMASS] * reg.Quantity(1, "mole_[GAS]/gram_[GAS]")'
     ),
     # TODO CONTINUE
 }
