@@ -191,11 +191,13 @@ class PAGOSQuantity:
                             OperationKind.ADD,
                             OperationKind.SUBTRACT,
                         }:
-                            conversion_func, result_units = CatchConvert.conversions[id]
-                            converted_operand_value = conversion_func(operand_value)
+                            # perform conversion of operand
+                            converted_operand_value = self._ext_to(
+                                operand_value, operand_units, self.units, id=id, pcid=id
+                            ).value
 
                             return PAGOSQuantity(
-                                func(self.value, converted_operand_value), result_units
+                                func(self.value, converted_operand_value), self.units
                             )
                         # case for multiplication
                         elif operation_kind in {
@@ -252,18 +254,17 @@ class PAGOSQuantity:
 
                     # case for addition and subtraction
                     if operation_kind in {OperationKind.ADD, OperationKind.SUBTRACT}:
-                        # perform pre-conversion of PAGOSUnits
-                        # NOTE: this is kind of dumb because we have to convert BACK into a PAGOSQuantity first - perhaps there
-                        # is some way we can do this before selecting the operation kind - on the other hand, this may cause problems
-                        # in the operations that do not require pre-conversion!
-                        preconverted_operand = PAGOSQuantity(
+                        # perform conversion of operand
+                        # during PAGOSQuantity.to(), CatchConvert.to() is called and the operation is cached
+                        converted_operand = PAGOSQuantity(
                             operandQ.magnitude, operandQ._units
-                        ).to(self.units)
-                        preconverted_operandQ = ccreg.Quantity(
-                            preconverted_operand.value, preconverted_operand.units
+                        ).to(self.units, id=id, pcid=id)
+                        converted_operandQ = ccreg.Quantity(
+                            converted_operand.value, converted_operand.units
                         )
-                        # perform Pint addition/subtraction, which does conversions automatically
-                        # with ccreg.context("pc"):
+                        # result requires no conversion as this has already been done
+                        resultQ = selfQ + converted_operandQ
+                        """# perform Pint addition/subtraction, which does conversions automatically
                         resultQ = func(selfQ, preconverted_operandQ)
                         # if a conversion didn't happen, store identity function
                         if not (cf := CatchConvert.current_conversion_register):
@@ -273,7 +274,7 @@ class PAGOSQuantity:
                             cf,
                             resultQ._units,
                         )
-                        CatchConvert.current_conversion_register = None
+                        CatchConvert.current_conversion_register = None"""
                         ret = PAGOSQuantity(resultQ._magnitude, resultQ._units)
                     # case for multiplication
                     elif operation_kind in {
@@ -296,8 +297,18 @@ class PAGOSQuantity:
                         ret = PAGOSQuantity(resultQ._magnitude, resultQ._units)
                     # case for comparison:
                     elif operation_kind == OperationKind.COMPARATIVE:
+                        # perform pre-conversion of PAGOSUnits (duplicated code block from the ADDITIVE case)
+                        # NOTE: this is kind of dumb because we have to convert BACK into a PAGOSQuantity first - perhaps there
+                        # is some way we can do this before selecting the operation kind - on the other hand, this may cause problems
+                        # in the operations that do not require pre-conversion!
+                        preconverted_operand = PAGOSQuantity(
+                            operandQ.magnitude, operandQ._units
+                        ).to(self.units)
+                        preconverted_operandQ = ccreg.Quantity(
+                            preconverted_operand.value, preconverted_operand.units
+                        )
                         # perform Pint comparison, which does conversions automatically
-                        resultbool = func(selfQ, operandQ)
+                        resultbool = func(selfQ, preconverted_operandQ)
                         # if a conversion didn't happen, store identity function
                         if not (cf := CatchConvert.current_conversion_register):
                             cf = lambda x: x
@@ -448,8 +459,35 @@ class PAGOSQuantity:
         # return PAGOSQuantity result
         return PAGOSQuantity(result._magnitude, result._units)
 
+    def _ext_to(self, a_value, a_units, b_units, id=None, pcid=None, *contexts):
+        """
+        External variant of to() function, only to be used in fast mode and only internally!
+        Does not have ctx_kwargs argument (unlike to()), and really only exists so that we can
+        use to() on non-PAGOSQuantity arguments (like 5% + 3 = 3.05, which has one unit-imbued
+        argument and one float. The float has no .units attribute so we can't call
+        `<5% object>.to(3.units)`. Instead, we use `_ext_to(5, UnitsContainer({'%':1}), None)`.
+        """
+        if not id:
+            id = hash((a_units, b_units, *contexts))
+        if not pcid:
+            preconvert_id = hash((a_units, b_units))
+        else:
+            preconvert_id = pcid
+        try:
+            # pre-conversion of PAGOS-specific units
+            pre_transformation_chain = CatchConvert.pre_transforms[preconvert_id]
+            # perform pre-transformations from PAGOSUnits
+            for tr in pre_transformation_chain:
+                a_value = tr(ccreg, a_value)
+            conversion_func = CatchConvert.conversions_on_to_call[id]
+            return PAGOSQuantity(conversion_func(a_value), b_units)
+        except KeyError:
+            raise KeyError(
+                f"Conversion {(a_units, b_units, *contexts)} not found in cache"
+            )
+
     # x.to(u) converts x to units u
-    def to(self, other, *contexts, **ctx_kwargs):
+    def to(self, other, id=None, pcid=None, *contexts, **ctx_kwargs):
         # cache system to make sure strings are not redundantly parsed into UnitsContainer objects
         if isinstance(other, str):
             if other in PAGOSQuantity.units_cache:
@@ -462,14 +500,46 @@ class PAGOSQuantity:
         else:
             raise NotImplementedError("Type of units passed in is not implemented")
 
-        id = hash((self.units, other, *contexts))
+        # NOTE: the following manual-entry id and pcid statements are also basically only
+        # here because of the additive fast PAGOS binary operations. Because these
+        # operations have to sometimes expect non-PAGOS objects like floats as operands,
+        # it means that the hashing of units etc. is not that simple. We bypass this by
+        # forcing an id (the same as the id created in fastpagosbinop()) as the cache key,
+        # instead of generating it inside to(). This assumes, among other things, that
+        # ctx_kwargs will NOT be relevant if to() is called from inside __add__. I think
+        # this is an okay assumption, as calling __add__(a, b) is actually calling a + b,
+        # which by construction doesn't accept kwargs at all. Nevertheless if anything
+        # goes wrong here, then *check* that this is working as intended!
+
+        # If we need to revert back to what we had before, delete `if not id:` and
+        # `if not pcid:`, but keep the code that is inside them! Delete the whole else
+        # statement, though.
+
+        if not id:
+            id = hash((self.units, other, *contexts))
+
+        if not pcid:
+            try:
+                preconvert_id = hash((self.units, other, ctx_kwargs["gas"]))
+            except KeyError:
+                preconvert_id = hash((self.units, other))
+        else:
+            preconvert_id = pcid
+
         if _are_calculations_fast():
             try:
+                # pre-conversion of PAGOS-specific units
+                pre_transformation_chain = CatchConvert.pre_transforms[preconvert_id]
+                # perform pre-transformations from PAGOSUnits
+                selfvalue = self.value
+                for tr in pre_transformation_chain:
+                    selfvalue = tr(ccreg, selfvalue)
                 conversion_func = CatchConvert.conversions_on_to_call[id]
-                return PAGOSQuantity(conversion_func(self), other)
+                return PAGOSQuantity(conversion_func(selfvalue), other)
             except KeyError:
-                print(f"Conversion {(self.units, other, *contexts)} not found in cache")
-                raise
+                raise KeyError(
+                    f"Conversion {(self.units, other, *contexts)} not found in cache"
+                )
         else:
             """
             pre-conversion of PAGOS-specific units; this happens if we have, for example,
@@ -480,7 +550,9 @@ class PAGOSQuantity:
             2) Transformations through contexts are hard to intercept with CatchConvert.
             So we handle it here instead
             """
-
+            PAGOS_transformation_chain = []
+            bare_PAGOS_transformation_chain = []
+            other_units_replacements = []
             if any([u in PAGOSDims for u in ccreg.get_dimensionality(self.units)]):
                 # match PAGOS-specific units across own units and other units
                 # expand out other into its factors
@@ -509,8 +581,6 @@ class PAGOSQuantity:
                     ccreg.Unit(x) for xs in _otherunits_factor_sequence for x in xs
                 ]
 
-                PAGOS_transformation_chain = []
-                other_units_replacements = []
                 # store requisite transformations
                 # quite complicated as has to search through combinations of units as well
                 # as single ones on the right hand side
@@ -590,16 +660,21 @@ class PAGOSQuantity:
                                 )
                                 # if the dimensionalities are actually different, perform a transformation
                                 if to_compare_new.dimensionality != u.dimensionality:
-                                    transformation = PAGOSTransformations[
-                                        hash(
-                                            (
-                                                str(u.dimensionality),
-                                                str(to_compare_new.dimensionality),
+                                    transformation, bare_transformation = (
+                                        PAGOSTransformations[
+                                            hash(
+                                                (
+                                                    str(u.dimensionality),
+                                                    str(to_compare_new.dimensionality),
+                                                )
                                             )
-                                        )
-                                    ][2]
+                                        ][2:]
+                                    )
                                     # store the transformation of a PAGOSUnit onto the transformation chain
                                     PAGOS_transformation_chain.append(transformation)
+                                    bare_PAGOS_transformation_chain.append(
+                                        bare_transformation
+                                    )
 
                                 break
                             bincount += 2**i
@@ -614,12 +689,11 @@ class PAGOSQuantity:
                         raise ValueError(
                             "There is a mismatch between PAGOS units (subscripted with _g) on either side of the conversion."
                         )
-            # save the transformation chain into a cache
-            try:
-                pre_transform_id = hash((self.units, other, ctx_kwargs["gas"]))
-            except KeyError:
-                pre_transform_id = hash((self.units, other))
-            CatchConvert.pre_transforms[pre_transform_id] = PAGOS_transformation_chain
+            # Save the BARE transformation chain into a cache.
+            # This is so that the pure functional relations between PAGOS units are saved,
+            # to be recalled when we are in fast calculations mode (don't want to be dealing
+            # with multiplying by expensive unit objects on calculation)
+            CatchConvert.pre_transforms[preconvert_id] = bare_PAGOS_transformation_chain
 
             # create Pint Quantity objects out of the value and unit
             selfQ = ccreg.Quantity(self.value, self.units)
