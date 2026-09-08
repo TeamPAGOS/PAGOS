@@ -258,23 +258,12 @@ class PAGOSQuantity:
                         # during PAGOSQuantity.to(), CatchConvert.to() is called and the operation is cached
                         converted_operand = PAGOSQuantity(
                             operandQ.magnitude, operandQ._units
-                        ).to(self.units, id=id, pcid=id)
+                        ).to(selfQ._units, id=id, pcid=id)
                         converted_operandQ = ccreg.Quantity(
                             converted_operand.value, converted_operand.units
                         )
                         # result requires no conversion as this has already been done
-                        resultQ = selfQ + converted_operandQ
-                        """# perform Pint addition/subtraction, which does conversions automatically
-                        resultQ = func(selfQ, preconverted_operandQ)
-                        # if a conversion didn't happen, store identity function
-                        if not (cf := CatchConvert.current_conversion_register):
-                            cf = lambda x: x
-                        # otherwise store the conversion
-                        CatchConvert.conversions[id] = (
-                            cf,
-                            resultQ._units,
-                        )
-                        CatchConvert.current_conversion_register = None"""
+                        resultQ = func(selfQ, converted_operandQ)
                         ret = PAGOSQuantity(resultQ._magnitude, resultQ._units)
                     # case for multiplication
                     elif operation_kind in {
@@ -297,18 +286,8 @@ class PAGOSQuantity:
                         ret = PAGOSQuantity(resultQ._magnitude, resultQ._units)
                     # case for comparison:
                     elif operation_kind == OperationKind.COMPARATIVE:
-                        # perform pre-conversion of PAGOSUnits (duplicated code block from the ADDITIVE case)
-                        # NOTE: this is kind of dumb because we have to convert BACK into a PAGOSQuantity first - perhaps there
-                        # is some way we can do this before selecting the operation kind - on the other hand, this may cause problems
-                        # in the operations that do not require pre-conversion!
-                        preconverted_operand = PAGOSQuantity(
-                            operandQ.magnitude, operandQ._units
-                        ).to(self.units)
-                        preconverted_operandQ = ccreg.Quantity(
-                            preconverted_operand.value, preconverted_operand.units
-                        )
                         # perform Pint comparison, which does conversions automatically
-                        resultbool = func(selfQ, preconverted_operandQ)
+                        resultbool = func(selfQ, operandQ)
                         # if a conversion didn't happen, store identity function
                         if not (cf := CatchConvert.current_conversion_register):
                             cf = lambda x: x
@@ -321,7 +300,7 @@ class PAGOSQuantity:
                     # means "does the user want to be warned at all?"!
                     if warn_about_nm_units and warn_nonmult:
                         print(
-                            f"\nWARNING: While running your function, arithmetic involving non-multiplicative units came up:\n\t{unchanged_selfQ:~P} {op_as_str(func.__name__)} {unchanged_operandQ:~P}.\nThis is technically ambiguous, and PAGOS will convert the offending units to their delta-counterparts:\n\t{selfQ:~P} {op_as_str(func.__name__)} {operandQ:~P} = {resultQ:~P}.\nPlease check that this is the intended behaviour of your function!\nTo disable this warning, run: `set_warn_nonmult(False)` before your code.\n"
+                            f"\nWARNING: While running your function, arithmetic involving non-multiplicative units came up:\n\t{unchanged_selfQ:~P} {op_as_str(func.__name__)} {unchanged_operandQ:~P}.\nThis is technically ambiguous, and PAGOS will replace the offending units with their delta-counterparts:\n\t{selfQ:~P} {op_as_str(func.__name__)} {operandQ:~P} = {resultQ:~P}.\nPlease check that this is the intended behaviour of your function!\nTo disable this warning, run: `set_warn_nonmult(False)` before your code.\n"
                         )
 
                     return ret
