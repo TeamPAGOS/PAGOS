@@ -4,15 +4,17 @@ import json
 # gases json file
 with open("src/pagos/gases.json", "r") as gases_file:
     gases_info = json.load(gases_file)["gases"]
-# Atmospheric pressure (Pa)
+# Atmospheric pressure
 PAT = pQ(101325, "Pa")
-# Molar gas constant (J/mol/K)
+# Molar gas constant
 MGC = pQ(8.31446, "J/mol/K")
-# Specific heat of water at 0°C (J/kg/K)
+# Specific heat of water at 0°C
 # https://www.engineeringtoolbox.com/specific-heat-capacity-water-d_660.html
 CPW = pQ(4219.9, "J/kg/K")
 # Latent heat of fusion of water (J/kg)
 LFW = pQ(333.55e3, "J/kg")
+# Triple point of water
+TPW = pQ(273.15, "K")
 
 # constants for water.py calculations
 GILL_82_COEFFS = {

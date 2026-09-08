@@ -10,6 +10,9 @@ from typing import TypeAlias
 from operator import mul as opmul, truediv as opdiv
 
 import pint
+from pint.facets.nonmultiplicative.definitions import (
+    OffsetConverter as _PintOffsetConverter,
+)
 from numpy.random import normal
 
 from pagos.newunits import PAGOSDimPatterns, PAGOSDims, PAGOSTransformations, PAGOSUnits
@@ -103,9 +106,29 @@ class CatchConvert(pint.UnitRegistry.Quantity):
         # can potentially get automatically called when operations are performed, not necessarily only when the user calls .to()!
         convfac = self._REGISTRY._get_conversion_factor(self._units, other)
 
-        def conv_func(x):
-            return x * convfac
-            # TODO THIS WILL NOT WORK WITH NON-MULTIPLICATIVE UNITS!
+        # Here we deal with offset units (e.g. degC -> K).
+        # This should really only happen with single units, as compound units
+        # (like degC / s) should be converted automatically to delta counterparts.
+        # If there are any problems here, further investigation will be necessary.
+        if convfac == 1:
+            try:
+                converter = self._REGISTRY._units[str(self.units)].converter
+                if isinstance(converter, _PintOffsetConverter):
+
+                    def conv_func(x):
+                        return converter.to_reference(x, False)
+                else:
+
+                    def conv_func(x):
+                        return x
+            except KeyError:
+
+                def conv_func(x):
+                    return x
+        else:
+
+            def conv_func(x):
+                return x * convfac
 
         # store the unit to be converted, the unit to convert to, and the conversion function in a temporary register
         CatchConvert.current_conversion_register = conv_func
@@ -192,12 +215,13 @@ class PAGOSQuantity:
                             OperationKind.SUBTRACT,
                         }:
                             # perform conversion of operand
-                            converted_operand_value = self._ext_to(
+                            converted_operand = self._ext_to(
                                 operand_value, operand_units, self.units, id=id, pcid=id
-                            ).value
+                            )
 
                             return PAGOSQuantity(
-                                func(self.value, converted_operand_value), self.units
+                                func(self.value, converted_operand.value),
+                                converted_operand.units,
                             )
                         # case for multiplication
                         elif operation_kind in {
@@ -237,8 +261,8 @@ class PAGOSQuantity:
                     selfQ = ccreg.Quantity(self.value, self.units)
                     operandQ = ccreg.Quantity(operand_value, operand_units)
 
-                    # if there are non-multiplicative units (e.g. degC), we automatically convert these
-                    # to their delta-equivalents (NOTE: here by subtracting zero, perhaps not the most
+                    # if there are non-multiplicative units (e.g. degC), we automatically replace these
+                    # with their delta-equivalents (NOTE: here by subtracting zero, perhaps not the most
                     # efficient thing to do), and warning the user
                     unchanged_selfQ = selfQ
                     unchanged_operandQ = operandQ
@@ -383,25 +407,6 @@ class PAGOSQuantity:
     def __le__(self, value):
         return self <= value
 
-    def _finally_convert_to(self, other):
-        """
-        Wrapper around to(), only to be called at the end of @unit_aware, instead of every time a Pint operation calls Pint().
-        Units and converted units are cached.
-        Otherwise, functions exactly the same as to().
-        """
-        id = hash((self.units, other))
-        if _are_calculations_fast():
-            conversion_func = CatchConvert.final_conversions[id]
-            converted_self_value = conversion_func(self.value)
-            return PAGOSQuantity(converted_self_value, other)
-        else:
-            selfQ = ccreg.Quantity(self.value, self.units)
-            resultQ = selfQ.to(other)
-            conversion_func = CatchConvert.current_conversion_register
-
-            CatchConvert.final_conversions[id] = conversion_func
-            return PAGOSQuantity(resultQ._magnitude, resultQ._units)
-
     # string and representation
     def __repr__(self):
         if isinstance(self.value, int):
@@ -458,8 +463,8 @@ class PAGOSQuantity:
             # perform pre-transformations from PAGOSUnits
             for tr in pre_transformation_chain:
                 a_value = tr(ccreg, a_value)
-            conversion_func = CatchConvert.conversions_on_to_call[id]
-            return PAGOSQuantity(conversion_func(a_value), b_units)
+            conversion_func, return_units = CatchConvert.conversions_on_to_call[id]
+            return PAGOSQuantity(conversion_func(a_value), return_units)
         except KeyError:
             raise KeyError(
                 f"Conversion {(a_units, b_units, *contexts)} not found in cache"
@@ -513,8 +518,8 @@ class PAGOSQuantity:
                 selfvalue = self.value
                 for tr in pre_transformation_chain:
                     selfvalue = tr(ccreg, selfvalue)
-                conversion_func = CatchConvert.conversions_on_to_call[id]
-                return PAGOSQuantity(conversion_func(selfvalue), other)
+                conversion_func, return_units = CatchConvert.conversions_on_to_call[id]
+                return PAGOSQuantity(conversion_func(selfvalue), return_units)
             except KeyError:
                 raise KeyError(
                     f"Conversion {(self.units, other, *contexts)} not found in cache"
@@ -584,11 +589,13 @@ class PAGOSQuantity:
                                 f"Tried to convert a quantity of one gas ({gas_str}) to another ({ctx_kwargs['gas']})."
                             )
                     else:
-                        if gas_str not in ["gas", "g"] and "_" + gas_str not in str(
-                            other
+                        if (
+                            gas_str not in ["gas", "g"]
+                            and "_" + gas_str not in str(other)
+                            and "_gas" not in str(other)
                         ):
                             raise ValueError(
-                                f"Tried to convert a quantity of one gas ({gas_str}) to another ({ctx_kwargs['gas']})."
+                                f"Tried to convert a quantity of one gas ({gas_str}) to another ({str(other)})."
                             )
 
                     i, j, bincount = 0, 0, 1
@@ -687,8 +694,8 @@ class PAGOSQuantity:
             # if a conversion didn't happen (i.e. units were equal), store identity function
             if not (cf := CatchConvert.current_conversion_register):
                 cf = lambda x: x
-            # otherwise store the conversion
-            CatchConvert.conversions_on_to_call[id] = cf
+            # otherwise store the conversion and resultant output units
+            CatchConvert.conversions_on_to_call[id] = (cf, resultQ._units)
             CatchConvert.current_conversion_register = None
             # return result
             return PAGOSQuantity(resultQ._magnitude, resultQ._units)
@@ -839,29 +846,30 @@ class PAGOSCalculator:
     def set_mc(self, value: bool):
         self._mc_enabled = value
 
-    def make_mcmethod(self, func: Callable, dist_std: float):
+    def make_mcmethod(self, func: Callable | NotImplementedError, dist_std: float):
         """
         Makes a function an MC-aware method of PAGOSCalculator
         """
+        if not isinstance(func, NotImplementedError):
 
-        def _add_self_argument(func):
-            """
-            Utility to include add the argument 'self' to the front of a function's signature. ONLY to be used in make_mcmethod.
-            """
+            def _add_self_argument(func):
+                """
+                Utility to include add the argument 'self' to the front of a function's signature. ONLY to be used in make_mcmethod.
+                """
 
-            def wrapper(self, *args, **kwargs):
-                return func(*args, **kwargs)
+                def wrapper(self, *args, **kwargs):
+                    return func(*args, **kwargs)
 
-            return wrapper
+                return wrapper
 
-        # The func, coming from outside this class, does not have a `self` attribute and therefore must have it created here
-        func_with_self = _add_self_argument(func)
+            # The func, coming from outside this class, does not have a `self` attribute and therefore must have it created here
+            func_with_self = _add_self_argument(func)
 
-        # mc_possible decorates the function, and we set it as an attribute in the class
-        method_to_add = mc_possible(dist_std)(func_with_self)
-        funcname = func.__name__
-        setattr(self.__class__, funcname, method_to_add)
-        return getattr(self, funcname)
+            # mc_possible decorates the function, and we set it as an attribute in the class
+            method_to_add = mc_possible(dist_std)(func_with_self)
+            funcname = func.__name__
+            setattr(self.__class__, funcname, method_to_add)
+            return getattr(self, funcname)
 
     def unit_aware(self, default_units_in, units_out):
         """
@@ -885,7 +893,7 @@ class PAGOSCalculator:
                     ),
                     **kwargs,
                 )
-                return result._finally_convert_to(units_out)
+                return result.to(units_out)
 
             return wrapper
 

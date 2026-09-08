@@ -1,3 +1,5 @@
+from timeit import timeit
+
 import numpy as np
 
 from pagos.newconstants import (
@@ -10,14 +12,14 @@ from pagos.newconstants import (
     MOLAR_MASSES,
     MOLAR_VOLUMES,
     NG_JENKINS_19_COEFFS,
+    PAT,
     SF6_BULLISTER_02_COEFFS,
-    TPW,
     WANNINKHOF_92_COEFFS,
     WANNINKHOF_92_SALTFACTOR_COEFFS,
     ArNeN2_HAMMEEMERSON_04_COEFFS,
-    PAT,
 )
-from pagos.newcore import PAGOSQuantity, pCalc as pC
+from pagos.newcore import PAGOSQuantity, _set_fast
+from pagos.newcore import pCalc as pC
 from pagos.newwater import calc_kinvisc, calc_vappres
 
 PREDEFINED_GASES = ["He", "Ne", "Ar", "Kr", "Xe", "N2", "CFC11", "CFC12", "SF6"]
@@ -32,7 +34,7 @@ class Gas:
     def __init__(self, name, *kwargs):
         self.msg = ""
         self._initialise_from_name(name)
-        print(self.msg)
+        print(self.msg, end="")
 
     def _initialise_from_name(self, name):
         self.name = name
@@ -69,7 +71,7 @@ class Gas:
         elif self.name in NOBLEGASES + ["N2"]:
             self.calc_Sc = lambda T, S: self.__calc_Sc_HE17(T, S)
         else:
-            self.calc_sc = NotImplementedError(
+            self.calc_Sc = NotImplementedError(
                 f"calc_Sc is not defined for {self.name}"
             )
         self.calc_Sc = pC.make_mcmethod(self.calc_Sc, 0.0)
@@ -109,12 +111,12 @@ class Gas:
         # Wanninkhof 1992 method
         # salt factor for if the water is salty or not. Threshold is low, therefore this method is only recommended
         # for waters with salinity approx. equal to 34 g/kg.
-        if S > 5:
+        if S > 0.005:  # (> 5 permille)
             f0, f1, f2, f3 = (
                 WANNINKHOF_92_SALTFACTOR_COEFFS[s] for s in ["f0", "f1", "f2", "f3"]
             )
             saltfactor = (f0 + f1 * T + f2 * T**2 + f3 * T**3) / 0.94
-        elif 0 <= S <= 5:
+        elif 0 <= S <= 0.005:
             saltfactor = 1
         else:
             raise ValueError("S must be a number >= 0.")
@@ -138,7 +140,7 @@ class Gas:
         Sc = nu_sw / D
         return Sc
 
-    @pC.unit_aware((None, "degC", "permille"), "mol/kg")
+    @pC.unit_aware((None, "degC", "permille"), "mol_g/kg")
     def __calc_Cstar_J19(self, T: float, S: float) -> float:
         T_K = T.to("K")
         T_N = T_K / K100
@@ -153,10 +155,10 @@ class Gas:
             + A1 * T_N
             + S * (B0 + B1 * T_N + B2 * T_N**2)
             + S**2 * C0
-        ) * pQ(1, "mol/kg")
+        ) * pQ(1, "mol_g/kg", self.name)
         return Cstar
 
-    @pC.unit_aware((None, "degC", "permille", None), "mol/kg")
+    @pC.unit_aware((None, "degC", "permille", None), "mol_g/kg")
     def __calc_Cstar_WW85(self, T: float, S: float, ab: str = "default") -> float:
         T_K = T.to("K")
         T_N = T_K / K100
@@ -177,10 +179,10 @@ class Gas:
                 + S * (b1 + b2 * T_N + b3 * T_N**2)
             )
             * ab
-        ) * pQ(1, "mol/kg")
+        ) * pQ(1, "mol_g/kg", self.name)
         return Cstar
 
-    @pC.unit_aware((None, "degC", "permille", None), "mol/kg")
+    @pC.unit_aware((None, "degC", "permille", None), "mol_g/kg")
     def __calc_Cstar_B02(self, T: float, S: float, ab: str = "default") -> float:
         T_K = T.to("K")
         T_N = T_K / K100
@@ -194,10 +196,10 @@ class Gas:
         Cstar = (
             np.exp(a1 + a2 / T_N + a3 * np.log(T_N) + S * (b1 + b2 * T_N + b3 * T_N**2))
             * ab
-        ) * pQ(1, "mol/kg")
+        ) * pQ(1, "mol_g/kg", self.name)
         return Cstar
 
-    @pC.unit_aware((None, "degC", "permille"), "mol/kg")
+    @pC.unit_aware((None, "degC", "permille"), "mol_g/kg")
     def __calc_Cstar_HE04(self, T: float, S: float) -> float:
         T_K = T.to("K")
         A0, A1, A2, A3, B0, B1, B2 = ArNeN2_HAMMEEMERSON_04_COEFFS[
@@ -214,10 +216,10 @@ class Gas:
                 + A3 * T_s**3
                 + S * (B0 + B1 * T_s + B2 * T_s**2)
             )
-        ) * pQ(1e-6, "mol/kg")
+        ) * pQ(1e-6, "mol_g/kg", self.name)
         return Cstar
 
-    @pC.unit_aware((None, "degC", "permille", "atm", None), "mol/kg")
+    @pC.unit_aware((None, "degC", "permille", "atm", None), "mol_g/kg")
     def __calc_Ceq(
         self,
         T: float,
@@ -323,36 +325,41 @@ def calc_Cstar(
             raise NotImplementedError(f"calc_Cstar not defined for the gas {gas}.")
 
 
-# TESTING
+# TIME TESTING
 
+if __name__ == "__main__":
+    from pagos.newcore import pQ
+    from pagos.newcore import set_warn_nonmult
 
-from pagos.newcore import pQ
-from pagos.newcore import set_warn_nonmult
-from pagos.gas import calc_Cstar
+    set_warn_nonmult(False)
 
-set_warn_nonmult(False)
+    totime = """He.calc_Sc(pQ(4, "degC"), pQ(8, "permille"))
+He.calc_Sc(4, pQ(0.8, "percent"))
+CFC12.calc_Sc(pQ(4, "degC"), pQ(8, "permille"))
 
-print(He.calc_Sc(pQ(4, "degC"), pQ(8, "permille")))
-print(He.calc_Sc(4, pQ(0.8, "percent")))
-print(CFC12.calc_Sc(pQ(4, "degC"), pQ(8, "permille")))
+He.calc_Cstar(4, 8), calc_Cstar("He", 4, 8)
+CFC12.calc_Cstar(4, 8), calc_Cstar("CFC12", 4, 8)
+SF6.calc_Cstar(4, 8), calc_Cstar("SF6", 4, 8)
+Kr.calc_Cstar(4, 8), calc_Cstar("Kr", 4, 8)
+Ar.calc_Cstar(4, 8), calc_Cstar("Ar", 4, 8)
+Xe.calc_Cstar(4, 8), calc_Cstar("Xe", 4, 8)
+Ne.calc_Cstar(4, 8), calc_Cstar("Ne", 4, 8)
+N2.calc_Cstar(4, 8), calc_Cstar("N2", 4, 8)
 
-print(He.calc_Cstar(4, 8), calc_Cstar("He", 4, 8))
-print(CFC12.calc_Cstar(4, 8), calc_Cstar("CFC12", 4, 8))
-print(SF6.calc_Cstar(4, 8), calc_Cstar("SF6", 4, 8))
-print(Kr.calc_Cstar(4, 8), calc_Cstar("Kr", 4, 8))
-print(Ar.calc_Cstar(4, 8), calc_Cstar("Ar", 4, 8))
-print(Xe.calc_Cstar(4, 8), calc_Cstar("Xe", 4, 8))
-print(Ne.calc_Cstar(4, 8), calc_Cstar("Ne", 4, 8))
-print(N2.calc_Cstar(4, 8), calc_Cstar("N2", 4, 8))
+He.calc_Ceq(4, 8, 0.9)
+Ne.calc_Ceq(4, 8, 0.9)
+Ar.calc_Ceq(4, 8, 0.9)
+Kr.calc_Ceq(4, 8, 0.9)
+Xe.calc_Ceq(4, 8, 0.9)
+N2.calc_Ceq(4, 8, 0.9)
+CFC12.calc_Ceq(4, 8, 0.9)
+SF6.calc_Ceq(4, 8, 0.9)
 
-print(He.calc_Ceq(4, 8, 0.9))
-print(Ne.calc_Ceq(4, 8, 0.9))
-print(Ar.calc_Ceq(4, 8, 0.9))
-print(Kr.calc_Ceq(4, 8, 0.9))
-print(Xe.calc_Ceq(4, 8, 0.9))
-print(N2.calc_Ceq(4, 8, 0.9))
-print(CFC12.calc_Ceq(4, 8, 0.9))
-print(SF6.calc_Ceq(4, 8, 0.9))
+calc_Sc(He, 4, 8),
+calc_Sc("He", 4, 8),"""
 
-
-print(calc_Sc(He, 4, 8), calc_Sc("He", 4, 8), calc_Sc("He3", 4, 8))
+    time1 = timeit(totime, globals=globals(), number=1)
+    print("SLOW:", time1)
+    _set_fast(True)
+    time2 = timeit(totime, globals=globals(), number=1000)
+    print("FAST:", time2)
