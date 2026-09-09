@@ -269,8 +269,8 @@ def calc_Sc(
     gas: Gas | str, T: float | PAGOSQuantity, S: float | PAGOSQuantity
 ) -> PAGOSQuantity:
     """Calculates the Schmidt number Sc of given gas in seawater.\\
-    **Default input units** --- `T`:°C, `S`:‰\\
-    **Output units** --- dimensionless\\
+    **Default input units** — `T`:°C, `S`:‰\\
+    **Output units** — dimensionless\\
 
     :param gas: Gas(es) for which Sc should be calculated
     :type gas: str
@@ -296,13 +296,45 @@ def calc_Cstar(
     S: float | PAGOSQuantity,
     ab: str = "default",
 ) -> PAGOSQuantity:
+    """Calculate the waterside concentration C* of a given gas at water
+    temperature T, salinity S and 1 atm (moist) air pressure.\\
+    **Default input units** — `T`:°C, `S`:‰\\
+    **Default output units** — mol_gas/kg_water
+
+    :param gas: Gas for which C* should be calculated
+    :type gas: str
+    :param T: Temperature
+    :type T: float | PAGOSQuantity
+    :param S: Salinity
+    :type S: float | PAGOSQuantity
+    :param ab: Abundance of gas in atmosphere, defaults to "default"
+    :type ab: float | PAGOSQuantity, optional
+    :return: C* (Waterside eqbm. concentration at 1 atm moist air pressure)
+    :rtype: PAGOSQuantity
+    """
+    try:
+        return gas.calc_Cstar(T, S, ab)
+    except AttributeError:
+        try:
+            return gases_dict[gas].calc_Cstar(T, S, ab)
+        except KeyError:
+            raise NotImplementedError(f"calc_Cstar not defined for the gas {gas}.")
+
+
+def calc_Ceq(
+    gas: Gas | str,
+    T: float | PAGOSQuantity,
+    S: float | PAGOSQuantity,
+    p: float | PAGOSQuantity,
+    ab: str = "default",
+) -> PAGOSQuantity:
     """Calculate the waterside equilibrium concentration Ceq of a given gas at water
     temperature T, salinity S and airside pressure p.\\
-    **Default input units** --- `T`:°C, `S`:‰, `p`:atm\\
-    **Default output units** --- mol_gas/kg_water
+    **Default input units** — `T`:°C, `S`:‰, `p`:atm\\
+    **Default output units** — mol_gas/kg_water
 
-    :param gas: Gas(es) for which Ceq should be calculated
-    :type gas: str | Iterable[str]
+    :param gas: Gas for which Ceq should be calculated
+    :type gas: str
     :param T: Temperature
     :type T: float | PAGOSQuantity
     :param S: Salinity
@@ -311,13 +343,13 @@ def calc_Cstar(
     :type p: float | PAGOSQuantity
     :param ab: Abundance of gas in atmosphere, defaults to "default"
     :type ab: float | PAGOSQuantity, optional
-    :return: Waterside equilibrium concentration Ceq of the given gas
+    :return: Waterside eqbm. concentration
     :rtype: PAGOSQuantity
     """
     try:
-        return gas.calc_Cstar(T, S, ab)
+        return gas.calc_Ceq(T, S, p, ab)
     except AttributeError:
         try:
-            return gases_dict[gas].calc_Cstar(T, S)
+            return gases_dict[gas].calc_Ceq(T, S, p, ab)
         except KeyError:
             raise NotImplementedError(f"calc_Cstar not defined for the gas {gas}.")
