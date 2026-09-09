@@ -15,7 +15,7 @@ PAGOSDims = set()
 PAGOSDimPatterns = [
     ["[mass_", "gram", "g"],
     ["[amount_", "mole", "mol"],
-    # ["[STPvolume_", "cubic_centimeter_STP", "cm3STP", "ccSTP"],
+    ["[STPvolume_", "cubic_centimeter_STP", "cm3STP", "ccSTP"],
 ]
 
 # These are generic function definitions that will be generatively called later
@@ -26,11 +26,26 @@ GenericPAGOSTransformations = {
         'def __amount_to_mass_[GAS](reg, x): return x * [MOLARMASS] * reg.Quantity(1, "gram_[GAS]/mole_[GAS]")',
         "def __bare_amount_to_mass_[GAS](reg, x): return x * [MOLARMASS]",
     ),
+    hash(("[amount_gas]", "[STPvolume_gas]")): (
+        'def __amount_to_STPvolume_[GAS](reg, x): return x * [MOLARVOLUME] * reg.Quantity(1, "cubic_centimeter_STP_[GAS]/mole_[GAS]")',
+        "def __bare_amount_to_STPvolume_[GAS](reg, x): return x * [MOLARVOLUME]",
+    ),
     hash(("[mass_gas]", "[amount_gas]")): (
         'def __mass_to_amount_[GAS](reg, x): return x / [MOLARMASS] * reg.Quantity(1, "mole_[GAS]/gram_[GAS]")',
         "def __bare_mass_to_amount_[GAS](reg, x): return x / [MOLARMASS]",
     ),
-    # TODO CONTINUE
+    hash(("[mass_gas]", "[STPvolume_gas]")): (
+        'def __mass_to_STPvolume_[GAS](reg, x): return x / [MOLARMASS] * [MOLARVOLUME] * reg.Quantity(1, "cubic_centimeter_STP_[GAS]/gram_[GAS]")',
+        "def __bare_mass_to_STPvolume_[GAS](reg, x): return x / [MOLARMASS] * [MOLARVOLUME]",
+    ),
+    hash(("[STPvolume_gas]", "[amount_gas]")): (
+        'def __STPvolume_to_amount_[GAS](reg, x): return x / [MOLARVOLUME] * reg.Quantity(1, "mole_[GAS]/cubic_centimeter_STP_[GAS]")',
+        "def __bare_STPvolume_to_amount_[GAS](reg, x): return x / [MOLARVOLUME]",
+    ),
+    hash(("[STPvolume_gas]", "[mass_gas]")): (
+        'def __STPvolume_to_mass_[GAS](reg, x): return x / [MOLARVOLUME] * [MOLARMASS] * reg.Quantity(1, "gram_[GAS]/cubic_centimeter_STP_[GAS]")',
+        "def __bare_STPvolume_to_mass_[GAS](reg, x): return x / [MOLARVOLUME] * [MOLARMASS]",
+    ),
 }
 PAGOSTransformations = {}
 BarePAGOSTransformations = {}
