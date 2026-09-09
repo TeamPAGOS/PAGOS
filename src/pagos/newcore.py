@@ -320,7 +320,7 @@ class PAGOSQuantity:
                         converted_operandQ = ccreg.Quantity(
                             converted_operand.value, converted_operand.units
                         )
-                        resultbool = func(selfQ, operandQ)
+                        resultbool = func(selfQ, converted_operandQ)
                         # if a conversion didn't happen, store identity function
                         if not (cf := CatchConvert.current_conversion_register):
                             cf = lambda x: x
