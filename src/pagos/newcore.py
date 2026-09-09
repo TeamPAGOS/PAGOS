@@ -244,11 +244,12 @@ class PAGOSQuantity:
                             )
                         # case for comparison:
                         elif operation_kind == OperationKind.COMPARATIVE:
-                            # in Pint, __eq__ converts the FIRST operand if necessary, unlike __add__/__sub__, which
-                            # convert the SECOND operand. This can get a bit tricky to keep track of, so be careful!
-                            conversion_func = CatchConvert.conversions[id]
-                            converted_self_value = conversion_func(self.value)
-                            return func(converted_self_value, operand_value)
+                            # perform conversion of operand
+                            # (same as in ADDITIVE)
+                            converted_operand = self._ext_to(
+                                operand_value, operand_units, self.units, id=id, pcid=id
+                            )
+                            return func(self.value, converted_operand.value)
                     except KeyError:
                         print(
                             f"Conversion {(self.units, operand_units, operation_kind)} not found in cache"
@@ -310,7 +311,15 @@ class PAGOSQuantity:
                         ret = PAGOSQuantity(resultQ._magnitude, resultQ._units)
                     # case for comparison:
                     elif operation_kind == OperationKind.COMPARATIVE:
-                        # perform Pint comparison, which does conversions automatically
+                        # perform conversion of operand
+                        # during PAGOSQuantity.to(), CatchConvert.to() is called and the operation is cached
+                        # (same done here as in ADDITIVE)
+                        converted_operand = PAGOSQuantity(
+                            operandQ.magnitude, operandQ._units
+                        ).to(selfQ._units, id=id, pcid=id)
+                        converted_operandQ = ccreg.Quantity(
+                            converted_operand.value, converted_operand.units
+                        )
                         resultbool = func(selfQ, operandQ)
                         # if a conversion didn't happen, store identity function
                         if not (cf := CatchConvert.current_conversion_register):

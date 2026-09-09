@@ -1,5 +1,3 @@
-from timeit import timeit
-
 import numpy as np
 
 from pagos.newconstants import (
@@ -18,7 +16,7 @@ from pagos.newconstants import (
     WANNINKHOF_92_SALTFACTOR_COEFFS,
     ArNeN2_HAMMEEMERSON_04_COEFFS,
 )
-from pagos.newcore import PAGOSQuantity, _set_fast
+from pagos.newcore import PAGOSQuantity, pQ
 from pagos.newcore import pCalc as pC
 from pagos.newwater import calc_kinvisc, calc_vappres
 
@@ -323,43 +321,3 @@ def calc_Cstar(
             return gases_dict[gas].calc_Cstar(T, S)
         except KeyError:
             raise NotImplementedError(f"calc_Cstar not defined for the gas {gas}.")
-
-
-# TIME TESTING
-
-if __name__ == "__main__":
-    from pagos.newcore import pQ
-    from pagos.newcore import set_warn_nonmult
-
-    set_warn_nonmult(False)
-
-    totime = """He.calc_Sc(pQ(4, "degC"), pQ(8, "permille"))
-He.calc_Sc(4, pQ(0.8, "percent"))
-CFC12.calc_Sc(pQ(4, "degC"), pQ(8, "permille"))
-
-He.calc_Cstar(4, 8), calc_Cstar("He", 4, 8)
-CFC12.calc_Cstar(4, 8), calc_Cstar("CFC12", 4, 8)
-SF6.calc_Cstar(4, 8), calc_Cstar("SF6", 4, 8)
-Kr.calc_Cstar(4, 8), calc_Cstar("Kr", 4, 8)
-Ar.calc_Cstar(4, 8), calc_Cstar("Ar", 4, 8)
-Xe.calc_Cstar(4, 8), calc_Cstar("Xe", 4, 8)
-Ne.calc_Cstar(4, 8), calc_Cstar("Ne", 4, 8)
-N2.calc_Cstar(4, 8), calc_Cstar("N2", 4, 8)
-
-He.calc_Ceq(4, 8, 0.9)
-Ne.calc_Ceq(4, 8, 0.9)
-Ar.calc_Ceq(4, 8, 0.9)
-Kr.calc_Ceq(4, 8, 0.9)
-Xe.calc_Ceq(4, 8, 0.9)
-N2.calc_Ceq(4, 8, 0.9)
-CFC12.calc_Ceq(4, 8, 0.9)
-SF6.calc_Ceq(4, 8, 0.9)
-
-calc_Sc(He, 4, 8),
-calc_Sc("He", 4, 8),"""
-
-    time1 = timeit(totime, globals=globals(), number=1)
-    print("SLOW:", time1)
-    _set_fast(True)
-    time2 = timeit(totime, globals=globals(), number=1000)
-    print("FAST:", time2)
