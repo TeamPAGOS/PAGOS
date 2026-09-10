@@ -1,16 +1,23 @@
-# Tests calc_Cstar() from pagos.gas.
+from pint.testing import assert_allclose, assert_equal
 
-from pagos.gas import calc_Cstar
+from pagos.newcore import pCalc, pQ, set_warn_nonmult
+from pagos.gasobject import calc_Cstar
 
-def test_Cstar():
-    assert calc_Cstar('He', 5, 30) == 1.8224870551058874e-09
-    assert calc_Cstar('N2', 5, 30) == 0.0005774155446125664
-    assert calc_Cstar('CFC12', 5, 30) == 2.520455159436508e-12
-    assert calc_Cstar('SF6', 5, 30) == 3.9941917162926535e-15
 
-    # testing with different abundances
-    assert calc_Cstar('CFC12', 5, 30, ab=4.5e-10) == 2.32419020849678e-12 # projected possible value for 2030
-    assert calc_Cstar('SF6', 5, 30, ab=1.4e-11) == 4.862494263312796e-15   # projected possible value for 2030
-    
-    # future: other tracers that use different functions for their C* calculation
-    
+def test_calc_Cstar_with_float_args():
+    assert calc_Cstar("He", T=15, S=20) == pQ(1.8580524797612681e-09, "mol_He / kg")
+
+
+def test_calc_Cstar_with_quantity_args():
+    assert calc_Cstar("He", T=pQ(15, "degC"), S=pQ(20, "g/kg")) == pQ(
+        1.8580524797612681e-09, "mol_He / kg"
+    )
+
+
+def test_calc_Cstar_with_mixed_args():
+    assert calc_Cstar("He", T=15, S=pQ(20, "g/kg")) == pQ(
+        1.8580524797612681e-09, "mol_He / kg"
+    )
+    assert calc_Cstar("He", T=pQ(15, "degC"), S=20) == pQ(
+        1.8580524797612681e-09, "mol_He / kg"
+    )

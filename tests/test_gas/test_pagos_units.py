@@ -54,10 +54,10 @@ class TestConversions(unittest.TestCase):
         assert x != pQ(5, "g_He")
         assert x == pQ(5.0, "mol_He")
 
-        # check good generic conversion works
+        # check good generic conversion works (specific gas -> generic)
         assert pQ(5, "mol_He").to("mol_g") == x
         assert pQ(5, "mol_He").to("ccSTP_g") == x
 
-        # check bad conversion does NOT work
+        # check bad conversion does NOT work (generic gas -> specific)
         with self.assertRaises(ValueError):
             pQ(5, "mol_g").to("mol_He")

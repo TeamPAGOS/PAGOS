@@ -31,7 +31,6 @@ def test_add():
     q3 = pQ(2, "g")
     q4 = pQ(7.0, "dimensionless")
     assert q1 + q2 == pQ(8, "kg")
-    assert q1 + q2 == pQ(8, "kg")
     assert q1 + q3 == pQ(5.002, "kg")
     assert q4 + 7.0 == pQ(14, "dimensionless")
     assert 7.0 + q4 == pQ(14, "dimensionless")
