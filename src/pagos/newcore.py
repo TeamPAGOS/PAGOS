@@ -6,6 +6,7 @@ some internal functions/decorators and the framework for regular and fast unit p
 from collections.abc import Callable
 from enum import Enum, auto
 from functools import wraps, reduce
+from inspect import signature
 from typing import TypeAlias
 from operator import mul as opmul, truediv as opdiv
 
@@ -880,28 +881,38 @@ class PAGOSCalculator:
             setattr(self.__class__, funcname, method_to_add)
             return getattr(self, funcname)
 
-    def unit_aware(self, default_units_in, units_out):
+    def unit_aware(self, default_units_in: dict, units_out):
         """
         Decorator which makes a function unit aware, by setting default units in and units out. The default units are applied to float inputs and the resulting calculation is converted to the units out.
         """
         units_out = ureg._parse_units_as_container(units_out)
 
         def _unit_aware(func: Callable):
+            function_parameters = list(signature(func).parameters.keys())
+
             @wraps(func)
             def wrapper(*args, **kwargs) -> PAGOSQuantity:
-                # if default_units_in is a single string, make sure we just read that and not each individual character of it!
-                if isinstance(default_units_in, str):
-                    _default_units_in = (default_units_in,)
-                else:
-                    _default_units_in = default_units_in
-                # execute the function with pQ(...) arguments instead of floats
-                result = func(
-                    *(
-                        pQ(arg, unit) if unit is not None else arg
-                        for unit, arg in zip(_default_units_in, args)
-                    ),
-                    **kwargs,
+                # Execute the function with pQ(...) arguments instead of floats.
+                # We do this by bundling all the non-keyword arguments and the
+                # keyword arguments passed to the wrapper into a dictionary of pQ-valued
+                # keyword arguments, which will be ultimately passed to func.
+                pQ_kwargs = (
+                    # non-keyword arguments
+                    {
+                        argname: pQ(val, default_units_in[argname])
+                        if default_units_in[argname] is not None
+                        else val
+                        for val, argname in zip(args, function_parameters[: len(args)])
+                    }
+                    # keyword arguments
+                    | {
+                        kwname: pQ(kwargs[kwname], default_units_in[kwname])
+                        if default_units_in[kwname] is not None
+                        else kwargs[kwname]
+                        for kwname in function_parameters[len(args) :]
+                    }
                 )
+                result = func(**pQ_kwargs)
                 return result.to(units_out)
 
             return wrapper

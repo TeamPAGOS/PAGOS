@@ -40,7 +40,7 @@ class Gas:
         if self.name not in PREDEFINED_GASES:
             self.msg += f"Tried to intialise {name} but the name of the gas is not implemented!\n"
 
-        # initialise gas properties
+        # ++++++ initialise gas properties ++++++
         try:
             self.abundance = ABUNDANCES[self.name]
         except KeyError:
@@ -62,7 +62,7 @@ class Gas:
                 f"{self.name} has no implemented molar mass."
             )
 
-        # initialise methods
+        # ++++++ initialise methods ++++++
         # initialise Schmidt number calculation
         if self.name in STABLETRANSIENTGASES:
             self.calc_Sc = lambda T, S: self.__calc_Sc_W92(T, S)
@@ -100,7 +100,7 @@ class Gas:
                 f"calc_Ceq is not defined for {self.name}"
             )
 
-    @pC.unit_aware((None, "degC", "permille"), "dimensionless")
+    @pC.unit_aware({"self": None, "T": "degC", "S": "permille"}, "dimensionless")
     def __calc_Sc_W92(
         self,
         T: float,
@@ -122,7 +122,7 @@ class Gas:
         Sc = saltfactor * (A - B * T + C * T**2 - D * T**3)
         return Sc
 
-    @pC.unit_aware((None, "degC", "permille"), "dimensionless")
+    @pC.unit_aware({"self": None, "T": "degC", "S": "permille"}, "dimensionless")
     def __calc_Sc_HE17(self, T: float, S: float) -> float:
         # Hamme & Emerson 2017 method
         # Eyring diffusivity calculation
@@ -138,7 +138,7 @@ class Gas:
         Sc = nu_sw / D
         return Sc
 
-    @pC.unit_aware((None, "degC", "permille"), "mol_g/kg")
+    @pC.unit_aware({"self": None, "T": "degC", "S": "permille"}, "mol_g/kg")
     def __calc_Cstar_J19(self, T: float, S: float) -> float:
         T_K = T.to("K")
         T_N = T_K / K100
@@ -156,7 +156,7 @@ class Gas:
         ) * pQ(1, "mol_g/kg", self.name)
         return Cstar
 
-    @pC.unit_aware((None, "degC", "permille", None), "mol_g/kg")
+    @pC.unit_aware({"self": None, "T": "degC", "S": "permille", "ab": None}, "mol_g/kg")
     def __calc_Cstar_WW85(self, T: float, S: float, ab: str = "default") -> float:
         T_K = T.to("K")
         T_N = T_K / K100
@@ -180,7 +180,7 @@ class Gas:
         ) * pQ(1, "mol_g/kg", self.name)
         return Cstar
 
-    @pC.unit_aware((None, "degC", "permille", None), "mol_g/kg")
+    @pC.unit_aware({"self": None, "T": "degC", "S": "permille", "ab": None}, "mol_g/kg")
     def __calc_Cstar_B02(self, T: float, S: float, ab: str = "default") -> float:
         T_K = T.to("K")
         T_N = T_K / K100
@@ -197,7 +197,7 @@ class Gas:
         ) * pQ(1, "mol_g/kg", self.name)
         return Cstar
 
-    @pC.unit_aware((None, "degC", "permille"), "mol_g/kg")
+    @pC.unit_aware({"self": None, "T": "degC", "S": "permille"}, "mol_g/kg")
     def __calc_Cstar_HE04(self, T: float, S: float) -> float:
         T_K = T.to("K")
         A0, A1, A2, A3, B0, B1, B2 = ArNeN2_HAMMEEMERSON_04_COEFFS[
@@ -217,7 +217,9 @@ class Gas:
         ) * pQ(1e-6, "mol_g/kg", self.name)
         return Cstar
 
-    @pC.unit_aware((None, "degC", "permille", "atm", None), "mol_g/kg")
+    @pC.unit_aware(
+        {"self": None, "T": "degC", "S": "permille", "p": "atm", "ab": None}, "mol_g/kg"
+    )
     def __calc_Ceq(
         self,
         T: float,
@@ -264,6 +266,56 @@ gases_dict = {
 Functional wrappers around Gas object methods
 """
 
+# ++++++ Getters ++++++
+
+
+def abn(gas: Gas | str) -> PAGOSQuantity:
+    """Abundance of `gas`.
+
+    Parameters:
+        gas (Gas | str): Gas for which to get abundance
+
+    Returns:
+        PAGOSQuantity: Abundance of `gas`
+    """
+    try:
+        return gas.abundance
+    except AttributeError:
+        return gases_dict[gas].abundance
+
+
+def molvol(gas: Gas | str) -> PAGOSQuantity:
+    """Molar volume of `gas`.
+
+    Args:
+        gas (Gas | str): Gas for which to get molar volume
+
+    Returns:
+        PAGOSQuantity: Molar volume of `gas`
+    """
+    try:
+        return gas.molar_volume
+    except AttributeError:
+        return gases_dict[gas].molar_volume
+
+
+def molmass(gas: Gas | str) -> PAGOSQuantity:
+    """Molar mass of `gas`.
+
+    Args:
+        gas (Gas | str): Gas for which to get molar mass
+
+    Returns:
+        PAGOSQuantity: Molar mass of `gas`.
+    """
+    try:
+        return gas.molar_mass
+    except AttributeError:
+        return gases_dict[gas].molar_mass
+
+
+# ++++++ Calculators ++++++
+
 
 def calc_Sc(
     gas: Gas | str, T: float | PAGOSQuantity, S: float | PAGOSQuantity
@@ -284,10 +336,7 @@ def calc_Sc(
     try:
         return gas.calc_Sc(T, S)
     except AttributeError:
-        try:
-            return gases_dict[gas].calc_Sc(T, S)
-        except KeyError:
-            raise NotImplementedError(f"calc_Sc not defined for the gas {gas}.")
+        return gases_dict[gas].calc_Sc(T, S)
 
 
 def calc_Cstar(
@@ -315,10 +364,7 @@ def calc_Cstar(
     try:
         return gas.calc_Cstar(T, S, ab)
     except AttributeError:
-        try:
-            return gases_dict[gas].calc_Cstar(T, S, ab)
-        except KeyError:
-            raise NotImplementedError(f"calc_Cstar not defined for the gas {gas}.")
+        return gases_dict[gas].calc_Cstar(T, S, ab)
 
 
 def calc_Ceq(
@@ -349,7 +395,4 @@ def calc_Ceq(
     try:
         return gas.calc_Ceq(T, S, p, ab)
     except AttributeError:
-        try:
-            return gases_dict[gas].calc_Ceq(T, S, p, ab)
-        except KeyError:
-            raise NotImplementedError(f"calc_Cstar not defined for the gas {gas}.")
+        return gases_dict[gas].calc_Ceq(T, S, p, ab)

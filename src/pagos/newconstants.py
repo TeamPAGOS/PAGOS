@@ -51,7 +51,10 @@ SHARQAWY_10_COEFFS = {
 
 # constants for gas.py calculations
 ABUNDANCES = {
-    gases_info[k]["name"]: gases_info[k]["abn [mol_g/mol]"] for k in gases_info
+    gases_info[k]["name"]: pQ(
+        gases_info[k]["abn [mol_g/mol]"], "mol_g/mol", gas=gases_info[k]["name"]
+    )
+    for k in gases_info
 }
 
 # molar volumes in units of cm3/mol, referenced to 0 degC and 1 atm = 1013.25 mbar, except
@@ -60,13 +63,19 @@ ABUNDANCES = {
 # NOTE: cannot find them in Benson and Krause
 # TODO more digits for CFCs
 MOLAR_VOLUMES = {
-    gases_info[k]["name"]: pQ(gases_info[k]["vmol [ccSTP_g/mol_g]"], "cc/mol")
+    gases_info[k]["name"]: pQ(
+        gases_info[k]["vmol [ccSTP_g/mol_g]"],
+        "ccSTP_g/mol_g",
+        gas=gases_info[k]["name"],
+    )
     for k in gases_info
 }
 
 # molar masses of the gases (g/mol)
 MOLAR_MASSES = {
-    gases_info[k]["name"]: pQ(gases_info[k]["mmol [g_g/mol_g]"], "g/mol")
+    gases_info[k]["name"]: pQ(
+        gases_info[k]["mmol [g_g/mol_g]"], "g_g/mol_g", gas=gases_info[k]["name"]
+    )
     for k in gases_info
 }
 
