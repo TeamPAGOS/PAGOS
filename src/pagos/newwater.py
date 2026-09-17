@@ -10,7 +10,7 @@ from pagos.newconstants import (
 from pagos.newcore import pCalc as pC
 
 
-@pC.unit_aware(("degC", "permille"), "kg/m^3")
+@pC.unit_aware({"T": "degC", "S": "permille"}, "kg/m^3")
 def calc_dens(T: float, S: float) -> float:
     """
     Calculate density of seawater at a given temperature and salinity, according to Gill 1982.\\
@@ -36,7 +36,7 @@ def calc_dens(T: float, S: float) -> float:
     return rho
 
 
-@pC.unit_aware(("degC",), "mbar")
+@pC.unit_aware({"T": "degC"}, "mbar")
 def calc_vappres(T: float) -> float:
     """Calculate water vapour pressure over seawater at given temperature, according to Dyck and Peschke 1995.\\
     **Default input units** --- `T`:°C\\
@@ -52,7 +52,7 @@ def calc_vappres(T: float) -> float:
     return pv
 
 
-@pC.unit_aware(("degC", "permille"), "m^2/s")
+@pC.unit_aware({"T": "degC", "S": "permille"}, "m^2/s")
 def calc_kinvisc(T: float, S: float) -> float:
     """Calculate kinematic viscosity of seawater at given temperature and salinity, according to Sharqawy 2010.\\
     **Default input units** --- `T`:°C, `S`:‰\\
@@ -81,7 +81,7 @@ def calc_kinvisc(T: float, S: float) -> float:
     return nu_sw
 
 
-@pC.unit_aware(("degC", "permille"), "kg/m^3/K")
+@pC.unit_aware({"T": "degC", "S": "permille"}, "kg/m^3/K")
 def calc_dens_Tderiv(
     T: float,
     S: float,
@@ -110,7 +110,7 @@ def calc_dens_Tderiv(
     return drhodT
 
 
-@pC.unit_aware(("degC", "permille"), "kg/m^3/permille")
+@pC.unit_aware({"T": "degC", "S": "permille"}, "kg/m^3/permille")
 def calc_dens_Sderiv(
     T: float,
     S: float,
@@ -139,7 +139,7 @@ def calc_dens_Sderiv(
     return drhodS
 
 
-@pC.unit_aware(("degC",), "mbar/K")
+@pC.unit_aware({"T": "degC"}, "mbar/K")
 def calc_vappres_Tderiv(T: float) -> float:
     """Calculate temperature-derivative of water vapour pressure (de/dT) over seawater at given temperature, according to Dyck and Peschke 1995.\\
     **Default input units** --- `T`:°C\\

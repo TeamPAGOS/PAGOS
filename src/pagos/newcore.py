@@ -893,26 +893,21 @@ class PAGOSCalculator:
             @wraps(func)
             def wrapper(*args, **kwargs) -> PAGOSQuantity:
                 # Execute the function with pQ(...) arguments instead of floats.
-                # We do this by bundling all the non-keyword arguments and the
-                # keyword arguments passed to the wrapper into a dictionary of pQ-valued
-                # keyword arguments, which will be ultimately passed to func.
-                pQ_kwargs = (
-                    # non-keyword arguments
-                    {
-                        argname: pQ(val, default_units_in[argname])
-                        if default_units_in[argname] is not None
-                        else val
-                        for val, argname in zip(args, function_parameters[: len(args)])
-                    }
-                    # keyword arguments
-                    | {
-                        kwname: pQ(kwargs[kwname], default_units_in[kwname])
-                        if default_units_in[kwname] is not None
-                        else kwargs[kwname]
-                        for kwname in function_parameters[len(args) :]
-                    }
+                pQ_args = (
+                    args[i]
+                    if isinstance(args[i], PAGOSQuantity)
+                    or default_units_in[function_parameters[i]] is None
+                    else pQ(args[i], default_units_in[function_parameters[i]])
+                    for i in range(len(args))
                 )
-                result = func(**pQ_kwargs)
+                pQ_kwargs = {
+                    k: kwargs[k]
+                    if isinstance(kwargs[k], PAGOSQuantity)
+                    or default_units_in[k] is None
+                    else pQ(kwargs[k], default_units_in[k])
+                    for k in kwargs
+                }
+                result = func(*pQ_args, **pQ_kwargs)
                 return result.to(units_out)
 
             return wrapper

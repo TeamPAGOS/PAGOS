@@ -232,5 +232,5 @@ if __name__ == "__main__":
 
     # THIS WORKS! Note that fit(...) at the moment is does not perform any of the pre-preparation required
     # for the observations (needs to take in quantities with no units, will not perform any MC stuff,
-    # appropriate conversions need to have been done beforehand). This intentional and should happen
+    # appropriate conversions need to have been done beforehand). This is intentional and should happen
     # before fit(...) is called!
