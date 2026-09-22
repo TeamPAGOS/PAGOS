@@ -5,16 +5,18 @@ some internal functions/decorators and the framework for regular and fast unit p
 
 from collections.abc import Callable
 from enum import Enum, auto
-from functools import wraps, reduce
+from functools import reduce, wraps
 from inspect import signature
+from numbers import Number
+from operator import mul as opmul
 from typing import TypeAlias
-from operator import mul as opmul, truediv as opdiv
 
+import numpy as np
 import pint
+from numpy.random import normal
 from pint.facets.nonmultiplicative.definitions import (
     OffsetConverter as _PintOffsetConverter,
 )
-from numpy.random import normal
 
 from pagos.newunits import PAGOSDimPatterns, PAGOSDims, PAGOSTransformations, PAGOSUnits
 
@@ -62,7 +64,8 @@ def op_as_str(opname):
         return opname
 
 
-warn_nonmult = True
+warn_nonmult: bool = True
+_warn_nonmult_in_unit_aware: bool = False
 
 
 def set_warn_nonmult(value):
@@ -113,11 +116,21 @@ class CatchConvert(pint.UnitRegistry.Quantity):
         # If there are any problems here, further investigation will be necessary.
         if convfac == 1:
             try:
-                converter = self._REGISTRY._units[str(self.units)].converter
-                if isinstance(converter, _PintOffsetConverter):
+                converter = (udef := self._REGISTRY._units[str(self.units)]).converter
+                if isinstance(converter, _PintOffsetConverter) and self.units != other:
+                    # TODO test if this works with prefixes before Kelvin (e.g. K -> mK)
+                    if self.units == udef.reference:
 
-                    def conv_func(x):
-                        return converter.to_reference(x, False)
+                        def conv_func(x):
+                            return converter.from_reference(x, False)
+                    elif other == udef.reference:
+
+                        def conv_func(x):
+                            return converter.to_reference(x, False)
+                    else:
+                        raise TypeError(
+                            f"Conversion attempted from {self.units} to {other}. This is not supported!"
+                        )
                 else:
 
                     def conv_func(x):
@@ -177,6 +190,10 @@ class PAGOSQuantity:
                     )
             PAGOSQuantity.units_cache[id] = inst.units
 
+        if not isinstance(value, (Number, PAGOSQuantity, np.ndarray)):
+            raise TypeError("value must be a number, PAGOSQuantity or numpy ndarray")
+        # if we call PAGOSQuantity(PAGOSQuantity(val, unit_1), unit_2), return
+        # PAGOSQuantity(val, unit_1).to(unit_2)
         if isinstance(value, PAGOSQuantity):
             selfQ = value
             pint_representation = ccreg.Quantity(selfQ.value, selfQ.units)
@@ -419,13 +436,13 @@ class PAGOSQuantity:
 
     # string and representation
     def __repr__(self):
-        if isinstance(self.value, int):
+        if isinstance(self.value, (int, np.ndarray)):
             return f"<PAGOSQuantity({self.value}, '{self.units})>"
         elif isinstance(self.value, float):
             return f"<PAGOSQuantity({self.value:.9}, '{self.units}')>"
 
     def __str__(self):
-        if isinstance(self.value, int):
+        if isinstance(self.value, (int, np.ndarray)):
             return f"{self.value} {self.units}"
         elif isinstance(self.value, float):
             return f"{self.value:.9} {self.units}"
@@ -482,6 +499,9 @@ class PAGOSQuantity:
 
     # x.to(u) converts x to units u
     def to(self, other, id=None, pcid=None, *contexts, **ctx_kwargs):
+        # other == None should mean: don't bother with the conversion. Useful for conditional conversions.
+        if other is None:
+            return self
         # cache system to make sure strings are not redundantly parsed into UnitsContainer objects
         if isinstance(other, str):
             if other in PAGOSQuantity.units_cache:
@@ -886,25 +906,54 @@ class PAGOSCalculator:
         Decorator which makes a function unit aware, by setting default units in and units out. The default units are applied to float inputs and the resulting calculation is converted to the units out.
         """
         units_out = ureg._parse_units_as_container(units_out)
+        # Nonmuliplicative units will cause ambiguity in additive calculations, which can especially be a problem
+        # when the units have to be inferred (e.g. 5°C + 5K -> 5Δ°C + 5K, 5Δ°C - 267.15Δ°C, or 278.15K + 5K? The
+        # nonmultiplicative handling system in fastpagosbinop can "decide", but not consistently).
+
+        # To avoid the user having to write ".to()" in all calculations involving temperature, unit_aware will
+        # FORCE any nonmultiplicative units to their entry at default_units_in. The user will be appropriately warned.
+        nonmult_units = {
+            k: default_units_in[k]
+            if ccreg.Quantity(0, default_units_in[k])._get_non_multiplicative_units()
+            else None
+            for k in default_units_in
+        }
 
         def _unit_aware(func: Callable):
             function_parameters = list(signature(func).parameters.keys())
+            if any(nonmult_units) and _warn_nonmult_in_unit_aware:
+                print(
+                    f"WARNING: the function {func.__name__} has nonmultiplicative units. These will ALWAYS be converted as follows:"
+                )
+                for k in nonmult_units:  # noqa: PLC0206
+                    if nonmult_units[k] is not None:
+                        print(k, "->", nonmult_units[k])
 
             @wraps(func)
             def wrapper(*args, **kwargs) -> PAGOSQuantity:
                 # Execute the function with pQ(...) arguments instead of floats.
+                # - if the argument is a PAGOSQuantity with no nonmultiplicative units -> do nothing
+                # - if the argument has nonmultiplicative units -> FORCE argument every time to default_units_in
+                # - if the argument is not a PAGOSQuantity but is default_units_in is None -> do nothing
+                # - if the argument is not a PAGOSQuantity and has default_units_in -> make it a PAGOSQuantity with those units
                 pQ_args = (
-                    args[i]
+                    args[i].to(nonmult_units[function_parameters[i]])
                     if isinstance(args[i], PAGOSQuantity)
-                    or default_units_in[function_parameters[i]] is None
-                    else pQ(args[i], default_units_in[function_parameters[i]])
+                    else (
+                        args[i]
+                        if default_units_in[function_parameters[i]] is None
+                        else pQ(args[i], default_units_in[function_parameters[i]])
+                    )
                     for i in range(len(args))
                 )
                 pQ_kwargs = {
-                    k: kwargs[k]
+                    k: kwargs[k].to(nonmult_units[k])
                     if isinstance(kwargs[k], PAGOSQuantity)
-                    or default_units_in[k] is None
-                    else pQ(kwargs[k], default_units_in[k])
+                    else (
+                        kwargs[k]
+                        if default_units_in[k] is None
+                        else pQ(kwargs[k], default_units_in[k])
+                    )
                     for k in kwargs
                 }
                 result = func(*pQ_args, **pQ_kwargs)

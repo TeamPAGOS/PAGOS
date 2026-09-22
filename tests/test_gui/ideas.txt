@@ -12,3 +12,32 @@ important to test:
 - that you can initialise everything at all
 - communication between widgets
 - NOT the end results of fitting
+
+
+Quality of life improvements
+- Handle empty rows/columns on data import
+- Allow user to delete columns/rows dynamically
+- FIXME Import sometimes can't decode UTF, change to UTF-16
+- Tracers/Other parameter explanation in brackets on the buttons
+- FIXME Upon fitting "changed size between calls" WHAT THE FUCK?! <---- this was due to poor fitting, i.e. bad model. Need to make this more
+obvious to the user though!
+- Background table is not updated upon import if table already exists
+
+- use UV
+- Rename main branch to legacy and MC-dev to main
+
+
+- Currently, fast mode is ~ 10x faster than regular, when using calc_Ceq etc. However, it can likely be made
+  much faster by figuring out how to cache numpy expressions - they appear to be using about 30% of compute time.
+
+- PUT MC functionality into calculator class, along with all calculations [ONGOING]
+- TODO assert_allclose does not work with PAGOSQuantity objects, because _get_comparable_magnitudes does not recognise the
+  input arguments as Quantity objects - should write a wrapper around this so that testing can be done more efficiently
+- TODO `ValueError: There is a mismatch between PAGOS units ...` only shows up when the arguments are in ONE order. Should
+       happen for both
+- TODO can we implement fast mode directly after the first calculation in a fit_dataframe call has passed?
+       This would not cover all cases (e.g. if there is control flow in the objective function), but perhaps
+       we can implement an error-catching system which tries fast, then tries without fast, and finally throws
+       an error if both failed.
+
+- TODO BUG in GUI: abvacim does not behave as intended when a column of different values is imported instead of just one!

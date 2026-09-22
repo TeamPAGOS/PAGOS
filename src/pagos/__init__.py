@@ -43,7 +43,10 @@ from . import builtin_models
 from . import plotting
 # from . import pint_monkey_patch
 
+from . import newunits
 from . import newcore
 from . import newconstants
 from . import newwater
+from . import gasobject
+from . import newmodelling
 # from . import testing_monkey_patch
