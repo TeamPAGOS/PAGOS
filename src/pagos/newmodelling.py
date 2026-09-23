@@ -12,53 +12,55 @@ from inspect import getfullargspec, signature
 
 
 class TracerModel:
-    """
-    Object that holds a function representing a tracer model and its methods,
-    including fitting to data and forward modelling given an input.
-    """
-
     def __init__(
         self,
         model_function: Callable,
-        default_units_in: dict,
-        default_units_out: str,
+        default_units_in: dict | None = None,
+        default_units_out: str | None = None,
         # jacobian: Callable = None,        TODO later?
         # jacobian_units: list[str] = None  TODO later?
     ):
-        """
-        :param model_function: function representing the model
-        :type model_function: Callable
-        :param default_units_in: units of the input arguments to `model_function` to be **assumed** if none are explicitly given.
-        Must be in the same order as the arguments to `model_function`.
+        """Object that holds a function representing a tracer model and its methods,
+        including fitting to data and forward modelling given an input.
 
-        :type default_units_in: dict
-        :param default_units_out: the units which the output of `model_function` should be **converted to**
-        :type default_units_out: str
+        Args:
+            model_function (Callable): function representing the model
+            default_units_in (dict | None): units of the input arguments to `model_function` to be **assumed** if none are explicitly given.
+                Must be in the same order as the arguments to `model_function`.
+                If `None`, then tries to proceed assuming that `model_function` is already wrapped with `unit_aware`.
+            default_units_out (str): the units which the output of `model_function` should be **converted to**
+
+        Raises:
+            TypeError: if default_units_in is not a dictionary or None
+            ValueError: if default_units_in does not have one entry for every argument to model_function (except the tracer)
         """
 
         # check type of default_units_in
-        if not isinstance(default_units_in, dict):
-            raise TypeError("default_units_in must be a dictionary")
+        if not isinstance(default_units_in, (dict)) and default_units_in is not None:
+            raise TypeError("default_units_in must be a dictionary or None")
 
         # set instance variables
 
         # list of parameters in the model function's signature
         self.modelfunc_params = list(signature(model_function).parameters)
 
-        # if default_units_in argument did not include None
-        # at the start for the tracer parameter, add this in here
-
-        if len(default_units_in) == len(self.modelfunc_params) - 1:
-            self.default_units_in = {self.modelfunc_params[0]: None} | default_units_in
-        elif len(default_units_in) == len(self.modelfunc_params):
-            self.default_units_in = default_units_in
+        if default_units_in is not None:
+            # if default_units_in argument did not include None
+            # at the start for the tracer parameter, add this in here
+            if len(default_units_in) == len(self.modelfunc_params) - 1:
+                self.default_units_in = {
+                    self.modelfunc_params[0]: None
+                } | default_units_in
+            elif len(default_units_in) == len(self.modelfunc_params):
+                self.default_units_in = default_units_in
+            else:
+                raise ValueError(
+                    "default_units_in should have one entry for every argument to model_function (except the tracer)."
+                )
         else:
-            raise ValueError(
-                "default_units_in should have one entry for every argument to model_function (except the tracer)."
-            )
+            self.default_units_in = None
 
         self.default_units_out = default_units_out
-
         self.model_function = pCalc.unit_aware(
             self.default_units_in, self.default_units_out
         )(model_function)
@@ -132,18 +134,19 @@ class TracerModel:
         # force to list
         args_to_model_func = list(args_to_model_func)
 
-        # convert all arguments passed in to PAGOSQuantity objects
-        for i, (argname, val) in enumerate(
-            zip(self.modelfunc_params[1:], args_to_model_func[1:]), start=1
-        ):
-            # we skip the first element of args_to_model_func, as this must be the tracer,
-            # which has no units
-            if isinstance(val, Number):
-                args_to_model_func[i] = pQ(val, units_in[argname])
-        # the keyword arguments, if they have units, will take units
-        for k in kwargs_to_model_func:  # noqa: PLC0206
-            if isinstance(kwargs_to_model_func[k], Number):
-                kwargs_to_model_func[k] = pQ(k, units_in[k])
+        if units_in is not None:
+            # convert all arguments passed in to PAGOSQuantity objects
+            for i, (argname, val) in enumerate(
+                zip(self.modelfunc_params[1:], args_to_model_func[1:]), start=1
+            ):
+                # we skip the first element of args_to_model_func, as this must be the tracer,
+                # which has no units
+                if isinstance(val, Number):
+                    args_to_model_func[i] = pQ(val, units_in[argname])
+            # the keyword arguments, if they have units, will take units
+            for k in kwargs_to_model_func:  # noqa: PLC0206
+                if isinstance(kwargs_to_model_func[k], Number):
+                    kwargs_to_model_func[k] = pQ(k, units_in[k])
 
         result = self.model_function(*args_to_model_func, **kwargs_to_model_func)
 

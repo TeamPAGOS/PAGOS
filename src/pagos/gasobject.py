@@ -19,7 +19,6 @@ from pagos.newconstants import (
 from pagos.newcore import PAGOSQuantity, pQ
 from pagos.newcore import pCalc as pC
 from pagos.newwater import calc_kinvisc, calc_vappres
-import pagos.newcore
 
 PREDEFINED_GASES = ["He", "Ne", "Ar", "Kr", "Xe", "N2", "CFC11", "CFC12", "SF6"]
 
@@ -271,10 +270,12 @@ Functional wrappers around Gas object methods
 
 
 def abn(gas: Gas | str) -> PAGOSQuantity:
-    """Abundance of `gas`.\\
-    **Output units** — mol_gas / mol
+    """Abundance of `gas`.
 
-    Parameters:
+    ## Units
+        **default units out** — mol_gas / mol
+
+    Args:
         gas (Gas | str): Gas for which to get abundance
 
     Returns:
@@ -287,8 +288,10 @@ def abn(gas: Gas | str) -> PAGOSQuantity:
 
 
 def molvol(gas: Gas | str) -> PAGOSQuantity:
-    """Molar volume of `gas`.\\
-    **Output units** — ccSTP_gas / mol_gas
+    """Molar volume of `gas`.
+
+    ## Units
+        **default units out** — ccSTP_gas / mol_gas
 
     Args:
         gas (Gas | str): Gas for which to get molar volume
@@ -304,7 +307,9 @@ def molvol(gas: Gas | str) -> PAGOSQuantity:
 
 def molmass(gas: Gas | str) -> PAGOSQuantity:
     """Molar mass of `gas`.\\
-    **Output units** — g_gas / mol_gas
+
+    ## Units
+        **default units out** — g_gas / mol_gas
 
     Args:
         gas (Gas | str): Gas for which to get molar mass
@@ -324,18 +329,19 @@ def molmass(gas: Gas | str) -> PAGOSQuantity:
 def calc_Sc(
     gas: Gas | str, T: float | PAGOSQuantity, S: float | PAGOSQuantity
 ) -> PAGOSQuantity:
-    """Calculates the Schmidt number Sc of given gas in seawater.\\
-    **Default input units** — `T`:°C, `S`:‰\\
-    **Output units** — dimensionless
+    """Calculates the Schmidt number Sc of given gas in seawater.
 
-    :param gas: Gas(es) for which Sc should be calculated
-    :type gas: str
-    :param T: Temperature
-    :type T: float | PAGOSQuantity
-    :param S: Salinity
-    :type S: float | PAGOSQuantity
-    :return: Calculated Schmidt number
-    :rtype: PAGOSQuantity
+    ## Units
+        **default units in** — `T`: °C, `S`: ‰
+        **default units out** — dimensionless
+
+    Args:
+        gas (Gas | str): Gas for which Sc should be calculated
+        T (float | PAGOSQuantity): Temperature
+        S (float | PAGOSQuantity): Salinity
+
+    Returns:
+        PAGOSQuantity: Schmidt number of `gas` in seawater
     """
     try:
         return gas.calc_Sc(T, S)
@@ -350,20 +356,20 @@ def calc_Cstar(
     ab: str = "default",
 ) -> PAGOSQuantity:
     """Calculate the waterside concentration C* of a given gas at water
-    temperature T, salinity S and 1 atm (moist) air pressure.\\
-    **Default input units** — `T`:°C, `S`:‰\\
-    **Default output units** — mol_gas/kg
+    temperature T, salinity S and 1 atm (moist) air pressure.
 
-    :param gas: Gas for which C* should be calculated
-    :type gas: str
-    :param T: Temperature
-    :type T: float | PAGOSQuantity
-    :param S: Salinity
-    :type S: float | PAGOSQuantity
-    :param ab: Abundance of gas in atmosphere, defaults to "default"
-    :type ab: float | PAGOSQuantity, optional
-    :return: C* (Waterside eqbm. concentration at 1 atm moist air pressure)
-    :rtype: PAGOSQuantity
+    ## Units
+        **default units in** — `T`: °C, `S`: ‰
+        **default units out** — mol_gas/kg
+
+    Args:
+        gas (Gas | str): Gas for which C* should be calculated
+        T (float | PAGOSQuantity): Temperature
+        S (float | PAGOSQuantity): Salinity
+        ab (str): Abundance of gas in atmosphere, defaults to "default"
+
+    Returns:
+        PAGOSQuantity: C* (Waterside eqbm. concentration at 1 atm moist air pressure)
     """
     try:
         return gas.calc_Cstar(T, S, ab)
@@ -379,31 +385,23 @@ def calc_Ceq(
     ab: str = "default",
 ) -> PAGOSQuantity:
     """Calculate the waterside equilibrium concentration Ceq of a given gas at water
-    temperature T, salinity S and airside pressure p.\\
-    **Default input units** — `T`:°C, `S`:‰, `p`:atm\\
-    **Default output units** — mol_gas/kg
+    temperature T, salinity S and airside pressure p.
 
-    :param gas: Gas for which Ceq should be calculated
-    :type gas: str
-    :param T: Temperature
-    :type T: float | PAGOSQuantity
-    :param S: Salinity
-    :type S: float | PAGOSQuantity
-    :param p: Pressure
-    :type p: float | PAGOSQuantity
-    :param ab: Abundance of gas in atmosphere, defaults to "default"
-    :type ab: float | PAGOSQuantity, optional
-    :return: Waterside eqbm. concentration
-    :rtype: PAGOSQuantity
+    ## Units
+        **default units in** — `T`: °C, `S`: ‰, `p`: atm
+        **default units out** — mol_gas/kg
+
+    Args:
+        gas (Gas | str): Gas for which Ceq should be calculated
+        T (float | PAGOSQuantity): Temperature
+        S (float | PAGOSQuantity): Salinity
+        p (float | PAGOSQuantity): Pressure
+        ab (str): Abundance of gas in atmosphere, defaults to "default"
+
+    Returns:
+        PAGOSQuantity: Waterside eqbm. concentration
     """
     try:
         return gas.calc_Ceq(T, S, p, ab)
     except AttributeError:
         return gases_dict[gas].calc_Ceq(T, S, p, ab)
-
-
-# Allow the warning for nonmultiplicative units on functions wrapped with pagos.core.unit_aware
-# This happens here at the end of all these function definitions, because otherwise every time PAGOS
-# was imported, a bunch of warnings would show up. This way, the warnings will only show for user-
-# defined functions.
-pagos.newcore._warn_nonmult_in_unit_aware = True

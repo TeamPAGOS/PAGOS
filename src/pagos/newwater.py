@@ -7,22 +7,24 @@ from pagos.newconstants import (
     GILL_82_COEFFS,
     SHARQAWY_10_COEFFS,
 )
+from pagos.newcore import PAGOSQuantity
 from pagos.newcore import pCalc as pC
 
 
 @pC.unit_aware({"T": "degC", "S": "permille"}, "kg/m^3")
-def calc_dens(T: float, S: float) -> float:
-    """
-    Calculate density of seawater at a given temperature and salinity, according to Gill 1982.\\
-    **Default input units** --- `T`:°C, `S`:‰\\
-    **Output units** --- kg/m³
+def calc_dens(T: float | PAGOSQuantity, S: float | PAGOSQuantity) -> PAGOSQuantity:
+    """Calculate density of seawater at a given temperature and salinity, according to Gill 1982.
 
-    :param T: Temperature
-    :type T: float
-    :param S: Salinity
-    :type S: float
-    :return: Calculated density
-    :rtype: float
+    ## Units
+        **default units in** — `T`:°C, `S`:‰
+        **default units out** — kg/m³
+
+    Args:
+        T (float | PAGOSQuantity): Temperature
+        S (float | PAGOSQuantity): Salinity
+
+    Returns:
+        PAGOSQuantity: Calculated density
     """
 
     a0, a1, a2, a3, a4, a5, b0, b1, b2, b3, b4, c0, c1, c2, d0 = GILL_82_COEFFS.values()
@@ -37,15 +39,18 @@ def calc_dens(T: float, S: float) -> float:
 
 
 @pC.unit_aware({"T": "degC"}, "mbar")
-def calc_vappres(T: float) -> float:
-    """Calculate water vapour pressure over seawater at given temperature, according to Dyck and Peschke 1995.\\
-    **Default input units** --- `T`:°C\\
-    **Output units** --- mbar
+def calc_vappres(T: float | PAGOSQuantity) -> PAGOSQuantity:
+    """Calculate water vapour pressure over seawater at given temperature, according to Dyck and Peschke 1995.
 
-    :param T: Temperature
-    :type T: float
-    :return: Calculated water vapour pressure
-    :rtype: float
+    ## Units
+        **default units in** — `T`:°C
+        **default units out** — mbar
+
+    Args:
+        T (float | PAGOSQuantity): Temperature
+
+    Returns:
+        PAGOSQuantity: Calculated water vapour pressure
     """
     p0, c = DYCK_PESCHKE_95_COEFFS["p0"], DYCK_PESCHKE_95_COEFFS["c"]
     pv = p0 * 10 ** ((7.567 * T) / (T + c))
@@ -53,17 +58,19 @@ def calc_vappres(T: float) -> float:
 
 
 @pC.unit_aware({"T": "degC", "S": "permille"}, "m^2/s")
-def calc_kinvisc(T: float, S: float) -> float:
-    """Calculate kinematic viscosity of seawater at given temperature and salinity, according to Sharqawy 2010.\\
-    **Default input units** --- `T`:°C, `S`:‰\\
-    **Output units** --- m²/s
+def calc_kinvisc(T: float | PAGOSQuantity, S: float | PAGOSQuantity) -> PAGOSQuantity:
+    """Calculate kinematic viscosity of seawater at given temperature and salinity, according to Sharqawy 2010.
 
-    :param T: Temperature
-    :type T: float | Quantity
-    :param S: Salinity
-    :type S: float | Quantity
-    :return: Calculated kinematic viscosity
-    :rtype: Quantity
+    ## Units
+        **default units in** — `T`:°C, `S`:‰
+        **default units out** — m²/s
+
+    Args:
+        T (float | PAGOSQuantity): Temperature
+        S (float | PAGOSQuantity): Salinity
+
+    Returns:
+        PAGOSQuantity: Kinematic viscosity
     """
     m0, m1, m2, m3, a1, a2, b1, b2 = SHARQAWY_10_COEFFS.values()
     # Density of the water
@@ -83,19 +90,21 @@ def calc_kinvisc(T: float, S: float) -> float:
 
 @pC.unit_aware({"T": "degC", "S": "permille"}, "kg/m^3/K")
 def calc_dens_Tderiv(
-    T: float,
-    S: float,
-) -> float:
-    """Calculate temperature-derivative of the density (dρ/dT) of seawater at given temperature and salinity, according to Gill 1982.\\
-    **Default input units** --- `T`:°C, `S`:‰\\
-    **Output units** --- kg/m³/K
+    T: float | PAGOSQuantity,
+    S: float | PAGOSQuantity,
+) -> PAGOSQuantity:
+    """Calculate temperature-derivative of the density (dρ/dT) of seawater at given temperature and salinity, according to Gill 1982.
 
-    :param T: Temperature
-    :type T: float | Quantity
-    :param S: Salinity
-    :type S: float | Quantity
-    :return: Calculated dρ/dT
-    :rtype: Quantity
+    ## Units:
+        **Default input units** — `T`:°C, `S`:‰
+        **Output units** — kg/m³/K
+
+    Args:
+        T (float | PAGOSQuantity): Temperature
+        S (float | PAGOSQuantity): Salinity
+
+    Returns:
+        PAGOSQuantity: Calculated dρ/dT
     """
     a0, a1, a2, a3, a4, a5, b0, b1, b2, b3, b4, c0, c1, c2, d0 = GILL_82_COEFFS.values()
     drhodT = (
@@ -112,19 +121,21 @@ def calc_dens_Tderiv(
 
 @pC.unit_aware({"T": "degC", "S": "permille"}, "kg/m^3/permille")
 def calc_dens_Sderiv(
-    T: float,
-    S: float,
-) -> float:
-    """Calculate salinity-derivative of the density (dρ/dS) of seawater at given temperature and salinity, according to Gill 1982.\\
-    **Default input units** --- `T`:°C, `S`:‰\\
-    **Output units** --- kg/m³/permille
+    T: float | PAGOSQuantity,
+    S: float | PAGOSQuantity,
+) -> PAGOSQuantity:
+    """Calculate salinity-derivative of the density (dρ/dS) of seawater at given temperature and salinity, according to Gill 1982.
 
-    :param T: Temperature
-    :type T: float | Quantity
-    :param S: Salinity
-    :type S: float | Quantity
-    :return: Calculated dρ/dS
-    :rtype: Quantity
+    ## Units
+        **default units in** — `T`:°C, `S`:‰
+        **default units out** — kg/m³/permille
+
+    Args:
+        T (float | PAGOSQuantity): Temperature
+        S (float | PAGOSQuantity): Salinity
+
+    Returns:
+        PAGOSQuantity: Calculated dρ/dS
     """
     a0, a1, a2, a3, a4, a5, b0, b1, b2, b3, b4, c0, c1, c2, d0 = GILL_82_COEFFS.values()
     drhodS = (
@@ -140,15 +151,18 @@ def calc_dens_Sderiv(
 
 
 @pC.unit_aware({"T": "degC"}, "mbar/K")
-def calc_vappres_Tderiv(T: float) -> float:
-    """Calculate temperature-derivative of water vapour pressure (de/dT) over seawater at given temperature, according to Dyck and Peschke 1995.\\
-    **Default input units** --- `T`:°C\\
-    **Output units** --- mbar/K
+def calc_vappres_Tderiv(T: float | PAGOSQuantity) -> PAGOSQuantity:
+    """Calculate temperature-derivative of water vapour pressure (de/dT) over seawater at given temperature, according to Dyck and Peschke 1995.
 
-    :param T: Temperature
-    :type T: float | Quantity
-    :return: Calculated de/dT
-    :rtype: Quantity
+    ## Units
+        **default units in** — `T`:°C
+        **default units out** — mbar/K
+
+    Args:
+        T (float | PAGOSQuantity): Temperature
+
+    Returns:
+        PAGOSQuantity: Calculated de/dT
     """
 
     p0, c = DYCK_PESCHKE_95_COEFFS["p0"], DYCK_PESCHKE_95_COEFFS["c"]

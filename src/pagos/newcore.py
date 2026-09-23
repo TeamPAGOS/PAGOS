@@ -901,27 +901,36 @@ class PAGOSCalculator:
             setattr(self.__class__, funcname, method_to_add)
             return getattr(self, funcname)
 
-    def unit_aware(self, default_units_in: dict, units_out):
+    def unit_aware(self, default_units_in: dict | None, units_out: str | None):
         """
         Decorator which makes a function unit aware, by setting default units in and units out. The default units are applied to float inputs and the resulting calculation is converted to the units out.
         """
-        units_out = ureg._parse_units_as_container(units_out)
+        i_am_unit_aware: None  # free variable which acts as a tag, so that we can tell from outside the function if it's unit aware already (by evaluating: 'i_am_unit_aware' in <function>.__code__.co_freevars)
+
+        if units_out is not None:
+            units_out = ureg._parse_units_as_container(units_out)
         # Nonmuliplicative units will cause ambiguity in additive calculations, which can especially be a problem
         # when the units have to be inferred (e.g. 5°C + 5K -> 5Δ°C + 5K, 5Δ°C - 267.15Δ°C, or 278.15K + 5K? The
         # nonmultiplicative handling system in fastpagosbinop can "decide", but not consistently).
 
         # To avoid the user having to write ".to()" in all calculations involving temperature, unit_aware will
         # FORCE any nonmultiplicative units to their entry at default_units_in. The user will be appropriately warned.
-        nonmult_units = {
-            k: default_units_in[k]
-            if ccreg.Quantity(0, default_units_in[k])._get_non_multiplicative_units()
-            else None
-            for k in default_units_in
-        }
+        if default_units_in is not None:
+            nonmult_units = {
+                k: default_units_in[k]
+                if ccreg.Quantity(
+                    0, default_units_in[k]
+                )._get_non_multiplicative_units()
+                else None
+                for k in default_units_in
+            }
+        else:
+            nonmult_units = {}
 
         def _unit_aware(func: Callable):
+
             function_parameters = list(signature(func).parameters.keys())
-            if any(nonmult_units) and _warn_nonmult_in_unit_aware:
+            if any(v for v in nonmult_units.values()) and _warn_nonmult_in_unit_aware:
                 print(
                     f"WARNING: the function {func.__name__} has nonmultiplicative units. These will ALWAYS be converted as follows:"
                 )
@@ -929,8 +938,34 @@ class PAGOSCalculator:
                     if nonmult_units[k] is not None:
                         print(k, "->", nonmult_units[k])
 
-            @wraps(func)
+            # this section deals with nested unit_aware decorations
+            if "i_am_unit_aware" in func.__code__.co_freevars:
+                if default_units_in is None and units_out is None:
+                    # skip layer of wrapping if there would be no change anyway
+                    return func
+                _func: Callable = func.__wrapped__
+                if default_units_in is None:  # (but units_out is NOT None)
+                    # keep already defined unit_aware-associated default_units_in but return with overriden units_out
+                    @wraps(_func)
+                    def wrapper(*args, **kwargs) -> PAGOSQuantity:
+                        return _func(*args, **kwargs).to(units_out)
+
+                    return wrapper
+
+                # Otherwise, if the wrapped function was already unit aware, AND neither of the outer default_units in
+                # nor units_out were None, we will just pass func.__wrapped__ to @wraps (i.e. the inner, non-unit-aware function), overwriting the inner default_units_in and units_out
+            else:
+                _func = func
+
+            @wraps(_func)
             def wrapper(*args, **kwargs) -> PAGOSQuantity:
+                # creation of i_am_unit_aware closure variable to use as tag (see declaration of this variable at top of unit_aware definition)
+                nonlocal i_am_unit_aware
+
+                # Pass through if there are no default_units_in given (NOTE: not just each entry being None, but the whole variable being None)
+                if default_units_in is None:
+                    return _func(*args, **kwargs).to(units_out)
+
                 # Execute the function with pQ(...) arguments instead of floats.
                 # - if the argument is a PAGOSQuantity with no nonmultiplicative units -> do nothing
                 # - if the argument has nonmultiplicative units -> FORCE argument every time to default_units_in
@@ -956,7 +991,7 @@ class PAGOSCalculator:
                     )
                     for k in kwargs
                 }
-                result = func(*pQ_args, **pQ_kwargs)
+                result = _func(*pQ_args, **pQ_kwargs)
                 return result.to(units_out)
 
             return wrapper

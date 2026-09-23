@@ -49,4 +49,10 @@ from . import newconstants
 from . import newwater
 from . import gasobject
 from . import newmodelling
-# from . import testing_monkey_patch
+from . import newbuiltin_models
+
+# Allow the warning for nonmultiplicative units on functions wrapped with pagos.core.unit_aware
+# This happens here at the end of all these function definitions, because otherwise every time PAGOS
+# was imported, a bunch of warnings would show up. This way, the warnings will only show for user-
+# defined functions.
+newcore._warn_nonmult_in_unit_aware = True
