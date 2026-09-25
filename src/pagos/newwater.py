@@ -7,11 +7,10 @@ from pagos.newconstants import (
     GILL_82_COEFFS,
     SHARQAWY_10_COEFFS,
 )
-from pagos.newcore import PAGOSQuantity
-from pagos.newcore import pCalc as pC
+from pagos.newcore import PAGOSQuantity, mc_possible, unit_aware
 
 
-@pC.unit_aware({"T": "degC", "S": "permille"}, "kg/m^3")
+@unit_aware({"T": "degC", "S": "permille"}, "kg/m^3")
 def calc_dens(T: float | PAGOSQuantity, S: float | PAGOSQuantity) -> PAGOSQuantity:
     """Calculate density of seawater at a given temperature and salinity, according to Gill 1982.
 
@@ -38,7 +37,7 @@ def calc_dens(T: float | PAGOSQuantity, S: float | PAGOSQuantity) -> PAGOSQuanti
     return rho
 
 
-@pC.unit_aware({"T": "degC"}, "mbar")
+@unit_aware({"T": "degC"}, "mbar")
 def calc_vappres(T: float | PAGOSQuantity) -> PAGOSQuantity:
     """Calculate water vapour pressure over seawater at given temperature, according to Dyck and Peschke 1995.
 
@@ -57,7 +56,7 @@ def calc_vappres(T: float | PAGOSQuantity) -> PAGOSQuantity:
     return pv
 
 
-@pC.unit_aware({"T": "degC", "S": "permille"}, "m^2/s")
+@unit_aware({"T": "degC", "S": "permille"}, "m^2/s")
 def calc_kinvisc(T: float | PAGOSQuantity, S: float | PAGOSQuantity) -> PAGOSQuantity:
     """Calculate kinematic viscosity of seawater at given temperature and salinity, according to Sharqawy 2010.
 
@@ -88,7 +87,7 @@ def calc_kinvisc(T: float | PAGOSQuantity, S: float | PAGOSQuantity) -> PAGOSQua
     return nu_sw
 
 
-@pC.unit_aware({"T": "degC", "S": "permille"}, "kg/m^3/K")
+@unit_aware({"T": "degC", "S": "permille"}, "kg/m^3/K")
 def calc_dens_Tderiv(
     T: float | PAGOSQuantity,
     S: float | PAGOSQuantity,
@@ -119,7 +118,7 @@ def calc_dens_Tderiv(
     return drhodT
 
 
-@pC.unit_aware({"T": "degC", "S": "permille"}, "kg/m^3/permille")
+@unit_aware({"T": "degC", "S": "permille"}, "kg/m^3/permille")
 def calc_dens_Sderiv(
     T: float | PAGOSQuantity,
     S: float | PAGOSQuantity,
@@ -150,7 +149,7 @@ def calc_dens_Sderiv(
     return drhodS
 
 
-@pC.unit_aware({"T": "degC"}, "mbar/K")
+@unit_aware({"T": "degC"}, "mbar/K")
 def calc_vappres_Tderiv(T: float | PAGOSQuantity) -> PAGOSQuantity:
     """Calculate temperature-derivative of water vapour pressure (de/dT) over seawater at given temperature, according to Dyck and Peschke 1995.
 
@@ -171,9 +170,9 @@ def calc_vappres_Tderiv(T: float | PAGOSQuantity) -> PAGOSQuantity:
     return dpv_dT
 
 
-calc_dens = pC.make_mcmethod(calc_dens, 0.0)
-calc_vappres = pC.make_mcmethod(calc_vappres, 0.0)
-calc_kinvisc = pC.make_mcmethod(calc_kinvisc, 0.0)
-calc_dens_Tderiv = pC.make_mcmethod(calc_dens_Tderiv, 0.0)
-calc_dens_Sderiv = pC.make_mcmethod(calc_dens_Sderiv, 0.0)
-calc_vappres_Tderiv = pC.make_mcmethod(calc_vappres_Tderiv, 0.0)
+calc_dens = mc_possible(0.0)(calc_dens)
+calc_vappres = mc_possible(0.0)(calc_vappres)
+calc_kinvisc = mc_possible(0.0)(calc_kinvisc)
+calc_dens_Tderiv = mc_possible(0.0)(calc_dens_Tderiv)
+calc_dens_Sderiv = mc_possible(0.0)(calc_dens_Sderiv)
+calc_vappres_Tderiv = mc_possible(0.0)(calc_vappres_Tderiv)

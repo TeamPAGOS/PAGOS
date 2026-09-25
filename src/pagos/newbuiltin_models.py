@@ -2,16 +2,15 @@
 
 import numpy as np
 
-import pagos.newcore
 from pagos.gasobject import Gas, abn, calc_Ceq, calc_Sc
-from pagos.newcore import PAGOSQuantity, pCalc, set_warn_nonmult
+from pagos.newcore import PAGOSQuantity, set_warn_nonmult, unit_aware
 from pagos.newmodelling import TracerModel
 from pagos.newwater import calc_kinvisc
 
 set_warn_nonmult(False)
 
 
-@pCalc.unit_aware(
+@unit_aware(
     {"gas": None, "T": "degC", "S": "permille", "p": "atm", "A": "mol/kg"}, "mol_gas/kg"
 )
 def ua(
@@ -49,7 +48,7 @@ def ua(
 ua_model = TracerModel(ua)
 
 
-@pCalc.unit_aware(
+@unit_aware(
     {
         "gas": None,
         "T": "degC",
@@ -111,7 +110,7 @@ def pr(
 pr_model = TracerModel(pr)
 
 
-@pCalc.unit_aware(
+@unit_aware(
     {
         "gas": None,
         "T": "degC",
@@ -172,7 +171,7 @@ def pd(
 pd_model = TracerModel(pd)
 
 
-@pCalc.unit_aware(
+@unit_aware(
     {
         "gas": None,
         "T": "degC",
@@ -221,7 +220,7 @@ def od(
 od_model = TracerModel(od)
 
 
-@pCalc.unit_aware(
+@unit_aware(
     {
         "gas": None,
         "T": "degC",

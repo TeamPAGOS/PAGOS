@@ -2,7 +2,16 @@ from numbers import Number
 import re
 import warnings
 
-from pagos.newcore import PAGOSQuantity, pQ, pCalc, _set_fast
+from pagos.newcore import (
+    MC_LIST,
+    PAGOSQuantity,
+    is_first_mc_pass,
+    pQ,
+    unit_aware,
+    _set_fast,
+    begin_new_mc_cycle,
+    end_of_first_mc_cycle_pass,
+)
 import numpy as np
 import pandas as pd
 from lmfit import fit_report, minimize, Parameters
@@ -58,12 +67,15 @@ class TracerModel:
                     "default_units_in should have one entry for every argument to model_function (except the tracer)."
                 )
         else:
-            self.default_units_in = None
+            try:
+                self.default_units_in = model_function.default_units_in
+            except AttributeError:
+                self.default_units_in = None
 
         self.default_units_out = default_units_out
-        self.model_function = pCalc.unit_aware(
-            self.default_units_in, self.default_units_out
-        )(model_function)
+        self.model_function = unit_aware(self.default_units_in, self.default_units_out)(
+            model_function
+        )
 
         # initialisation of objective function which will be used for fitting
         def objfunc(
@@ -81,6 +93,7 @@ class TracerModel:
                 obs_tr (np.ndarray): observed tracer values, in the order of the `tracers` list, stripped of units
                 obs_tr_errs (np.ndarray): observed tracer errors, in the order of the `tracers` list, stripped of units
             """
+
             # unpack parameters
             regr_dict = regressors.valuesdict()
 
@@ -91,6 +104,10 @@ class TracerModel:
                 norm_resid = (mod_tr - obs_tr) / obs_tr_errs
             else:
                 norm_resid = mod_tr - obs_tr
+
+            if is_first_mc_pass():
+                end_of_first_mc_cycle_pass()
+
             # returns an array of residuals. minimize() will automatically square and sum the elements of the array for the LM algorithm
             return norm_resid
 
@@ -146,7 +163,7 @@ class TracerModel:
             # the keyword arguments, if they have units, will take units
             for k in kwargs_to_model_func:  # noqa: PLC0206
                 if isinstance(kwargs_to_model_func[k], Number):
-                    kwargs_to_model_func[k] = pQ(k, units_in[k])
+                    kwargs_to_model_func[k] = pQ(kwargs_to_model_func[k], units_in[k])
 
         result = self.model_function(*args_to_model_func, **kwargs_to_model_func)
 
@@ -163,6 +180,8 @@ class TracerModel:
         obs_tr_errs: np.ndarray,
         regr_to_fit_bounds: dict | None = None,
     ):
+        # begin a new Monte Carlo cycle
+        # begin_new_mc_cycle()
         # fit objective function to provided data
         fit_result = minimize(
             self.objfunc, regr_params_object, args=(tracers, obs_tr, obs_tr_errs)

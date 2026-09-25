@@ -42,3 +42,6 @@ def test_run_ua_with_mixed_inputs():
 
 
 # TODO test fit and fit_dataframe
+
+if __name__ == "__main__":
+    test_run_ua_with_floats()

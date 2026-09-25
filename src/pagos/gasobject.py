@@ -16,8 +16,7 @@ from pagos.newconstants import (
     WANNINKHOF_92_SALTFACTOR_COEFFS,
     ArNeN2_HAMMEEMERSON_04_COEFFS,
 )
-from pagos.newcore import PAGOSQuantity, pQ
-from pagos.newcore import pCalc as pC
+from pagos.newcore import PAGOSQuantity, mc_possible, pQ, unit_aware
 from pagos.newwater import calc_kinvisc, calc_vappres
 
 PREDEFINED_GASES = ["He", "Ne", "Ar", "Kr", "Xe", "N2", "CFC11", "CFC12", "SF6"]
@@ -72,8 +71,7 @@ class Gas:
             self.calc_Sc = NotImplementedError(
                 f"calc_Sc is not defined for {self.name}"
             )
-        self.calc_Sc = pC.make_mcmethod(self.calc_Sc, 0.0)
-
+        self.calc_Sc = mc_possible(0.0)(self.calc_Sc)
         # initialise C* calculation
         # NOTE some of the cases (e.g. noble gases) have an ab argument that does nothing!
         if self.name in NOBLEGASES:
@@ -90,7 +88,7 @@ class Gas:
             self.calc_Cstar = NotImplementedError(
                 f"calc_Cstar is not defined for {self.name}"
             )
-        self.calc_Cstar = pC.make_mcmethod(self.calc_Cstar, 0.0)
+        self.calc_Cstar = mc_possible(0.0)(self.calc_Cstar)
 
         # initialise Ceq calculation
         if self.name in NOBLEGASES + STABLETRANSIENTGASES + ["N2"]:
@@ -100,7 +98,7 @@ class Gas:
                 f"calc_Ceq is not defined for {self.name}"
             )
 
-    @pC.unit_aware({"self": None, "T": "degC", "S": "permille"}, "dimensionless")
+    @unit_aware({"self": None, "T": "degC", "S": "permille"}, "dimensionless")
     def __calc_Sc_W92(
         self,
         T: float,
@@ -122,7 +120,7 @@ class Gas:
         Sc = saltfactor * (A - B * T + C * T**2 - D * T**3)
         return Sc
 
-    @pC.unit_aware({"self": None, "T": "degC", "S": "permille"}, "dimensionless")
+    @unit_aware({"self": None, "T": "degC", "S": "permille"}, "dimensionless")
     def __calc_Sc_HE17(self, T: float, S: float) -> float:
         # Hamme & Emerson 2017 method
         # Eyring diffusivity calculation
@@ -138,7 +136,7 @@ class Gas:
         Sc = nu_sw / D
         return Sc
 
-    @pC.unit_aware({"self": None, "T": "degC", "S": "permille"}, "mol_g/kg")
+    @unit_aware({"self": None, "T": "degC", "S": "permille"}, "mol_g/kg")
     def __calc_Cstar_J19(self, T: float, S: float) -> float:
         T_K = T.to("K")
         T_N = T_K / K100
@@ -156,7 +154,7 @@ class Gas:
         ) * pQ(1, "mol_g/kg", self.name)
         return Cstar
 
-    @pC.unit_aware({"self": None, "T": "degC", "S": "permille", "ab": None}, "mol_g/kg")
+    @unit_aware({"self": None, "T": "degC", "S": "permille", "ab": None}, "mol_g/kg")
     def __calc_Cstar_WW85(self, T: float, S: float, ab: str = "default") -> float:
         T_K = T.to("K")
         T_N = T_K / K100
@@ -180,7 +178,7 @@ class Gas:
         ) * pQ(1, "mol_g/kg", self.name)
         return Cstar
 
-    @pC.unit_aware({"self": None, "T": "degC", "S": "permille", "ab": None}, "mol_g/kg")
+    @unit_aware({"self": None, "T": "degC", "S": "permille", "ab": None}, "mol_g/kg")
     def __calc_Cstar_B02(self, T: float, S: float, ab: str = "default") -> float:
         T_K = T.to("K")
         T_N = T_K / K100
@@ -197,7 +195,7 @@ class Gas:
         ) * pQ(1, "mol_g/kg", self.name)
         return Cstar
 
-    @pC.unit_aware({"self": None, "T": "degC", "S": "permille"}, "mol_g/kg")
+    @unit_aware({"self": None, "T": "degC", "S": "permille"}, "mol_g/kg")
     def __calc_Cstar_HE04(self, T: float, S: float) -> float:
         T_K = T.to("K")
         A0, A1, A2, A3, B0, B1, B2 = ArNeN2_HAMMEEMERSON_04_COEFFS[
@@ -217,7 +215,7 @@ class Gas:
         ) * pQ(1e-6, "mol_g/kg", self.name)
         return Cstar
 
-    @pC.unit_aware(
+    @unit_aware(
         {"self": None, "T": "degC", "S": "permille", "p": "atm", "ab": None}, "mol_g/kg"
     )
     def __calc_Ceq(
