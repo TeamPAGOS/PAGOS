@@ -941,6 +941,12 @@ def begin_new_mc_cycle():
     MC_LIST = []
 
 
+def end_mc_cycle():
+    """Should be called once minimize() has finished its business"""
+    # Fast calculations will have been activated from the first call of the objective function. Here we deactivate.
+    _set_fast(False)
+
+
 def end_of_first_mc_cycle_pass():
     """Should be called at the end of one fitting step"""
     global FIRST_MC_PASS, MC_CYCLE

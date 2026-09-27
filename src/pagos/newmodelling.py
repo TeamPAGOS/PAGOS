@@ -5,8 +5,10 @@ import warnings
 from pagos.newcore import (
     MC_LIST,
     PAGOSQuantity,
+    end_mc_cycle,
     is_first_mc_pass,
     pQ,
+    set_mc,
     unit_aware,
     _set_fast,
     begin_new_mc_cycle,
@@ -18,6 +20,8 @@ from lmfit import fit_report, minimize, Parameters
 from tqdm import tqdm
 from collections.abc import Callable, Iterable
 from inspect import getfullargspec, signature
+
+rng = np.random.default_rng()
 
 
 class TracerModel:
@@ -106,6 +110,9 @@ class TracerModel:
                 norm_resid = mod_tr - obs_tr
 
             if is_first_mc_pass():
+                # at the end of the first call of the objective function,
+                # we convert the stored list of MC factors into a cycle
+                # and activate fast calculations
                 end_of_first_mc_cycle_pass()
 
             # returns an array of residuals. minimize() will automatically square and sum the elements of the array for the LM algorithm
@@ -177,11 +184,9 @@ class TracerModel:
         regr_params_object: Parameters,
         tracers: list,
         obs_tr: np.ndarray,
-        obs_tr_errs: np.ndarray,
+        obs_tr_errs: np.ndarray | None,
         regr_to_fit_bounds: dict | None = None,
     ):
-        # begin a new Monte Carlo cycle
-        # begin_new_mc_cycle()
         # fit objective function to provided data
         fit_result = minimize(
             self.objfunc, regr_params_object, args=(tracers, obs_tr, obs_tr_errs)
@@ -194,7 +199,7 @@ class TracerModel:
         regressors_to_fit: dict,
         tracers: list,
         obs_tr: np.ndarray,
-        obs_tr_errs: np.ndarray,
+        obs_tr_errs: np.ndarray | None,
         regr_to_fit_bounds: dict | None = None,
         comes_from_fit_df: bool = False,
     ):
@@ -234,10 +239,11 @@ class TracerModel:
                 k, regressors_to_fit[k], vary=True, min=_min, max=_max
             )
 
-        # TODO perform MC variations here?
-        ...
+        # begin a new Monte Carlo cycle - all calls to the objective function should repeat the same MC variations
+        # otherwise the objective function can never be minimised!
+        begin_new_mc_cycle()
 
-        return self._fit(
+        fitted = self._fit(
             regr_params_object,
             tracers,
             obs_tr,
@@ -245,23 +251,159 @@ class TracerModel:
             regr_to_fit_bounds,
         )
 
+        end_mc_cycle()
+
+        return fitted
+
     def fit_dataframe(
         self,
         data: pd.DataFrame,
         tracers: list,
         regressors_to_fit: dict | list,
         regr_to_fit_bounds: dict | None = None,
+        do_warnings: bool = True,
+        tqdm_bar: bool = True,
+        nmc: int = 0,
+    ) -> pd.DataFrame | list[pd.DataFrame]:
+
+        n_samples = data.shape[0]
+
+        # The observations for each fixed regressor as a dictionary of parameter names and an array of values
+        # The tracer observations as a matrix [n_tracers] x [n_samples]
+        # The tracer observation errors as a matrix [n_tracers] x [n_samples]
+        (
+            obs_foreach_fixed_regressor,
+            errs_foreach_fixed_regressor,
+            tracer_obs_matrix,
+            tracer_errs_matrix,
+        ) = self.prepare_dataframe_for_fitting(
+            data, tracers, regressors_to_fit, do_warnings
+        )
+
+        # the fixed regressors are the parameters which are not fitted, and are also not the tracer parameter (hence [1:])
+        fixed_regressors = [
+            p for p in self.modelfunc_params[1:] if p not in regressors_to_fit
+        ]
+
+        # convert initial guesses for regressors to fit to default_units_in
+        regressors_to_fit = {
+            k: pQ(regressors_to_fit[k], self.default_units_in[k]).value
+            for k in regressors_to_fit
+        }
+
+        # prepare mc variations around the values for the tracers and fixed regressors, if Monte Carlo should be performed
+        if nmc:
+            set_mc(True)
+            # varying each (t x s) tracer-sample pairs, nmc times, to get a cube with (t x s x nmc) entries
+            tracer_obs_cubematrix = tracer_obs_matrix + rng.normal(
+                loc=np.zeros(tracer_obs_matrix.shape),
+                scale=tracer_errs_matrix,
+                size=(nmc, *tracer_obs_matrix.shape),
+            )
+            # doing the same with the fixed regressors (but adhering to dictionary structure)
+            fixed_regressor_cubedict = {
+                r: obs_foreach_fixed_regressor[r]
+                + rng.normal(
+                    loc=np.zeros(n_samples),
+                    scale=errs_foreach_fixed_regressor[r],
+                    size=(nmc, n_samples),
+                )
+                for r in fixed_regressors
+            }
+
+            out_dfs: list[pd.DataFrame] = [
+                pd.DataFrame(
+                    index=data.index,
+                    columns=(
+                        regressors_to_fit
+                        if isinstance(regressors_to_fit, list)
+                        else regressors_to_fit.keys()
+                    ),
+                    dtype=np.float64,
+                )
+                for k in range(nmc)
+            ]
+
+            # loading bar, increments on every mc variation of the input parameters
+            if tqdm_bar:
+                _range_nmc = tqdm(range(nmc))
+            else:
+                _range_nmc = range(nmc)
+
+            # perform fits for every row in every "slice" of the data cubes
+            for k in _range_nmc:
+                for j in range(n_samples):
+                    try:
+                        fitresult_jk = self.fit(
+                            fixed_regressors={
+                                r: fixed_regressor_cubedict[r][k, j]
+                                for r in fixed_regressors
+                            },
+                            regressors_to_fit=regressors_to_fit,
+                            tracers=tracers,
+                            obs_tr=tracer_obs_cubematrix[k, :, j],
+                            obs_tr_errs=None,
+                            regr_to_fit_bounds=regr_to_fit_bounds,
+                            comes_from_fit_df=True,
+                        )
+                        params_out_jk = np.array(
+                            [fitresult_jk.params[r].value for r in regressors_to_fit]
+                        )
+
+                        out_dfs[k].iloc[j] = params_out_jk
+                    except ValueError:
+                        out_dfs[k].iloc[j] = np.full(len(regressors_to_fit), np.nan)
+
+            set_mc(False)
+            return out_dfs
+        # otherwise just fit the data once, if no MC procedure is requested
+        else:
+            out_df = pd.DataFrame(
+                index=data.index,
+                columns=[x for reg in regressors_to_fit for x in (reg, f"{reg} err")],
+            )
+
+            # loading bar, increments on each sample
+            if tqdm_bar:
+                _range_nsamples = tqdm(range(n_samples))
+            else:
+                _range_nsamples = range(n_samples)
+
+            # perform fit for every row in the dataframe
+            for j in _range_nsamples:
+                fitresult_j = self.fit(
+                    fixed_regressors={
+                        r: obs_foreach_fixed_regressor[r][j] for r in fixed_regressors
+                    },
+                    regressors_to_fit=regressors_to_fit,
+                    tracers=tracers,
+                    obs_tr=tracer_obs_matrix[:, j],
+                    obs_tr_errs=tracer_errs_matrix[:, j],
+                    regr_to_fit_bounds=regr_to_fit_bounds,
+                    comes_from_fit_df=True,
+                )
+                params_out_j = np.array(
+                    [
+                        [fitresult_j.params[r].value, fitresult_j.params[r].stderr]
+                        for r in regressors_to_fit
+                    ]
+                ).flatten()
+
+                out_df.iloc[j] = params_out_j
+
+            return out_df
+
+    def prepare_dataframe_for_fitting(
+        self,
+        data: pd.DataFrame,
+        tracers: list,
+        regressors_to_fit: dict | list,
         do_warnings=True,
-        tqdm_bar=True,
     ):
+        """Mostly just parsing the dataframe's columns, kept separate from fit_dataframe for readability"""
 
         n_samples = data.shape[0]
         n_tracers = len(tracers)
-
-        out_df = pd.DataFrame(
-            index=data.index,
-            columns=[x for reg in regressors_to_fit for x in (reg, f"{reg} err")],
-        )
 
         tracer_obs_matrix = np.empty((n_tracers, n_samples), dtype=np.float64)
         tracer_errs_matrix = np.empty((n_tracers, n_samples), dtype=np.float64)
@@ -271,10 +413,9 @@ class TracerModel:
         fixed_regressors = [
             p for p in self.modelfunc_params[1:] if p not in regressors_to_fit
         ]
-        obs_foreach_fixed_regressor = {}
-        errs_foreach_fixed_regressor = {}
-        units_foreach_fixed_regressor = {}
-
+        obs_foreach_fixed_regressor: dict[str, np.typing.NDArray[np.float64]] = {}
+        errs_foreach_fixed_regressor: dict[str, np.typing.NDArray[np.float64]] = {}
+        units_foreach_fixed_regressor: dict[str, np.typing.NDArray[np.str_]] = {}
         headers = data.columns.to_list()
         # this loop is in TRACER ORDER, which the tracer observation matrices must also obey!
         for i, tracername in enumerate(tracers):
@@ -356,22 +497,6 @@ class TracerModel:
                 tracer_units_matrix[i] = np.full(
                     len(data), self.default_units_out, dtype=object
                 )
-            """# append the tracer data, errors and units to the external dictionaries
-            obs_foreach_tracer[tracername] = data[headers[tracername_index]].to_numpy()
-            if tracer_err_index is not None:
-                errs_foreach_tracer[tracername] = data[
-                    headers[tracer_err_index]
-                ].to_numpy()
-            else:
-                errs_foreach_tracer[tracername] = np.full(len(data), 0, dtype="float64")
-            if tracer_unit_index is not None:
-                units_foreach_tracer[tracername] = data[
-                    headers[tracer_unit_index]
-                ].to_numpy()
-            else:
-                units_foreach_tracer[tracername] = np.full(
-                    len(data), self.default_units_out, dtype=object
-                )"""
 
         for parname in fixed_regressors:
             # find the occurrences of the parameter name
@@ -482,6 +607,9 @@ class TracerModel:
                     tracer_obs_matrix[i] = (
                         pQ(tracer_obs_matrix[i], ut[0]).to(self.default_units_out).value
                     )
+                    tracer_err_index[i] = (
+                        pQ(tracer_err_index[i], ut[0]).to(self.default_units_out).value
+                    )
                 else:
                     for j in range(n_samples):
                         tracer_obs_matrix[i][j] = (
@@ -489,6 +617,12 @@ class TracerModel:
                             .to(self.default_units_out)
                             .value
                         )
+                        tracer_err_index[i][j] = (
+                            pQ(tracer_err_index[i][j], ut[j])
+                            .to(self.default_units_out)
+                            .value
+                        )
+
         # convert all fixed regressor inputs to default_units_in
         for r in fixed_regressors:
             if not np.all(
@@ -500,6 +634,11 @@ class TracerModel:
                         .to(self.default_units_in[r])
                         .value
                     )
+                    errs_foreach_fixed_regressor[r] = (
+                        pQ(errs_foreach_fixed_regressor[r], ur[0])
+                        .to(self.default_units_in[r])
+                        .value
+                    )
                 else:
                     for i in range(len(obs_foreach_fixed_regressor[r])):
                         obs_foreach_fixed_regressor[r][i] = (
@@ -507,40 +646,19 @@ class TracerModel:
                             .to(self.default_units_in[r])
                             .value
                         )
-        # convert initial guesses for regressors to fit to default_units_in
-        regressors_to_fit = {
-            k: pQ(regressors_to_fit[k], self.default_units_in[k]).value
-            for k in regressors_to_fit
-        }
+                    for i in range(len(errs_foreach_fixed_regressor[r])):
+                        errs_foreach_fixed_regressor[r][i] = (
+                            pQ(errs_foreach_fixed_regressor[r][i], ur[i])
+                            .to(self.default_units_in[r])
+                            .value
+                        )
 
-        # perform fit for every row in the dataframe
-        if tqdm_bar:
-            _range_nsamples = tqdm(range(n_samples))
-        else:
-            _range_nsamples = range(n_samples)
-        for j in _range_nsamples:
-            # TODO errs_foreach_fixed_regressor should be used to do MC
-            fitresult_j = self.fit(
-                fixed_regressors={
-                    r: obs_foreach_fixed_regressor[r][j] for r in fixed_regressors
-                },
-                regressors_to_fit=regressors_to_fit,
-                tracers=tracers,
-                obs_tr=tracer_obs_matrix[:, j],
-                obs_tr_errs=tracer_errs_matrix[:, j],
-                regr_to_fit_bounds=regr_to_fit_bounds,
-                comes_from_fit_df=True,
-            )
-            params_out_j = np.array(
-                [
-                    [fitresult_j.params[r].value, fitresult_j.params[r].stderr]
-                    for r in regressors_to_fit
-                ]
-            ).flatten()
-
-            out_df.iloc[j] = params_out_j
-
-        return out_df
+        return (
+            obs_foreach_fixed_regressor,
+            errs_foreach_fixed_regressor,
+            tracer_obs_matrix,
+            tracer_errs_matrix,
+        )
 
 
 # +++++++ TESTING ++++++++
@@ -607,13 +725,4 @@ if __name__ == "__main__":
     )
 
     print(fit_df_ua)
-
-    _set_fast(True)
-
-    fit_df_ua_fast = ua_model.fit_dataframe(
-        my_data, ["He", "Ne", "Ar", "Kr", "Xe"], {"T": pQ(283.15, "K"), "A": 1e-5}
-    )
-
-    x = fit_df_ua.compare(fit_df_ua_fast, keep_equal=True, keep_shape=True)
-
-    print(x)
+    print(my_data[["T", "A"]].compare(fit_df_ua[["T", "A"]]))
