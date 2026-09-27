@@ -1,7 +1,7 @@
 from pint.testing import assert_allclose, assert_equal
 
-from pagos.newcore import pQ, set_warn_nonmult
-from pagos.gasobject import calc_Cstar
+from pagos.core import pQ, set_warn_nonmult
+from pagos.gas import calc_Cstar
 
 
 def test_calc_Cstar_with_float_args():

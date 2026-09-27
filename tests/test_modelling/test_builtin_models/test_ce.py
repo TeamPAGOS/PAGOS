@@ -1,5 +1,5 @@
-from pagos.newbuiltin_models import ce_model, ce
-from pagos.newcore import pQ
+from pagos.builtin_models import ce_model, ce
+from pagos.core import pQ
 
 
 def test_run_ce_with_floats():

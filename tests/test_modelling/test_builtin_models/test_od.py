@@ -1,5 +1,5 @@
-from pagos.newbuiltin_models import od_model
-from pagos.newcore import pQ
+from pagos.builtin_models import od_model
+from pagos.core import pQ
 
 
 def test_run_od_with_floats():

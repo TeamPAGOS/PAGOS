@@ -3,7 +3,7 @@ Tests for unit-awareness in mathematical functions involving annoying temperatur
 All cases here will raise a warning to the user if attempted.
 """
 
-from pagos.newcore import pQ, _set_fast
+from pagos.core import pQ, _set_fast
 
 
 def test_add():

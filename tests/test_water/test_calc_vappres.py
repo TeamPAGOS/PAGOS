@@ -1,5 +1,5 @@
-from pagos.newcore import pQ, set_warn_nonmult
-from pagos.newwater import calc_vappres, calc_vappres_Tderiv
+from pagos.core import pQ, set_warn_nonmult
+from pagos.water import calc_vappres, calc_vappres_Tderiv
 from pint.testing import assert_equal
 
 set_warn_nonmult(False)

@@ -1,148 +1,309 @@
-"""
-Useful constants for the PAGOS package.
-"""
+from pagos.core import pQ, ureg
+import json
 
-"""
-PHYSICAL CONSTANTS
-
-These are generic quantities that will be used throughout the PAGOS package. They do not include
-their units in the definition, i.e. they are not Quantity objects.
-"""
-# Triple point of water (K)
-TPW = 273.15
-# Molar mass of water (g/mol)
-MMW = 18.016
-# Absolute zero (°C)
-ABZ = -273.15
-# Atmospheric pressure (Pa)
-PAT = 101325
-# Molar gas constant (J/mol/K)
-MGC = 8.31446
-# Specific heat of water at 0°C (J/kg/K)
-#https://www.engineeringtoolbox.com/specific-heat-capacity-water-d_660.html
-CPW = 4219.9
+# gases json file
+with open("src/pagos/gases.json", "r") as gases_file:
+    gases_info = json.load(gases_file)["gases"]
+# Atmospheric pressure
+PAT = pQ(101325, "Pa")
+# Molar gas constant
+MGC = pQ(8.31446, "J/mol/K")
+# Specific heat of water at 0°C
+# https://www.engineeringtoolbox.com/specific-heat-capacity-water-d_660.html
+CPW = pQ(4219.9, "J/kg/K")
 # Latent heat of fusion of water (J/kg)
-LFW = 333.55e3
+LFW = pQ(333.55e3, "J/kg")
+# Triple point of water
+TPW = pQ(273.15, "K")
+
+# constants for water.py calculations
+GILL_82_COEFFS = {
+    "a0": pQ(999.842594, "kg/m^3"),
+    "a1": pQ(0.06793952, "kg/m^3/K"),
+    "a2": pQ(-0.00909529, "kg/m^3/K^2"),
+    "a3": pQ(0.0001001685, "kg/m^3/K^3"),
+    "a4": pQ(-0.000001120083, "kg/m^3/K^4"),
+    "a5": pQ(0.000000006536332, "kg/m^3/K^5"),
+    "b0": pQ(0.824493, "kg/m^3/permille"),
+    "b1": pQ(-0.0040899, "kg/m^3/permille/K"),
+    "b2": pQ(0.000076438, "kg/m^3/permille/K^2"),
+    "b3": pQ(-0.00000082467, "kg/m^3/permille/K^3"),
+    "b4": pQ(0.0000000053875, "kg/m^3/permille/K^4"),
+    "c0": pQ(-0.00572466, "kg/m^3/permille^(3/2)"),
+    "c1": pQ(0.00010227, "kg/m^3/permille^(3/2)/K"),
+    "c2": pQ(-0.0000016546, "kg/m^3/permille^(3/2)/K^2"),
+    "d0": pQ(0.00048314, "kg/m^3/permille^2"),
+}
+
+DYCK_PESCHKE_95_COEFFS = {"p0": pQ(6.1078, "mbar"), "c": pQ(239.7, "delta_degC")}
+
+SHARQAWY_10_COEFFS = {
+    "m0": pQ(4.2844e-5, "kg/m/s"),
+    "m1": pQ(1, "kg/m/s"),
+    "m2": pQ(0.157, "delta_degC^-2"),
+    "m3": pQ(64.993, "delta_degC"),
+    "a1": pQ(0.01998, "delta_degC^-1"),
+    "a2": pQ(9.52e-5, "delta_degC^-2"),
+    "b1": pQ(0.07561, "delta_degC^-1"),
+    "b2": pQ(4.724e-4, "delta_degC^-2"),
+}
 
 
-"""
-WATER FUNCTION CONSTANTS
-"""
-# Density coefficients
-GILL_82_COEFFS = dict(
-a0 = 999.842594,
-a1 = 0.06793952,
-a2 = -0.00909529,
-a3 = 0.0001001685,
-a4 = -0.000001120083,
-a5 = 0.000000006536332,
-b0 = 0.824493,
-b1 = -0.0040899,
-b2 = 0.000076438,
-b3 = -0.00000082467,
-b4 = 0.0000000053875,
-c0 = -0.00572466,
-c1 = 0.00010227,
-c2 = -0.0000016546,
-d0 = 0.00048314
-)
-
-
-"""
-NON-NUMERICAL CONSTANTS
-"""
-# TODO do these belong here, or in core? Or in another file?
-# names of gases, and groupings by properties
-NOBLEGASES = ['He', 'Ne', 'Ar', 'Kr', 'Xe']
-STABLETRANSIENTGASES = ['CFC11', 'CFC12', 'SF6']
-BIOLOGICALGASES = ['N2']
-
-
-"""
-GAS FUNCTION CONSTANTS
-"""
-# gas abundances
-ABUNDANCES = dict(He=5.24E-6, Ne=18.18E-6, Ar=0.934E-2, Kr=1.14E-6, Xe=0.087E-6, CFC11=218e-12, CFC12=488e-12, SF6=11.5e-12, N2=0.781)
+# constants for gas.py calculations
+ABUNDANCES = {
+    gases_info[k]["name"]: pQ(
+        gases_info[k]["abn [mol_g/mol]"], "mol_g/mol", gas=gases_info[k]["name"]
+    )
+    for k in gases_info
+}
 
 # molar volumes in units of cm3/mol, referenced to 0 degC and 1 atm = 1013.25 mbar, except
-# CFC11, whichreferenced to its boiling point of 297 K
+# CFC11, which is referenced to its boiling point of 297 K
 # Sources: noble gases, Benson & Krause 1976; stable transient gases, NIST
 # NOTE: cannot find them in Benson and Krause
 # TODO more digits for CFCs
-MOLAR_VOLUMES = dict(He=22425.8703182828, Ne=22424.8703182828, Ar=22392.5703182828, Kr=22352.8703182828, Xe=22256.9703182828,
-                     SF6=22075.5738997, CFC11=23807, CFC12=21844,
-                     N2=22403.8633496)
+MOLAR_VOLUMES = {
+    gases_info[k]["name"]: pQ(
+        gases_info[k]["vmol [ccSTP_g/mol_g]"],
+        "ccSTP_g/mol_g",
+        gas=gases_info[k]["name"],
+    )
+    for k in gases_info
+}
 
 # molar masses of the gases (g/mol)
-MOLAR_MASSES = dict(He=4.002602, Ne=20.1797, Ar=39.948, Kr=83.798, Xe=131.293, SF6=146.06, CFC11=137.37, CFC12=120.91, N2=28.0134)
+MOLAR_MASSES = {
+    gases_info[k]["name"]: pQ(
+        gases_info[k]["mmol [g_g/mol_g]"], "g_g/mol_g", gas=gases_info[k]["name"]
+    )
+    for k in gases_info
+}
+
+# useful normalising constant for solubility constans
+K100 = pQ(100, "K")
 
 # coefficients from Jenkins et al. 2019 solubility formula for noble gases
-NG_JENKINS_19_COEFFS = dict(
-    He={'A1': -178.1424, 'A2': 217.5991, 'A3': 140.7506, 'A4': -23.01954, 'B1': -0.038129, 'B2': 0.01919,
-        'B3': -0.0026898, 'C1': -0.00000255157},
-    Ne={'A1': -274.1329, 'A2': 352.6201, 'A3': 226.9676, 'A4': -37.13393, 'B1': -0.06386, 'B2': 0.035326,
-        'B3': -0.0053258, 'C1': 0.0000128233},
-    Ar={'A1': -227.4607, 'A2': 305.4347, 'A3': 180.5278, 'A4': -27.9945, 'B1': -0.066942, 'B2': 0.037201,
-        'B3': -0.0056364, 'C1': -5.30325E-06},
-    Kr={'A1': -122.4694, 'A2': 153.5654, 'A3': 70.1969, 'A4': -8.52524, 'B1': -0.049522, 'B2': 0.024434,
-        'B3': -0.0033968, 'C1': 4.19208E-06},
-    Xe={'A1': -224.51, 'A2': 292.8234, 'A3': 157.6127, 'A4': -22.66895, 'B1': -0.084915, 'B2': 0.047996,
-        'B3': -0.0073595, 'C1': 6.69292E-06}
-)
+NG_JENKINS_19_COEFFS = {
+    "He": {
+        "A0": -178.1424,
+        "AR": 217.5991,
+        "AL": 140.7506,
+        "A1": -23.01954,
+        "B0": pQ(-0.038129, "permille^-1"),
+        "B1": pQ(0.01919, "permille^-1"),
+        "B2": pQ(-0.0026898, "permille^-1"),
+        "C0": pQ(-0.00000255157, "permille^-2"),
+    },
+    "Ne": {
+        "A0": -274.1329,
+        "AR": 352.6201,
+        "AL": 226.9676,
+        "A1": -37.13393,
+        "B0": pQ(-0.06386, "permille^-1"),
+        "B1": pQ(0.035326, "permille^-1"),
+        "B2": pQ(-0.0053258, "permille^-1"),
+        "C0": pQ(0.0000128233, "permille^-2"),
+    },
+    "Ar": {
+        "A0": -227.4607,
+        "AR": 305.4347,
+        "AL": 180.5278,
+        "A1": -27.9945,
+        "B0": pQ(-0.066942, "permille^-1"),
+        "B1": pQ(0.037201, "permille^-1"),
+        "B2": pQ(-0.0056364, "permille^-1"),
+        "C0": pQ(-5.30325e-06, "permille^-2"),
+    },
+    "Kr": {
+        "A0": -122.4694,
+        "AR": 153.5654,
+        "AL": 70.1969,
+        "A1": -8.52524,
+        "B0": pQ(-0.049522, "permille^-1"),
+        "B1": pQ(0.024434, "permille^-1"),
+        "B2": pQ(-0.0033968, "permille^-1"),
+        "C0": pQ(4.19208e-06, "permille^-2"),
+    },
+    "Xe": {
+        "A0": -224.51,
+        "AR": 292.8234,
+        "AL": 157.6127,
+        "A1": -22.66895,
+        "B0": pQ(-0.084915, "permille^-1"),
+        "B1": pQ(0.047996, "permille^-1"),
+        "B2": pQ(-0.0073595, "permille^-1"),
+        "C0": pQ(6.69292e-06, "permille^-2"),
+    },
+}
 
 # coefficients from Wanninkhof 1992 formula for Schmidt number. Xe values obtained by
 # fitting curve from Jähne 1987 onto the Wanninkhof curve. These are values for Sc in
 # freshwater.
-WANNINKHOF_92_COEFFS = dict(
-    He = {'A': 377.09, 'B': 19.154, 'C': 0.50137, 'D': 0.005669},
-    Ne = {'A': 764.00, 'B': 42.234, 'C': 1.1581, 'D': 0.013405},
-    Ar = {'A': 1759.7, 'B': 117.37, 'C': 3.6959, 'D': 0.046527},
-    Kr = {'A': 2032.7, 'B': 127.55, 'C': 3.7621, 'D': 0.045236},
-    Xe = {'A': 2589.7, 'B': 153.39, 'C': 3.9570, 'D': 0.039801},
-    SF6 = {'A': 3255.3, 'B': 217.13, 'C': 6.8370, 'D': 0.086070},
-    CFC11 = {'A': 3723.7, 'B': 248.37, 'C': 7.8208, 'D': 0.098455},
-    CFC12 = {'A': 3422.7, 'B': 228.30, 'C': 7.1886, 'D': 0.090496},
-    N2 = {'A': 1970.7, 'B': 131.45, 'C': 4.1390, 'D': 0.052106}
-)
+WANNINKHOF_92_COEFFS = {
+    "He": {
+        "A": pQ(377.09, "dimensionless"),
+        "B": pQ(19.154, "K^-1"),
+        "C": pQ(0.50137, "K^-2"),
+        "D": pQ(0.005669, "K^-3"),
+    },
+    "Ne": {
+        "A": pQ(764.00, "dimensionless"),
+        "B": pQ(42.234, "K^-1"),
+        "C": pQ(1.1581, "K^-2"),
+        "D": pQ(0.013405, "K^-3"),
+    },
+    "Ar": {
+        "A": pQ(1759.7, "dimensionless"),
+        "B": pQ(117.37, "K^-1"),
+        "C": pQ(3.6959, "K^-2"),
+        "D": pQ(0.046527, "K^-3"),
+    },
+    "Kr": {
+        "A": pQ(2032.7, "dimensionless"),
+        "B": pQ(127.55, "K^-1"),
+        "C": pQ(3.7621, "K^-2"),
+        "D": pQ(0.045236, "K^-3"),
+    },
+    "Xe": {
+        "A": pQ(2589.7, "dimensionless"),
+        "B": pQ(153.39, "K^-1"),
+        "C": pQ(3.9570, "K^-2"),
+        "D": pQ(0.039801, "K^-3"),
+    },
+    "SF6": {
+        "A": pQ(3255.3, "dimensionless"),
+        "B": pQ(217.13, "K^-1"),
+        "C": pQ(6.8370, "K^-2"),
+        "D": pQ(0.086070, "K^-3"),
+    },
+    "CFC11": {
+        "A": pQ(3723.7, "dimensionless"),
+        "B": pQ(248.37, "K^-1"),
+        "C": pQ(7.8208, "K^-2"),
+        "D": pQ(0.098455, "K^-3"),
+    },
+    "CFC12": {
+        "A": pQ(3422.7, "dimensionless"),
+        "B": pQ(228.30, "K^-1"),
+        "C": pQ(7.1886, "K^-2"),
+        "D": pQ(0.090496, "K^-3"),
+    },
+    "N2": {
+        "A": pQ(1970.7, "dimensionless"),
+        "B": pQ(131.45, "K^-1"),
+        "C": pQ(4.1390, "K^-2"),
+        "D": pQ(0.052106, "K^-3"),
+    },
+}
+WANNINKHOF_92_SALTFACTOR_COEFFS = {
+    "f0": pQ(1.052, "dimensionless"),
+    "f1": pQ(1.3e-3, "K^-1"),
+    "f2": pQ(5e-6, "K^-2"),
+    "f3": pQ(-5e-7, "K^-3"),
+}
 
 # coefficients from the Jähne 1987 formula (Eyring formula) for Schmidt number. Ar was
 # interpolated from Jähne 1987 and N2 is from Ferrel and Himmelblau 1967.
-EYRING_36_COEFFS = dict(
-    He = {'A': .00818, 'Ea': 11.70},
-    Ne = {'A': .01608, 'Ea': 14.84},
-    Ar = {'A': .02227, 'Ea': 16.68},
-    Kr = {'A': .06393, 'Ea': 20.20},
-    Xe = {'A': .09007, 'Ea': 21.61},
-    N2 = {'A': .03412, 'Ea': 18.50}
-)
+EYRING_36_COEFFS = {
+    "He": {"A": pQ(0.00818, "cm^2/s"), "Ea": pQ(11.70, "kJ/mol")},
+    "Ne": {"A": pQ(0.01608, "cm^2/s"), "Ea": pQ(14.84, "kJ/mol")},
+    "Ar": {"A": pQ(0.02227, "cm^2/s"), "Ea": pQ(16.68, "kJ/mol")},
+    "Kr": {"A": pQ(0.06393, "cm^2/s"), "Ea": pQ(20.20, "kJ/mol")},
+    "Xe": {"A": pQ(0.09007, "cm^2/s"), "Ea": pQ(21.61, "kJ/mol")},
+    "N2": {"A": pQ(0.03412, "cm^2/s"), "Ea": pQ(18.50, "kJ/mol")},
+}
+EYRING_36_HAMME_SALT_CORRECTION = pQ(35.5, "permille")
+
 # coefficients from Weiss and Kyser 1978 solubility formula for Kr
-Kr_WEISSKYSER_78_COEFFS = dict(
-    Kr={'A1':-57.2596, 'A2':87.4242, 'A3':22.9332, 'B1':-0.008723, 'B2':-0.002793, 'B3':0.0012398}
-)
+Kr_WEISSKYSER_78_COEFFS = {
+    "Kr": {
+        "A1": -57.2596,
+        "A2": 87.4242,
+        "A3": 22.9332,
+        "B1": -0.008723,
+        "B2": -0.002793,
+        "B3": 0.0012398,
+    }
+}
 
 # coefficients from Warner and Weiss solubility formula for CFC-11 and CFC-12
-CFC_WARNERWEISS_85_COEFFS = dict(
-    CFC11={'a1': -232.0411, 'a2': 322.5546, 'a3': 120.4956, 'a4': -1.39165, 'b1': -0.146531, 'b2': 0.093621,
-           'b3': -0.0160693},
-    CFC12={'a1': -220.2120, 'a2': 301.8695, 'a3': 114.8533, 'a4': -1.39165, 'b1': -0.147718, 'b2': 0.093175,
-           'b3': -0.0157340}
-)
+CFC_WARNERWEISS_85_COEFFS = {
+    "CFC11": {
+        "a1": -232.0411,
+        "a2": 322.5546,
+        "a3": 120.4956,
+        "a4": -1.39165,
+        "b1": pQ(-0.146531, "permille^-1"),
+        "b2": pQ(0.093621, "permille^-1"),
+        "b3": pQ(-0.0160693, "permille^-1"),
+    },
+    "CFC12": {
+        "a1": -220.2120,
+        "a2": 301.8695,
+        "a3": 114.8533,
+        "a4": -1.39165,
+        "b1": pQ(-0.147718, "permille^-1"),
+        "b2": pQ(0.093175, "permille^-1"),
+        "b3": pQ(-0.0157340, "permille^-1"),
+    },
+}
 
 # coefficients from Bullister et al. 2002 solubility formula for SF6
-SF6_BULLISTER_02_COEFFS = dict(
-    SF6={'a1': -82.1639, 'a2': 120.152, 'a3': 30.6372, 'b1': 0.0293201, 'b2': -0.0351974, 'b3': 0.00740056}
-)
+SF6_BULLISTER_02_COEFFS = {
+    "SF6": {
+        "a1": -82.1639,
+        "a2": 120.152,
+        "a3": 30.6372,
+        "b1": pQ(0.0293201, "permille^-1"),
+        "b2": pQ(-0.0351974, "permille^-1"),
+        "b3": pQ(0.00740056, "permille^-1"),
+    }
+}
 
 # coefficients from Hamme and Emerson 2004 solubility formula for Ar, Ne and N2
-ArNeN2_HAMMEEMERSON_04 = dict(
-    N2={'A0': 6.42931, 'A1': 2.92704, 'A2': 4.32531, 'A3': 4.69149, 'B0': -7.44129e-3, 'B1': -8.02566e-3, 'B2': -1.46775e-2},
+ArNeN2_HAMMEEMERSON_04_COEFFS = {
+    "N2": {
+        "A0": 6.42931,
+        "A1": 2.92704,
+        "A2": 4.32531,
+        "A3": 4.69149,
+        "B0": pQ(-7.44129e-3, "permille^-1"),
+        "B1": pQ(-8.02566e-3, "permille^-1"),
+        "B2": pQ(-1.46775e-2, "permille^-1"),
+    },
     # these next two are not used, Jenkins 2019 is more up-to-date
-    Ne={'A0': 2.18156, 'A1': 1.29108, 'A2': 2.12504, 'A3': 0, 'B0': -5.94737e-3, 'B1': -5.13896e-3, 'B2':0},
-    Ar={'A0': 2.79150, 'A1': 3.17609, 'A2': 4.13116, 'A3': 4.90379, 'B0': -6.96233e-3, 'B1': -7.66670e-3, 'B2': -1.16888e-2}
-)
+    "Ne": {
+        "A0": 2.18156,
+        "A1": 1.29108,
+        "A2": 2.12504,
+        "A3": 0,
+        "B0": pQ(-5.94737e-3, "permille^-1"),
+        "B1": pQ(-5.13896e-3, "permille^-1"),
+        "B2": pQ(0, "permille^-1"),
+    },
+    "Ar": {
+        "A0": 2.79150,
+        "A1": 3.17609,
+        "A2": 4.13116,
+        "A3": 4.90379,
+        "B0": pQ(-6.96233e-3, "permille^-1"),
+        "B1": pQ(-7.66670e-3, "permille^-1"),
+        "B2": pQ(-1.16888e-2, "permille^-1"),
+    },
+}
 
 # ice fractionation coefficients for dissolved gases undergoing freezing from seawater to
 # sea ice. NGs are from Loose et al. 2023. For salt, 0.3 was assumed according to
 # Loose 2016. Others assumed to be 0 for now.
 # TODO update these after review of the literature
-ICE_FRACTIONATION_COEFFS = dict(He=1.33, Ne=0.83, Ar=0.49, Kr=0.4, Xe=0.5, SF6=0, CFC11=0, CFC12=0, S=0.3)
+ICE_FRACTIONATION_COEFFS = {
+    "He": 1.33,
+    "Ne": 0.83,
+    "Ar": 0.49,
+    "Kr": 0.4,
+    "Xe": 0.5,
+    "SF6": 0,
+    "CFC11": 0,
+    "CFC12": 0,
+    "S": 0.3,
+}

@@ -6,53 +6,29 @@ Python Analysis of Groundwater and Ocean Samples.
 
 Provides
 --------
-    1. Q object, a number with a value, uncertainty and unit.
-    2. Functions for calculating the properties of seawater and dissolved gases in seawater.
-    3. Objects for fitting the parameters of pre- or user-defined gas exchange models to gas tracer data.
-
-Notes on Quantities, units and the UnitRegistry `u`:
---------
-Dimensioned quantites can be defined by the user using the `Q(<value>, <unit>, <error>)` constructor, which creates a Pint `Quantity` object:
-
-    from pagos import Q
-    myquantity1 = Q(15, 'mm')
-    myquantity2 = Q(22.0, 'km/s', 0.3)
-    myquantity3 = Q(np.inf, 'J')
-
-Note that the above construction is a wrapper around the constructor `Quantity(<magnitude>, <unit>)` from Pint.
-In Pint, all units come from a `UnitRegistry` object, and the same unit from different registries will be flagged as incompatible.
-For this reason, PAGOS has its own registry, `u`, from which all units are derived (when a string `...` is passed as the unit argument to `Q`, the actual unit is `u.Unit(...)`)
+    1. `PAGOSQuantity` object, with value and unit. Units can be gas-specific.
+    2. Functions for calculating the properties of water and dissolved gases.
+    3. `TracerModel` object, for fitting the parameters of pre-defined or user-defined tracer models to data.
 """
 
-__version__ = "0.5.5dev3"
+__version__ = "1.0.0"
 __author__ = "Stanley Scott and Chiara-Marlen Hubner"
 
 # for ease of use, these could change later
-from .core import u, Q
-from .gas import calc_Ceq, calc_henry, calc_dCeq_dT, calc_Sc
+from .core import pQ
+from .gas import calc_Ceq, calc_Sc
+from .modelling import TracerModel
 
-from .water import calc_dens, calc_kinvisc, calc_vappres
-from .modelling import GasExchangeModel
-
+from . import units
 from . import core
 from . import constants
-from . import gas
 from . import water
+from . import gas
 from . import modelling
 from . import builtin_models
-from . import plotting
-# from . import pint_monkey_patch
-
-from . import newunits
-from . import newcore
-from . import newconstants
-from . import newwater
-from . import gasobject
-from . import newmodelling
-from . import newbuiltin_models
 
 # Allow the warning for nonmultiplicative units on functions wrapped with pagos.core.unit_aware
 # This happens here at the end of all these function definitions, because otherwise every time PAGOS
 # was imported, a bunch of warnings would show up. This way, the warnings will only show for user-
 # defined functions.
-newcore._warn_nonmult_in_unit_aware = True
+core._warn_nonmult_in_unit_aware = True

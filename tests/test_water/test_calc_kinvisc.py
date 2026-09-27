@@ -1,7 +1,7 @@
 from pint.testing import assert_equal
 
-from pagos.newcore import pQ, set_warn_nonmult
-from pagos.newwater import calc_kinvisc
+from pagos.core import pQ, set_warn_nonmult
+from pagos.water import calc_kinvisc
 
 set_warn_nonmult(False)
 

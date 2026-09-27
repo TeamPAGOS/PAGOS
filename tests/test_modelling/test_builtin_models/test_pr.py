@@ -1,5 +1,5 @@
-from pagos.newbuiltin_models import pr_model
-from pagos.newcore import pQ
+from pagos.builtin_models import pr_model
+from pagos.core import pQ
 
 
 def test_run_pr_with_floats():

@@ -1,7 +1,7 @@
 from pint.testing import assert_allclose, assert_equal
 
-from pagos.newcore import pQ, set_warn_nonmult
-from pagos.newwater import calc_dens, calc_dens_Sderiv, calc_dens_Tderiv
+from pagos.core import pQ, set_warn_nonmult
+from pagos.water import calc_dens, calc_dens_Sderiv, calc_dens_Tderiv
 
 set_warn_nonmult(False)
 

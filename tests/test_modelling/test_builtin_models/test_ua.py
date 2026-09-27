@@ -1,5 +1,5 @@
-from pagos.newbuiltin_models import ua_model
-from pagos.newcore import pQ
+from pagos.builtin_models import ua_model
+from pagos.core import pQ
 
 
 def test_run_ua_with_floats():

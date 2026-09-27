@@ -1,3 +1,3 @@
 # Initialisation for the GUI extension of PAGOS
 
-from .maingui import gui
+# from .maingui import gui

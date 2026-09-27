@@ -1,441 +1,1037 @@
 """
-Core functions for the PAGOS package. The Quantity shorthand `Q()` is included here, as well as
-some internal functions/decorators.
+Core functions for the PAGOS package. The Quantity shorthand `pQ` is included here, as well as
+some internal functions/decorators and the framework for regular and fast unit processing.
 """
 
-from pint import Quantity
-from pint import Unit
-from uncertainties import ufloat
-from uncertainties import unumpy as unp
-from uncertainties.core import Variable, AffineScalarFunc
+from collections.abc import Callable
+from enum import Enum, auto
+from functools import reduce, wraps
+from inspect import signature
+from itertools import cycle
+from numbers import Number
+from operator import mul as opmul
+from typing import TypeAlias
+
 import numpy as np
-from collections.abc import Iterable
-from typing import Callable
-import wrapt
-from pagos.units import u
+import pint
+from pint.facets.nonmultiplicative.definitions import (
+    OffsetConverter as _PintOffsetConverter,
+)
+
+from pagos.units import PAGOSDimPatterns, PAGOSDims, PAGOSTransformations, PAGOSUnits
+
+#    ┏━┓╻ ╻┏━┓┏┓╻╺┳╸╻╺┳╸╻ ╻         ┏━┓┏━╸┏━╸╻┏━┓╺┳╸┏━┓╻ ╻   ┏━┓╻ ╻┏━┓╺┳╸┏━╸┏┳┓
+#    ┃┓┃┃ ┃┣━┫┃┗┫ ┃ ┃ ┃ ┗┳┛   ╺╋╸   ┣┳┛┣╸ ┃╺┓┃┗━┓ ┃ ┣┳┛┗┳┛   ┗━┓┗┳┛┗━┓ ┃ ┣╸ ┃┃┃
+#    ┗┻┛┗━┛╹ ╹╹ ╹ ╹ ╹ ╹  ╹          ╹┗╸┗━╸┗━┛╹┗━┛ ╹ ╹┗╸ ╹    ┗━┛ ╹ ┗━┛ ╹ ┗━╸╹ ╹
 
 """
-MISCELLANEOUS VARIABLES
-"""
-# this enables/disables the _possibly_iterable decorator
-_ENABLE_POSSIT = True
+General way this works:
+When we are not in fast mode, creating a PAGOS quantity with pQ(...) will create a more-or-less regular Pint quantity.
+However, every time a mathematical operator is called, the conversions (e.g. in the case of ADD operators) or combinations
+(e.g. in the case of MULTIPLY operators) of the units are *cached*.
 
-
-def _is_possit_enabled():
-    return _ENABLE_POSSIT
-
-
-def _set_possit(value: bool):
-    if type(value) != bool:
-        raise TypeError("value must be boolean.")
-    global _ENABLE_POSSIT
-    _ENABLE_POSSIT = value
-
-
-# this enables/disables the wraptpint decorator
-_ENABLE_WP = True
-
-
-def _is_wp_enabled():
-    return _ENABLE_WP
-
-
-def _set_wp(value: bool):
-    if type(value) != bool:
-        raise TypeError("value must be boolean.")
-    global _ENABLE_WP
-    _ENABLE_WP = value
-
-
-"""
-DECORATORS
+When we are in fast mode, the cached conversions/combinations are recalled.
 """
 
 
-@wrapt.decorator(
-    enabled=_is_possit_enabled
-)  # wrapt decorator used so that function argument specification is preserved (see https://github.com/GrahamDumpleton/wrapt/blob/develop/blog/01-how-you-implemented-your-python-decorator-is-wrong.md)
-def _possibly_iterable(func, instance: object, args, kwargs) -> Callable:
-    """Decorator that can make a function operate on iterables as\\
-    f(*x\u1d62*) >>> \u03b1*\u2c7c* \u23af\u23afmake args labelled w/ *k* iterable\u23af\u23af\u25ba f(*x\u1d62*\u03b4*\u1d62\u2096* + *x\u1d62*(1 − \u03b4*\u1d62\u2096*)) >>> \u03b1*\u2c7c\u2096*\\
-    I.e.:\\
-    f(x) >>> \u03b1 \u23af\u23af\u23af\u25ba f([x1, x2, x3]) >>> [\u03b11, \u03b12, \u03b13]\\
-    f(x, y, z) >>> \u03b1 \u23af\u23af\u23af\u25ba f([x1, x2, x3], y, z) >>> [\u03b11, \u03b12, \u03b13]\\
-    f(x, y, z) >>> \u03b1, \u03b2 \u23af\u23af\u23af\u25ba f([x1, x2, x3], y, z) >>> [\u03b11, \u03b12, \u03b13], [\u03b21, \u03b22, \u03b23]\\
-    f(x, y, z) >>> \u03b1 \u23af\u23af`possit==1`\u23af\u23af\u25ba f(x, [y1, y2, y3], z) >>> [\u03b11, \u03b12, \u03b13]\\
-    f(x, y, z) >>> \u03b1 \u23af\u23af`possit==(0, 1)`\u23af\u23af\u25ba f([x1, x2, x3], [y1, y2, y3], z) >>> [\u03b11, \u03b12, \u03b13]
-
-    :param func: Function that should be made iterable.
-    :type func: function
-    :param instance: Necessary placeholder in wrapt
-    :type instance: object
-    :param args: Arguments passed to func
-    :type args: Any
-    :param kwargs: Keyword arguments passed to `func` - can contain keyword `possit=...` which determines which of the arguments of `func` are allowed to be iterable.
-    Note that this can be tuple; e.g. `possit=(0, 2)` means the 1st and 3rd arguments to `func` may be iterable; `possit=('A', 'C') ` means the kwargs `A` and `C` may be iterable.
-    :type kwargs: Any
+# Enum for different kinds of operation - required for conversion/arithmetic caching (see wrappers and classes below)
+class OperationKind(Enum):
     """
+    Enum for operation kinds.
+    """
+
+    ADD = auto()
+    SUBTRACT = auto()
+    MULTIPLY = auto()
+    LDIVIDE = auto()
+    RDIVIDE = auto()
+    EXPONENTIAL = auto()
+    COMPARATIVE = auto()
+
+
+# some resources for warning messages when nonmultiplicative arithmetic is detected
+def op_as_str(opname):
+    op_str_dict = {
+        "__add__": "+",
+        "__sub__": "-",
+        "__mul__": "*",
+        "__truediv__": "/",
+        "__pow__": "^",
+    }
     try:
-        # determination of argument to func which is possibly iterable. Defaults to first argument.
-        if "possit" in kwargs:
-            possitkey = kwargs["possit"]
-            # remove 'possit' from keyword arguments passed to wrapped function
-            kwargs_to_func = {k: kwargs[k] for k in kwargs if k != "possit"}
-            # option to suppress _possibly_iterable functionality by using possit=None in the arguments of the function
-            if possitkey == None:
-                return func(*args, **kwargs_to_func)
+        return op_str_dict[opname]
+    except KeyError:
+        return opname
+
+
+warn_nonmult: bool = True
+_warn_nonmult_in_unit_aware: bool = False
+
+
+def set_warn_nonmult(value):
+    global warn_nonmult
+    warn_nonmult = value
+
+
+# TODO rename CatchConvert - it does catch and handle conversions but also acts as the generic class to construct Pint Quantity objects,
+# so its functionality is not totally captured by this name.
+class CatchConvert(pint.UnitRegistry.Quantity):
+    # pairs of
+    #   HASH(a units, b units, operation kind) : (conversion function, result units)
+    # or, for comparison operators:
+    #   HASH(a units, b units, operation kind) : conversion function
+    conversions = {}
+
+    # pairs of
+    #   HASH(a units, b units, operation kind) : result units
+    mult_combis = {}
+
+    # pairs of
+    #   HASH(a units, b units, operation kind) : delta-a units
+    # for when non-multiplicative units are exponentiated
+    exp_transforms = {}
+
+    # pairs of
+    # HASH(a units, b units, *contexts) : conversion function
+    conversions_on_to_call = {}
+
+    # pairs of
+    # HASH(a units, b units, gas) : pre-transforms for PAGOSUnits
+    pre_transforms = {}
+
+    # single register to hold the details of the last conversion that happened in
+    # _convert_magnitude_not_inplace
+    current_conversion_register = None
+
+    # conversions that happen explicitly through _finally_convert_to()
+    final_conversions = {}
+
+    def _convert_magnitude_not_inplace(self, other, *contexts, **ctx_kwargs):
+        # can potentially get automatically called when operations are performed, not necessarily only when the user calls .to()!
+        convfac = self._REGISTRY._get_conversion_factor(self._units, other)
+
+        # Here we deal with offset units (e.g. degC -> K).
+        # This should really only happen with single units, as compound units
+        # (like degC / s) should be converted automatically to delta counterparts.
+        # If there are any problems here, further investigation will be necessary.
+        if convfac == 1:
+            try:
+                converter = (udef := self._REGISTRY._units[str(self.units)]).converter
+                if isinstance(converter, _PintOffsetConverter) and self.units != other:
+                    # TODO test if this works with prefixes before Kelvin (e.g. K -> mK)
+                    if self.units == udef.reference:
+
+                        def conv_func(x):
+                            return converter.from_reference(x, False)
+                    elif other == udef.reference:
+
+                        def conv_func(x):
+                            return converter.to_reference(x, False)
+                    else:
+                        raise TypeError(
+                            f"Conversion attempted from {self.units} to {other}. This is not supported!"
+                        )
+                else:
+
+                    def conv_func(x):
+                        return x
+            except KeyError:
+
+                def conv_func(x):
+                    return x
         else:
-            if len(args) == 0:
-                possitkey = tuple(kwargs.keys())[0]
+
+            def conv_func(x):
+                return x * convfac
+
+        # store the unit to be converted, the unit to convert to, and the conversion function in a temporary register
+        CatchConvert.current_conversion_register = conv_func
+
+        return super()._convert_magnitude_not_inplace(other, *contexts, **ctx_kwargs)
+
+    def to(self, other, *contexts, **ctx_kwargs):
+        return super().to(other, *contexts, **ctx_kwargs)
+
+
+class PAGOSQuantity:
+    """
+    Regular Pint Quantity wrapper which stores conversions and unit combinations in a cache.
+    """
+
+    units_cache = {}
+
+    def __new__(cls, value, units=None, gas=None):
+        inst = object.__new__(cls)
+
+        # cache system to make sure strings are not redundantly parsed into UnitsContainer objects
+        id = hash((units, gas))
+        if isinstance(units, str):
+            if id in PAGOSQuantity.units_cache:
+                inst.units = PAGOSQuantity.units_cache[id]
             else:
-                possitkey = 0
-            kwargs_to_func = kwargs
-
-        # option to suppress _possibly_iterable functionality for subsequent calls
-        # EXPERIMENTAL
-        # WARNING: ONLY USE IF YOU WILL MANUALLY RE-ENABLE STRAIGHT AWAY WHEN NECESSARY
-        if "disablenext" in kwargs:
-            disablenext = kwargs["disablenext"]
-            if disablenext:
-                kwargs_to_func = {k: kwargs[k] for k in kwargs if k != "disablenext"}
-                _set_possit(False)
-
-        # different behaviour if the possibly iterable argument(s) is(are) in function's args or kwargs.
-        # NOTE: so far mixed behaviour is not allowed - either the iterable arguments must all be args or all kwargs.
-        if type(possitkey) == int:
-            possit = args[possitkey]
-            isiterable = _is_iterable_sq_safe(possit)
-
-            def return_array():
-                retarr = []
-                for x in possit:
-                    newargs = list(args)
-                    newargs[possitkey] = x
-                    retarr.append(func(*newargs, **kwargs_to_func))
-                return _tidy_iterable(retarr)
-
-        elif type(possitkey) == tuple and all(type(p) == int for p in possitkey):
-            possit_array = [args[p] for p in possitkey]
-            isiterable = all(_is_iterable_sq_safe(possit) for possit in possit_array)
-
-            def return_array():
-                retarr = []
-                for i in range(len(possit_array[0])):
-                    newargs = list(args)
-                    for j in possitkey:  # TODO is this really the best way to do this? Embedded for loops may slow down code
-                        newargs[j] = args[j][i]
-                    retarr.append(func(*newargs, **kwargs_to_func))
-                return _tidy_iterable(retarr)
-
-        elif type(possitkey) == str:
-            possit = kwargs[possitkey]
-            isiterable = _is_iterable_sq_safe(possit)
-
-            def return_array():
-                retarr = []
-                for x in possit:
-                    newkwargs = kwargs_to_func
-                    newkwargs[possitkey] = x
-                    retarr.append(func(*args, **newkwargs))
-                return _tidy_iterable(retarr)
-
-        elif type(possitkey) == tuple and all(type(p) == str for p in possitkey):
-            possit_array = [kwargs[p] for p in possitkey]
-            isiterable = all(_is_iterable_sq_safe(possit) for possit in possit_array)
-
-            def return_array():
-                retarr = []
-                for i in range(len(possit_array[0])):
-                    newkwargs = kwargs_to_func
-                    for j in possitkey:
-                        newkwargs[j] = kwargs[j][i]
-                    retarr.append(func(*args, **newkwargs))
-                return _tidy_iterable(retarr)
-
+                inst.units = ureg._parse_units_as_container(units)
+                PAGOSQuantity.units_cache[id] = inst.units
+        elif isinstance(units, pint.util.UnitsContainer):
+            inst.units = units
         else:
-            raise TypeError(
-                "possit must be an integer, tuple of integers, string or tuple of strings. \n\
-                            WARNING: This should not have been triggered by the user! If this error has shown up, there is a bug in the code caused by incorrect use of pagos.core._possibly_iterable()."
+            raise NotImplementedError("Type of units passed in is not implemented")
+
+        # if there are PAGOS units yet to be assigned to a gas, we do that here
+        # e.g. if we called PAGOSQuantity(5, 'mol_gas', 'He'), we get out PAGOSQuantity(5, 'mol_He')
+        if gas:
+            for u in inst.units:
+                if str(ureg.Unit(u).dimensionality) in PAGOSDims:
+                    # replace "_g" or "_gas" with "_<actual gas string", e.g. "_He"
+                    stripped_unit = u.replace("_gas", "_" + gas).replace(
+                        "_g", "_" + gas
+                    )
+                    inst.units = inst.units * ureg._parse_units_as_container(
+                        "(" + stripped_unit + "/" + u + f")^{inst.units[u]}"
+                    )
+            PAGOSQuantity.units_cache[id] = inst.units
+
+        if not isinstance(value, (Number, PAGOSQuantity, np.ndarray)):
+            raise TypeError("value must be a number, PAGOSQuantity or numpy ndarray")
+        # if we call PAGOSQuantity(PAGOSQuantity(val, unit_1), unit_2), return
+        # PAGOSQuantity(val, unit_1).to(unit_2)
+        if isinstance(value, PAGOSQuantity):
+            selfQ = value
+            pint_representation = ccreg.Quantity(selfQ.value, selfQ.units)
+            converted_pint_repr = pint_representation.to(inst.units)
+            value = converted_pint_repr.magnitude
+        inst.value = value
+        return inst
+
+    # wrapper to convert binary arithmetic operators __add__ (+), __mul__ (*), etc. into ones that can access cached conversions
+    def fastpagosbinop(operation_kind: OperationKind):
+        """
+        Decorator which takes in a binary arithmetic operation (e.g. __add__, __mul__ etc.) and returns the same function which
+        can access cached conversions from the `CatchConvert` class.
+        """
+
+        def _fastpagosbinop(func):
+            @wraps(func)
+            def wrapper(self, operand):
+                # get operand units and value, or None for units if the operand is a float/int
+                if isinstance(operand, PAGOSQuantity):
+                    operand_value = operand.value
+                    operand_units = operand.units
+                else:
+                    operand_value = operand
+                    operand_units = None
+
+                # hash the operation - this will be used as a key for caching
+                id = hash((self.units, operand_units, operation_kind))
+
+                # if we are in fast mode, use the hash key to obtain an already cached conversion, apply to operand
+                # and return the value
+                if _are_calculations_fast():
+                    try:
+                        # case for addition and subtraction
+                        if operation_kind in {
+                            OperationKind.ADD,
+                            OperationKind.SUBTRACT,
+                        }:
+                            # perform conversion of operand
+                            converted_operand = self._ext_to(
+                                operand_value, operand_units, self.units, id=id, pcid=id
+                            )
+
+                            return PAGOSQuantity(
+                                func(self.value, converted_operand.value),
+                                converted_operand.units,
+                            )
+                        # case for multiplication
+                        elif operation_kind in {
+                            OperationKind.MULTIPLY,
+                            OperationKind.LDIVIDE,
+                            OperationKind.RDIVIDE,
+                        }:
+                            combined_units = CatchConvert.mult_combis[id]
+                            return PAGOSQuantity(
+                                func(self.value, operand_value), combined_units
+                            )
+                        # case for exponentiation:
+                        elif operation_kind == OperationKind.EXPONENTIAL:
+                            # transform any non-multiplicative units into delta-units
+                            transformed_self_units = CatchConvert.exp_transforms[id]
+                            # no conversion necessary as exponent must be dimensionless
+                            return PAGOSQuantity(
+                                func(self.value, operand_value),
+                                transformed_self_units**operand_value,
+                            )
+                        # case for comparison:
+                        elif operation_kind == OperationKind.COMPARATIVE:
+                            # perform conversion of operand
+                            # (same as in ADDITIVE)
+                            converted_operand = self._ext_to(
+                                operand_value, operand_units, self.units, id=id, pcid=id
+                            )
+                            return func(self.value, converted_operand.value)
+                    except KeyError:
+                        print(
+                            f"Conversion {(self.units, operand_units, operation_kind)} not found in cache"
+                        )
+                        raise
+
+                # if we are not in fast mode, store the conversion in a cache uder the hash key
+                else:
+                    # create Pint Quantity objects out of the values and units
+                    selfQ = ccreg.Quantity(self.value, self.units)
+                    operandQ = ccreg.Quantity(operand_value, operand_units)
+
+                    # if there are non-multiplicative units (e.g. degC), we automatically replace these
+                    # with their delta-equivalents (NOTE: here by subtracting zero, perhaps not the most
+                    # efficient thing to do), and warning the user
+                    unchanged_selfQ = selfQ
+                    unchanged_operandQ = operandQ
+                    warn_about_nm_units = False
+                    if unchanged_selfQ._get_non_multiplicative_units():
+                        warn_about_nm_units = True
+                        selfQ = unchanged_selfQ - ccreg.Quantity(0, selfQ._units)
+                    if unchanged_operandQ._get_non_multiplicative_units():
+                        warn_about_nm_units = True
+                        operandQ = unchanged_operandQ - ccreg.Quantity(
+                            0, operandQ._units
+                        )
+
+                    # case for addition and subtraction
+                    if operation_kind in {OperationKind.ADD, OperationKind.SUBTRACT}:
+                        # perform conversion of operand
+                        # during PAGOSQuantity.to(), CatchConvert.to() is called and the operation is cached
+                        converted_operand = PAGOSQuantity(
+                            operandQ.magnitude, operandQ._units
+                        ).to(selfQ._units, id=id, pcid=id)
+                        converted_operandQ = ccreg.Quantity(
+                            converted_operand.value, converted_operand.units
+                        )
+                        # result requires no conversion as this has already been done
+                        resultQ = func(selfQ, converted_operandQ)
+                        ret = PAGOSQuantity(resultQ._magnitude, resultQ._units)
+                    # case for multiplication
+                    elif operation_kind in {
+                        OperationKind.MULTIPLY,
+                        OperationKind.LDIVIDE,
+                        OperationKind.RDIVIDE,
+                    }:
+                        # perform Pint multiplication/division, which does unit combination automatically
+                        resultQ = func(selfQ, operandQ)
+                        # store the unit combination
+                        CatchConvert.mult_combis[id] = resultQ._units
+                        ret = PAGOSQuantity(resultQ._magnitude, resultQ._units)
+                    # case for exponentiation:
+                    elif operation_kind == OperationKind.EXPONENTIAL:
+                        # need to store any transformations of non-multiplicative units to deltas
+                        # e.g. degC^2 -> delta_degC^2
+                        CatchConvert.exp_transforms[id] = selfQ._units
+                        # no conversion necessary as exponent must be dimensionless
+                        resultQ = func(selfQ, operandQ)
+                        ret = PAGOSQuantity(resultQ._magnitude, resultQ._units)
+                    # case for comparison:
+                    elif operation_kind == OperationKind.COMPARATIVE:
+                        # perform conversion of operand
+                        # during PAGOSQuantity.to(), CatchConvert.to() is called and the operation is cached
+                        # (same done here as in ADDITIVE)
+                        converted_operand = PAGOSQuantity(
+                            operandQ.magnitude, operandQ._units
+                        ).to(selfQ._units, id=id, pcid=id)
+                        converted_operandQ = ccreg.Quantity(
+                            converted_operand.value, converted_operand.units
+                        )
+                        resultbool = func(selfQ, converted_operandQ)
+                        # if a conversion didn't happen, store identity function
+                        if not (cf := CatchConvert.current_conversion_register):
+                            cf = lambda x: x
+                        # otherwise store the conversion (of selfQ to operandQ's units)
+                        CatchConvert.conversions[id] = cf
+                        CatchConvert.current_conversion_register = None
+                        ret = resultbool
+
+                    # a bit confusing: warn_about_nm_units means "is there anything to warn about?" and warn_nonmult
+                    # means "does the user want to be warned at all?"!
+                    if warn_about_nm_units and warn_nonmult:
+                        print(
+                            f"\nWARNING: While running your function, arithmetic involving non-multiplicative units came up:\n\t{unchanged_selfQ:~P} {op_as_str(func.__name__)} {unchanged_operandQ:~P}.\nThis is technically ambiguous, and PAGOS will replace the offending units with their delta-counterparts:\n\t{selfQ:~P} {op_as_str(func.__name__)} {operandQ:~P} = {resultQ:~P}.\nPlease check that this is the intended behaviour of your function!\nTo disable this warning, run: `set_warn_nonmult(False)` before your code.\n"
+                        )
+
+                    return ret
+
+            return wrapper
+
+        return _fastpagosbinop
+
+    # arithmetic operators
+    @fastpagosbinop(OperationKind.ADD)
+    def __add__(self, other):
+        return self + other
+
+    @fastpagosbinop(OperationKind.ADD)
+    def __radd__(self, other):
+        return self + other
+
+    @fastpagosbinop(OperationKind.SUBTRACT)
+    def __sub__(self, other):
+        return self - other
+
+    @fastpagosbinop(OperationKind.SUBTRACT)
+    def __rsub__(self, other):
+        return other - self
+
+    @fastpagosbinop(OperationKind.MULTIPLY)
+    def __mul__(self, other):
+        return self * other
+
+    @fastpagosbinop(OperationKind.MULTIPLY)
+    def __rmul__(self, other):
+        return self * other
+
+    @fastpagosbinop(OperationKind.LDIVIDE)
+    def __truediv__(self, other):
+        return self / other
+
+    @fastpagosbinop(OperationKind.RDIVIDE)
+    def __rtruediv__(self, other):
+        # there is a separate OperationKind for right divide, because the unit order matters
+        # for example, 3 m / 2 s with right divide should cache
+        #       (s, m) : m/s
+        # and not
+        #       (m, s) : m/s
+        # because the latter, in right divide, corresponds to 2 s / 3 m -> ...m/s, which is wrong!
+        return other / self
+
+    @fastpagosbinop(OperationKind.EXPONENTIAL)
+    def __pow__(self, other):
+        # exponentiation is identical and saves no information
+        # the reason we do this is because the unit transformation is dependent on the VALUE of the exponent
+        # whereas +, -, *, / etc. are only UNIT-dependent! If we cached every __pow__ call, then during a fit
+        # procedure or MC procedure, the value would change every time and the cache would basically never be
+        # hit!
+        # TODO allow for caching but warn user?
+        return self**other
+
+    @fastpagosbinop(OperationKind.EXPONENTIAL)
+    def __rpow__(self, other):
+        return other**self  # noqa # IF AN EXCEPTION IS THROWN HERE, NEED TO LOOK INTO HOW TO IMPLEMENT RPOW!
+
+    # comparison operators
+    @fastpagosbinop(OperationKind.COMPARATIVE)
+    def __eq__(self, value):
+        return self == value
+
+    @fastpagosbinop(OperationKind.COMPARATIVE)
+    def __gt__(self, value):
+        return self > value
+
+    @fastpagosbinop(OperationKind.COMPARATIVE)
+    def __lt__(self, value):
+        return self < value
+
+    @fastpagosbinop(OperationKind.COMPARATIVE)
+    def __ge__(self, value):
+        return self >= value
+
+    @fastpagosbinop(OperationKind.COMPARATIVE)
+    def __le__(self, value):
+        return self <= value
+
+    # string and representation
+    def __repr__(self):
+        if isinstance(self.value, (int, np.ndarray)):
+            return f"<PAGOSQuantity({self.value}, '{self.units})>"
+        elif isinstance(self.value, float):
+            return f"<PAGOSQuantity({self.value:.9}, '{self.units}')>"
+
+    def __str__(self):
+        if isinstance(self.value, (int, np.ndarray)):
+            return f"{self.value} {self.units}"
+        elif isinstance(self.value, float):
+            return f"{self.value:.9} {self.units}"
+
+    # unary operators
+    def __abs__(self):
+        return PAGOSQuantity(abs(self.value), self.units)
+
+    def __neg__(self):
+        return PAGOSQuantity(-self.value, self.units)
+
+    # numpy operators
+    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+        # TODO this will be quite slow - in future numpy functions should work as well as
+        # the normal arithmetic functions with caching!!!
+
+        # convert the input PagosQuantity objects into regular Pint Quantity objects
+        qs_in = tuple(ccreg.Quantity(inpq.value, inpq.units) for inpq in inputs)
+        # allow Pint to perform calculation on Pint Quantity objects
+        result = pint.facets.numpy.quantity.NumpyQuantity.__array_ufunc__(
+            self, ufunc, method, *qs_in, **kwargs
+        )
+        # cache system here?
+        ...
+        # return PAGOSQuantity result
+        return PAGOSQuantity(result._magnitude, result._units)
+
+    def _ext_to(self, a_value, a_units, b_units, id=None, pcid=None, *contexts):
+        """
+        External variant of to() function, only to be used in fast mode and only internally!
+        Does not have ctx_kwargs argument (unlike to()), and really only exists so that we can
+        use to() on non-PAGOSQuantity arguments (like 5% + 3 = 3.05, which has one unit-imbued
+        argument and one float. The float has no .units attribute so we can't call
+        `<5% object>.to(3.units)`. Instead, we use `_ext_to(5, UnitsContainer({'%':1}), None)`.
+        """
+        if not id:
+            id = hash((a_units, b_units, *contexts))
+        if not pcid:
+            preconvert_id = hash((a_units, b_units))
+        else:
+            preconvert_id = pcid
+        try:
+            # pre-conversion of PAGOS-specific units
+            pre_transformation_chain = CatchConvert.pre_transforms[preconvert_id]
+            # perform pre-transformations from PAGOSUnits
+            for tr in pre_transformation_chain:
+                a_value = tr(ccreg, a_value)
+            conversion_func, return_units = CatchConvert.conversions_on_to_call[id]
+            return PAGOSQuantity(conversion_func(a_value), return_units)
+        except KeyError:
+            raise KeyError(
+                f"Conversion {(a_units, b_units, *contexts)} not found in cache"
             )
-        return_array.__is_possibly_iterable__ = True
-        # Quantity objects are iterable, so this deals with the relevant cases
-        if isiterable:
-            return return_array()
+
+    # x.to(u) converts x to units u
+    def to(self, other, id=None, pcid=None, *contexts, **ctx_kwargs):
+        # other == None should mean: don't bother with the conversion. Useful for conditional conversions.
+        if other is None:
+            return self
+        # cache system to make sure strings are not redundantly parsed into UnitsContainer objects
+        if isinstance(other, str):
+            if other in PAGOSQuantity.units_cache:
+                other = PAGOSQuantity.units_cache[other]
+            else:
+                other = ureg._parse_units_as_container(str_other := other)
+                PAGOSQuantity.units_cache[str_other] = other
+        elif isinstance(other, pint.util.UnitsContainer):
+            pass
         else:
-            return func(*args, **kwargs_to_func)
-    except:
-        _set_possit(True)
-        raise
+            raise NotImplementedError("Type of units passed in is not implemented")
+
+        # NOTE: the following manual-entry id and pcid statements are also basically only
+        # here because of the additive fast PAGOS binary operations. Because these
+        # operations have to sometimes expect non-PAGOS objects like floats as operands,
+        # it means that the hashing of units etc. is not that simple. We bypass this by
+        # forcing an id (the same as the id created in fastpagosbinop()) as the cache key,
+        # instead of generating it inside to(). This assumes, among other things, that
+        # ctx_kwargs will NOT be relevant if to() is called from inside __add__. I think
+        # this is an okay assumption, as calling __add__(a, b) is actually calling a + b,
+        # which by construction doesn't accept kwargs at all. Nevertheless if anything
+        # goes wrong here, then *check* that this is working as intended!
+
+        # If we need to revert back to what we had before, delete `if not id:` and
+        # `if not pcid:`, but keep the code that is inside them! Delete the whole else
+        # statement, though.
+
+        if not id:
+            id = hash((self.units, other, *contexts))
+
+        if not pcid:
+            try:
+                preconvert_id = hash((self.units, other, ctx_kwargs["gas"]))
+            except KeyError:
+                preconvert_id = hash((self.units, other))
+        else:
+            preconvert_id = pcid
+
+        if _are_calculations_fast():
+            try:
+                # pre-conversion of PAGOS-specific units
+                pre_transformation_chain = CatchConvert.pre_transforms[preconvert_id]
+                # perform pre-transformations from PAGOSUnits
+                selfvalue = self.value
+                for tr in pre_transformation_chain:
+                    selfvalue = tr(ccreg, selfvalue)
+                conversion_func, return_units = CatchConvert.conversions_on_to_call[id]
+                return PAGOSQuantity(conversion_func(selfvalue), return_units)
+            except KeyError:
+                raise KeyError(
+                    f"Conversion {(self.units, other, *contexts)} not found in cache"
+                )
+        else:
+            """
+            pre-conversion of PAGOS-specific units; this happens if we have, for example,
+            mole_gas / kg -> gram_gas / kg
+            Even though regular Pint contexts would work for this, there are two issues:
+            1) Context transformations work on their own, but not when in compound units
+               like A / kg -> B / kg,
+            2) Transformations through contexts are hard to intercept with CatchConvert.
+            So we handle it here instead
+            """
+            PAGOS_transformation_chain = []
+            bare_PAGOS_transformation_chain = []
+            other_units_replacements = []
+            if any([u in PAGOSDims for u in ccreg.get_dimensionality(self.units)]):
+                # match PAGOS-specific units across own units and other units
+                # expand out other into its factors
+
+                _otherunits = list(other.copy().items())
+                _otherunits_factor_sequence = [
+                    [
+                        ureg._parse_units_as_container(pair[0])
+                        for i in range(int(pair[1]))
+                    ]
+                    # this bit deals with non-integer powers
+                    + (
+                        [
+                            ureg._parse_units_as_container(
+                                pair[0] + f"^{pair[1] - int(pair[1])}"
+                            )
+                        ]
+                        if pair[1] - int(pair[1]) != 0
+                        else []
+                    )
+                    for pair in _otherunits
+                    if str(ccreg.Unit(pair[0]).dimensionality) in PAGOSDims
+                ]
+                # flatten and turn into Unit objects (instead of UnitsContainer)
+                _otherunits_factor_sequence = [
+                    ccreg.Unit(x) for xs in _otherunits_factor_sequence for x in xs
+                ]
+
+                # store requisite transformations
+                # quite complicated as has to search through combinations of units as well
+                # as single ones on the right hand side
+                for _u in [
+                    __u
+                    for __u in self.units.items()
+                    if str(ccreg.get_dimensionality(__u[0])) in PAGOSDims
+                ]:
+                    u = ccreg.Unit(_u[0] + f"^{_u[1]}")
+
+                    # extract the gas string on the unit
+                    gas_str = reduce(
+                        lambda acc, pat: acc.replace(pat[0], ""),
+                        PAGOSDimPatterns,
+                        str(u.dimensionality).removesuffix("]"),
+                    )
+
+                    # raise error if attempting to convert from one gas to another
+                    if "gas" in ctx_kwargs:
+                        if gas_str not in ["gas", "g"] and ctx_kwargs["gas"] != gas_str:
+                            raise ValueError(
+                                f"Tried to convert a quantity of one gas ({gas_str}) to another ({ctx_kwargs['gas']})."
+                            )
+                    else:
+                        if (
+                            gas_str not in ["gas", "g"]
+                            and "_" + gas_str not in str(other)
+                            and "_gas" not in str(other)
+                        ):
+                            raise ValueError(
+                                f"Tried to convert a quantity of one gas ({gas_str}) to another ({str(other)})."
+                            )
+
+                    i, j, bincount = 0, 0, 1
+                    l = len(_otherunits_factor_sequence)
+                    while j < l:
+                        max_i = sum([2 ** (l - k) for k in range(j + 1)])
+                        while i < max_i:
+                            binselect = [
+                                i
+                                for i, x in enumerate(list(bin(bincount)[2:]))
+                                if int(x) == 1
+                            ]
+                            # to_compare = product of selected single units
+                            to_compare = reduce(
+                                opmul,
+                                [_otherunits_factor_sequence[x] for x in binselect],
+                                ccreg.Unit(""),
+                            )
+
+                            # check for "_gas" or "_g" suffixes on to_compare's units
+                            # if they exist, we try to infer that the gas is the same as that provided
+                            # in self.
+                            try:
+                                to_compare_new = reduce(
+                                    opmul,
+                                    (
+                                        ccreg.Unit(
+                                            x.replace("_gas", "_" + gas_str).replace(
+                                                "_g", "_" + gas_str
+                                            )
+                                            + f"^{to_compare._units[str(x)]}"
+                                        )
+                                        for x in to_compare._units
+                                    ),
+                                    ccreg.Unit(""),
+                                )
+                            except:
+                                raise  # TODO deal with exceptions here
+
+                            if to_compare_new.is_compatible_with(u, pc):
+                                # pop the factor off of the otherunit sequence
+                                # if the conversion is valid, eventually the whole sequence should be popped/
+                                # if something remains, a ValueError is raised (see below)
+                                for popidx in binselect:
+                                    _otherunits_factor_sequence.pop(popidx)
+                                other_units_replacements.append(
+                                    (to_compare, to_compare_new)
+                                )
+                                # if the dimensionalities are actually different, perform a transformation
+                                if to_compare_new.dimensionality != u.dimensionality:
+                                    transformation, bare_transformation = (
+                                        PAGOSTransformations[
+                                            hash(
+                                                (
+                                                    str(u.dimensionality),
+                                                    str(to_compare_new.dimensionality),
+                                                )
+                                            )
+                                        ][2:]
+                                    )
+                                    # store the transformation of a PAGOSUnit onto the transformation chain
+                                    PAGOS_transformation_chain.append(transformation)
+                                    bare_PAGOS_transformation_chain.append(
+                                        bare_transformation
+                                    )
+
+                                break
+                            bincount += 2**i
+                            i += 1
+                        else:
+                            bincount += 1
+                            i = 0
+                            j += 1
+                            continue
+                        break
+                    else:
+                        raise ValueError(
+                            "There is a mismatch between PAGOS units (subscripted with _g) on either side of the conversion."
+                        )
+            # Save the BARE transformation chain into a cache.
+            # This is so that the pure functional relations between PAGOS units are saved,
+            # to be recalled when we are in fast calculations mode (don't want to be dealing
+            # with multiplying by expensive unit objects on calculation)
+            CatchConvert.pre_transforms[preconvert_id] = bare_PAGOS_transformation_chain
+
+            # create Pint Quantity objects out of the value and unit
+            selfQ = ccreg.Quantity(self.value, self.units)
+            # perform pre-transformations from PAGOSUnits
+            for tr in PAGOS_transformation_chain:
+                selfQ = tr(ccreg, selfQ)
+            # change generic "_g" or "_gas" suffixes to specific ones determined by self
+            for pair in other_units_replacements:
+                other = other / pair[0]._units * pair[1]._units
+            # perform rest of conversion (regular Pint conversions of normal units and prefixes)
+            resultQ = selfQ.to(other, *contexts, **ctx_kwargs)
+            # if a conversion didn't happen (i.e. units were equal), store identity function
+            if not (cf := CatchConvert.current_conversion_register):
+                cf = lambda x: x
+            # otherwise store the conversion and resultant output units
+            CatchConvert.conversions_on_to_call[id] = (cf, resultQ._units)
+            CatchConvert.current_conversion_register = None
+            # return result
+            return PAGOSQuantity(resultQ._magnitude, resultQ._units)
 
 
-def wraptpint(  # signature copied from pint wraps() - but removed return units as this should always be specified in the signature of the wrapped function anyway
-    arg_units: str | Unit | Iterable[str | Unit | None] | None,
-    strict: bool,
-):
-    """Alternative to pint wraps() functionality that preserves function signature.
-
-    :param arg_units: units of input arguments to function
-    :type arg_units: str | Unit | Iterable[str  |  Unit  |  None] | None
-    :param strict: indicates that only `Quantity`s are to be accepted, defaults to True
-    :type strict: bool, optional
-    :return: the wrapper function
+# set up UnitRegistry class that will create Quantity objects from PAGOSQuantity type
+class PAGOSRegistry(pint.registry.GenericUnitRegistry[PAGOSQuantity, pint.Unit]):
+    """
+    Default `UnitRegistry` from which all quantities dealt with by PAGOS should be derived.
     """
 
-    @wrapt.decorator()
-    def wrapper(func, instance, args, kwargs):
-        # option to bypass the wrapping if the functionality is disabled
-        # EXPERIMENTAL
-        if not _is_wp_enabled():
-            return func(*args, **kwargs)
-        else:
-            # option to convert the input units if the user has provided non-default ones
-            # function wrapped for units in and out
-            # skip conversion of output units as this should already be hardcoded in every function decorated with this
-            unitwrapped = u.wraps(ret=None, args=arg_units, strict=strict)(func)
-            return unitwrapped(*args, **kwargs)
+    Quantity: TypeAlias = PAGOSQuantity
+    Unit: TypeAlias = pint.Unit
 
-    return wrapper
 
+# set up UnitRegistry class that will create Quantity objects from CatchConvert type
+class CatchConvertRegistry(pint.registry.GenericUnitRegistry[CatchConvert, pint.Unit]):
+    """
+    `UnitRegistry` for CatchConvert objects. Only to be used internally.
+    """
+
+    Quantity: TypeAlias = CatchConvert
+    Unit: TypeAlias = pint.Unit
+
+
+ccreg = CatchConvertRegistry()
 
 """
-FUNCTIONS
+THE UNIT REGISTRY
+
+This is the object from which ALL units within PAGOS and with which PAGOS should
+interact will come from. If the user defines another UnitRegistry in their program, and then
+attempts to use PAGOS, it will fail and throw: "ValueError: Cannot operate with Quantity and
+Quantity of different registries."
+"""
+# unit registry
+ureg = PAGOSRegistry()
+
+
+# initialise units
+for key in PAGOSUnits:
+    ureg.define(PAGOSUnits[key])
+    ccreg.define(PAGOSUnits[key])
+pc = pint.Context("pc")
+# initialise transformations
+for key in PAGOSTransformations:
+    tup = PAGOSTransformations[key]
+    pc.add_transformation(tup[0], tup[1], tup[2])
+ccreg.add_context(pc)
+
+# global variable controlling whether or not PAGOSQuantity or FastPAGOSQuantity instances will
+# be created when PAGOSQuantityFactory(...) is called (see that class below)
+_FAST_CALCULATIONS = False
+
+
+def _set_fast(value: bool):
+    global _FAST_CALCULATIONS
+    _FAST_CALCULATIONS = value
+
+
+def _are_calculations_fast():
+    return _FAST_CALCULATIONS
+
+
+# shorthand alias
+def pQ(value, units, gas=None):
+    """
+    Generates a unit-aware, MC-capable quantity.
+    Usage:
+    ```
+    >>> my_quantity = pQ(5, 'm/s')
+    <Quantity(5, 'meter / second')>
+    ```
+    """
+    return PAGOSQuantity(value, units, gas)
+
+
+def unit_aware(default_units_in: dict | None, units_out: str | None):
+    """
+    Decorator which makes a function unit aware, by setting default units in and units out. The default units are applied to float inputs and the resulting calculation is converted to the units out.
+    """
+    i_am_unit_aware: None  # free variable which acts as a tag, so that we can tell from outside the function if it's unit aware already (by evaluating: 'i_am_unit_aware' in <function>.__code__.co_freevars)
+
+    if units_out is not None:
+        units_out = ureg._parse_units_as_container(units_out)
+    # Nonmuliplicative units will cause ambiguity in additive calculations, which can especially be a problem
+    # when the units have to be inferred (e.g. 5°C + 5K -> 5Δ°C + 5K, 5Δ°C - 267.15Δ°C, or 278.15K + 5K? The
+    # nonmultiplicative handling system in fastpagosbinop can "decide", but not consistently).
+
+    # To avoid the user having to write ".to()" in all calculations involving temperature, unit_aware will
+    # FORCE any nonmultiplicative units to their entry at default_units_in. The user will be appropriately warned.
+    if default_units_in is not None:
+        nonmult_units = {
+            k: default_units_in[k]
+            if ccreg.Quantity(0, default_units_in[k])._get_non_multiplicative_units()
+            else None
+            for k in default_units_in
+        }
+    else:
+        nonmult_units = {}
+
+    def _unit_aware(func: Callable):
+
+        function_parameters = list(signature(func).parameters.keys())
+        if any(v for v in nonmult_units.values()) and _warn_nonmult_in_unit_aware:
+            print(
+                f"WARNING: the function {func.__name__} has nonmultiplicative units. These will ALWAYS be converted as follows:"
+            )
+            for k in nonmult_units:  # noqa: PLC0206
+                if nonmult_units[k] is not None:
+                    print(k, "->", nonmult_units[k])
+
+        # this section deals with nested unit_aware decorations
+        if "i_am_unit_aware" in func.__code__.co_freevars:
+            if default_units_in is None and units_out is None:
+                # skip layer of wrapping if there would be no change anyway
+                return func
+            _func: Callable = func.__wrapped__
+            if default_units_in is None:  # (but units_out is NOT None)
+                # keep already defined unit_aware-associated default_units_in but return with overriden units_out
+                @wraps(_func)
+                def wrapper(*args, **kwargs) -> PAGOSQuantity:
+                    return _func(*args, **kwargs).to(units_out)
+
+                return wrapper
+
+            # Otherwise, if the wrapped function was already unit aware, AND neither of the outer default_units in
+            # nor units_out were None, we will just pass func.__wrapped__ to @wraps (i.e. the inner, non-unit-aware function), overwriting the inner default_units_in and units_out
+        else:
+            _func = func
+
+        @wraps(_func)
+        def wrapper(*args, **kwargs) -> PAGOSQuantity:
+            # creation of i_am_unit_aware closure variable to use as tag (see declaration of this variable at top of unit_aware definition)
+            nonlocal i_am_unit_aware
+
+            # Pass through if there are no default_units_in given (NOTE: not just each entry being None, but the whole variable being None)
+            if default_units_in is None:
+                return _func(*args, **kwargs).to(units_out)
+
+            # Execute the function with pQ(...) arguments instead of floats.
+            # - if the argument is a PAGOSQuantity with no nonmultiplicative units -> do nothing
+            # - if the argument has nonmultiplicative units -> FORCE argument every time to default_units_in
+            # - if the argument is not a PAGOSQuantity but is default_units_in is None -> do nothing
+            # - if the argument is not a PAGOSQuantity and has default_units_in -> make it a PAGOSQuantity with those units
+            pQ_args = (
+                args[i].to(nonmult_units[function_parameters[i]])
+                if isinstance(args[i], PAGOSQuantity)
+                else (
+                    args[i]
+                    if default_units_in[function_parameters[i]] is None
+                    else pQ(args[i], default_units_in[function_parameters[i]])
+                )
+                for i in range(len(args))
+            )
+            pQ_kwargs = {
+                k: kwargs[k].to(nonmult_units[k])
+                if isinstance(kwargs[k], PAGOSQuantity)
+                else (
+                    kwargs[k]
+                    if default_units_in[k] is None
+                    else pQ(kwargs[k], default_units_in[k])
+                )
+                for k in kwargs
+            }
+            result = _func(*pQ_args, **pQ_kwargs)
+            return result.to(units_out)
+
+        # set default_units_in and units_out attributes to be accessed from the outside (from TracerModel)
+        wrapper.default_units_in = default_units_in
+        wrapper.units_out = units_out
+        return wrapper
+
+    return _unit_aware
+
+
+#    ┏┳┓┏━┓┏┓╻╺┳╸┏━╸   ┏━╸┏━┓┏━┓╻  ┏━┓   ┏━┓╻ ╻┏━┓╺┳╸┏━╸┏┳┓
+#    ┃┃┃┃ ┃┃┗┫ ┃ ┣╸    ┃  ┣━┫┣┳┛┃  ┃ ┃   ┗━┓┗┳┛┗━┓ ┃ ┣╸ ┃┃┃
+#    ╹ ╹┗━┛╹ ╹ ╹ ┗━╸   ┗━╸╹ ╹╹┗╸┗━╸┗━┛   ┗━┛ ╹ ┗━┛ ╹ ┗━╸╹ ╹
+"""
+TODO Better documentation of how the PAGOSCalculator.unitaware and mc_possible work.
 """
 
-
-def _is_iterable_sq_safe(possit) -> bool:
-    """Singular `Quantity` objects are instances of `Iterable`, as are strings. So, this function
-    returns `False` if the argument is a `str`, a non-`Iterable` or a `Quantity` with
-    non-`Iterable` magnitude, and `True` otherwise.
-
-    :param possit: Possibly iterable argument
-    :type possit: Any
-    :return: `False` if `possit` is a `str`, non-`Iterable` or `Quantity` with non-`Iterable` magnitude, `True` otherwise.
-    :rtype: bool
-    """
-    if isinstance(possit, Iterable):
-        if isinstance(possit, Quantity):
-            if isinstance(possit.magnitude, Iterable):  # Q([x1, x2, ...], units)
-                return True
-            else:  # Q(x, units)
-                return False
-        elif isinstance(possit, str):  # string
-            return False
-        else:  # [x1, x2, ...]
-            return True
-    else:  # x
-        return False
+MC_ENABLED = False
 
 
-def safeexp(x: Quantity | Iterable[Quantity]) -> Quantity | Iterable[Quantity]:
-    """Safe exponentiation function. Makes sure input to an exponential is dimensionless before
-    performing exponentiation.
-
-    :param x: Input to exponential.
-    :type x: Quantity | Iterable[Quantity]
-    :return: Result, e^(dimensionless x).
-    :rtype: Quantity | Iterable[Quantity]
-    """
-
-    dimless_x = sto(x, "dimensionless")
-    return unp.exp(dimless_x)
+def set_mc(value: bool):
+    global MC_ENABLED
+    MC_ENABLED = value
 
 
-def safeln(x: Quantity | Iterable[Quantity]) -> Quantity | Iterable[Quantity]:
-    """Safe natural logarithm function. Makes sure input to a logarithm (base e) is
-    dimensionless before performing calculation.
+FIRST_MC_PASS = True
+MC_LIST: list[float | Callable] = []
+MC_CYCLE: cycle
 
-    :param x: Input to logarithm.
-    :type x: Quantity | Iterable[Quantity]
-    :return: Result, ln(dimensionless x).
-    :rtype: Quantity | Iterable[Quantity]
-    """
+rng = np.random.default_rng()
 
-    dimless_x = sto(x, "dimensionless")
-    return unp.log(dimless_x)
+# On the first call of an objective procedure, each call of an MC-aware method
+# will create a new entry in MC_LIST (the MC factor by which to multiply the
+# function result). On all other passes, we will cycle through this list (or,
+# rather, a cycle object created from the list) to retrieve the same factors.
+# This is so that every call to the objective function does NOT cause different
+# factors (otherwise you always randomise the output and never land on the
+# minimum of the objective function!). Instead, different LISTS of factors are
+# produced for every time the fit function is called.
+
+# TODO write explanation of why this could fail with conditionals in the objective
+# function - better yet, write something to overcome conditionals!
 
 
-@_possibly_iterable
-def deriv(x: Quantity | Iterable[Quantity], wrt: Quantity) -> Quantity:
-    """Calculates the derivative of x with respect to wrt, evaluated at the given value of wrt
-    and whatever other parameters constituting x, returning a Quantity object.
+def is_first_mc_pass():
+    return FIRST_MC_PASS
 
-    :param x: Input to derivative function.
-    :type x: Quantity | Iterable[Quantity]
-    :param wrt: Quantity with respect to which the differentiation will be performed. If wrt has
-    a nonabsolute temperature unit, like degC or degF, it will be changed accordingly.
-    :type wrt: Quantity
-    :return: Result, dx/d(wrt) evaluated at given value of x and its arguments.
-    :rtype: Quantity
-    """
-    derivquant = u.Quantity(x.derivatives[wrt.magnitude], x.units)
-    # special handling for temperature
-    if wrt.units == u("degC"):
-        divunits = u("K")
-    elif wrt.units == ("degF"):
-        divunits = u("Rankine")
+
+def begin_new_mc_cycle():
+    """Should be called before the first call of objfunc"""
+    global FIRST_MC_PASS, MC_LIST
+    FIRST_MC_PASS = True
+    MC_LIST = []
+
+
+def end_mc_cycle():
+    """Should be called once minimize() has finished its business"""
+    # Fast calculations will have been activated from the first call of the objective function. Here we deactivate.
+    _set_fast(False)
+
+
+def end_of_first_mc_cycle_pass():
+    """Should be called at the end of one fitting step"""
+    global FIRST_MC_PASS, MC_CYCLE
+    FIRST_MC_PASS = False
+    MC_CYCLE = cycle(MC_LIST)
+    _set_fast(True)
+
+
+def cycle_mc_std(std):
+    if FIRST_MC_PASS:
+        factor = rng.normal(1, std)
+        MC_LIST.append(factor)
     else:
-        divunits = wrt.units
-    return derivquant / divunits
+        factor = next(MC_CYCLE)
+    return factor
 
 
-@_possibly_iterable
-def sto(
-    x: Quantity | Iterable[Quantity], to: str | Unit, strict=True, **ctx_kwargs
-) -> Quantity | Iterable[Quantity]:
-    """sto <=> 'safe to'. Derivative-safe alternative to Quantity.to(). This creates a new
-    Quantity whose derivatives are different, unlike regular Quantity.to(), which will leave the
-    derivatives of a Quantity's magnitude unchanged. Only Quantity objects with a magnitude
-    parameter of type ufloat will be changed, otherwise behaves like Quantity.to().
-
-    :param x: Quantity whose units should be changed.
-    :type x: Quantity | Iterable[Quantity]
-    :param to: Unit to convert the Quantity object to.
-    :type to: str | Unit
-    :param strict: Whether to return x [True] or an error [False] if x is not a Quantity object, defaults to True
-    :type strict: bool, optional
-    :param **ctx_kwargs: Values for the pc context
-    :return: Result similar to x.to(to), but with a newly initialised object.
-    :rtype: Quantity | Iterable[Quantity]
-    """
-    if to is None:
-        return x
-    if type(x) == u.Quantity:
-        convertq = x.to(
-            to, **ctx_kwargs
-        )  # pc context is included here, because in units.py, we have u.enable_contexts('pc')
-        if (
-            x.units == convertq.units
-        ):  # FIXME if I don't include this, everything breaks - must be investigated...
-            # Notes on this: it appears to be an issue with creating new Quantity objects.
-            # The big issue is that when we don't include this if statement, the core.deriv()
-            # function no longer works. It throws an error saying that the specified derivative
-            # does not exist in the ufloat object (specifically, a KeyError). However this key
-            # does exist, with the same value T, but with a different location in memory, i.e.:
-            # >>> .derivatives[T] == .derivatives[the key which is actually there]
-            # but
-            # >>> .derivatives[T] is not derivatives[thing key which is actually there].
-            # Somehow, this ugly fix will solves the problem, I think by returning the same
-            # pointer? I'm not quite sure.
-            # If we remove this statement, the only other way to stop the error occurring that
-            # I found was to replace all instances of _core.sto(T, 'K') in water.py with T.to('K').
-            # This must then also return the same object when the unit is already 'K',
-            # something to that effect... I am very stumped here!
-            return x
-        if type(x.magnitude) == Variable:
-            mag_v = convertq.magnitude.nominal_value
-            mag_e = convertq.magnitude.std_dev
-            newquant = u.Quantity(ufloat(mag_v, mag_e), to)
-        else:
-            mag = convertq.magnitude
-            newquant = u.Quantity(mag, to)
-        return newquant
-    elif x is None:
-        return None
+def cycle_mc_dist(dist):
+    if FIRST_MC_PASS:
+        ret = errfuncs[dist]
+        MC_LIST.append(ret)
     else:
-        if strict:
-            raise ValueError("x must be of type pint.Quantity.")
-        else:
-            return u.Quantity(x, to)
+        ret = next(MC_CYCLE)
+    return ret
 
 
-@_possibly_iterable  # TODO this could be implemented in LOTS of places around the code where we constantly have to go through the tedious process of checking if a quantity is a Quantity with Variable/AffineScalarFunc magnitude, if it's just got a normal magnitude or if it's not got a magnitude at all
-def snv(x, strict: bool = False):
-    """snv <=> 'safe nominal value'. If x is an uncertainties Variable/AffineScalarFunc, its
-    nominal_value is returned. Otherwise only x is returned. Quantities are handled to remove units.
+# error functions dictionary for non-gaussian distributions
+# TODO: implement this - should be lambdas involving other distribution types, like
+# gamma or Lorentz. Needs to take into account units!
+errfuncs = {}
 
-    :param x: Input number.
-    :type x: any
-    :return: Nominal value of x.
+
+def mc_possible(dist_std: str | float, override: bool = False):
+    """Decorator factory for Monte Carlo utility. The resultant decorator will enable its decorated function to be
+    varied according to a normal distribution, corresponding to `dist_std`. If `dist_std` is a float, it
+    will be the standard deviation of that normal distribution. In future, strings will be allowed to denote pre-defined
+    distributions
+
+    Args:
+        dist_std (str | float): Standard deviation of normal distribution from which the MC draws should be taken
+        override (bool, optional): Whether or not to block internal functions from being MC-aware (i.e. to force `dist_std` to be the only source of uncertainty). Defaults to False.
     """
-    if (
-        isinstance(x, u.Quantity)
-        and isinstance(x.magnitude, (Variable, AffineScalarFunc))
-    ) or isinstance(x, (Variable, AffineScalarFunc)):
-        return x.nominal_value
-    elif strict:
-        raise TypeError("with strict==True, x must have property x.nominal_value")
-    elif isinstance(x, u.Quantity):
-        return x.magnitude
-    else:
-        return x
+
+    def _mc_possible(func):
+        """
+        Decorates `func` to become MC-aware. When the function is run, the normal distribution supplied by the
+        `mc_possible` factory is used whenever `func` is called to vary its output.
+        """
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+
+            # Block the inner function from performing any MC business if blockinner is True
+            # This is useful if the user wants to overwrite any uncertainties built-in to PAGOS
+            if override:
+                was_mc_enabled = MC_ENABLED
+                set_mc(False)
+                ret = func(*args, **kwargs)
+                set_mc(was_mc_enabled)
+            else:
+                ret = func(*args, **kwargs)
+
+            if MC_ENABLED:
+                if isinstance(dist_std, Number):
+                    ret = ret * cycle_mc_std(dist_std)
+                elif isinstance(dist_std, str):
+                    raise NotImplementedError(
+                        "Custom MC distributions have not yet been implemented!"
+                    )
+                    # TODO later: custom distributions:
+                    ret = cycle_mc_dist(dist_std)(ret)
+                else:
+                    raise TypeError("Argument dist_std must be str or float")
+            return ret
+
+        return wrapper
+
+    return _mc_possible
 
 
-@_possibly_iterable
-def ssd(x, strict: bool = False):
-    """ssd <=> 'safe standard deviation'. If x is an uncertainties Variable/AffineScalarFunc, its
-    std_dev is returned. Otherwise None is returned. Quantities are handled to remove units.
-
-    :param x: Input number.
-    :type x: any
-    :return: Standard deviation of x.
-    """
-    if (
-        isinstance(x, u.Quantity)
-        and isinstance(x.magnitude, (Variable, AffineScalarFunc))
-    ) or isinstance(x, (Variable, AffineScalarFunc)):
-        return x.std_dev
-    elif strict:
-        raise TypeError("with strict==True, x must have property x.std_dev")
-    else:
-        return None
-
-
-@_possibly_iterable
-def sgu(x, strict: bool = False):
-    """sgu <=> 'safe get units'. If x is a Pint Quantity, its units are returned. Otherwise
-    None is returned.
-
-    :param x: Input quantity.
-    :type x: any
-    :return: Units of x.
-    """
-    if isinstance(x, u.Quantity):
-        return x.units
-    elif strict:
-        raise TypeError("with strict==True, x must have property x.units")
-    else:
-        return None
-
-
-def _tidy_iterable(it: Iterable) -> np.ndarray | Iterable:
-    """Tidy up `[Q(x1, unit), Q(x2, unit), ...]` as `Q([x1, x2, ...], unit)`.
-    Will perform no such conversion if units are not the same (i.e. `[Q(x1, u1), Q(x2, u2), ...]` where `ui != uj`).
-    Always returns type np.array if possible.
-
-    :param it: Iterable `[Q(x1, u1), Q(x2, u2), ...]`
-    :type it: Iterable
-    :return: `Q([x1, x2, ...], u)` if `ui == u` for all `i`, else `it`
-    :rtype: ndarray
-    """
-    # perform tidying
-    if all(isinstance(elt, Quantity) for elt in it):
-        units0 = it[0].units
-        if all(elt.units == units0 for elt in it):
-            stripped = np.array([elt.magnitude for elt in it])
-            return u.Quantity(stripped, units0)
-    try:
-        return np.array(it)
-    except ValueError:
-        return np.array(it, dtype=object)
-
-
-def Q(val: float, unit: str | Unit, err: float = None) -> Quantity:
-    """Shorthand function for making a pint Quantity object with an uncertainties ufloat for a
-    magnitude.
-
-    :param val: Nominal value of the ufloat.
-    :type val: float
-    :param err: Error/standard deviation of the ufloat.
-    :type err: float
-    :param unit: Units of the Quantity.
-    :type unit: str | Unit
-    :return: Quantity with ufloat as magnitude.
-    :rtype: Quantity
-    """
-    if err is None:
-        return u.Quantity(val, unit)
-    else:
-        return u.Quantity(ufloat(val, err), unit)
-
-
-# TODO create ci.yml!
+# function alias for ease of use
+mc = mc_possible

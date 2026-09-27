@@ -1,9 +1,9 @@
 import numpy as np
-from pagos.gasobject import calc_Ceq, abn
-from pagos.newcore import pQ
+from pagos.gas import calc_Ceq, abn
+from pagos.core import pQ
 import pandas as pd
 
-from pagos.newcore import set_warn_nonmult
+from pagos.core import set_warn_nonmult
 
 set_warn_nonmult(False)
 

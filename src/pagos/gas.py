@@ -1,580 +1,208 @@
-"""
-Functions for calculating the properties of various gases.
-"""
-
-# TODO make a document in the README or something explaining all conventions we assume
-# for example, that for us, STP = 0 degC 1 atm instead of 20 degC 1 atm.
-from pint import Quantity
-from pint import Unit
 import numpy as np
-from collections.abc import Iterable
-import os
-from pandas import read_csv
-import pickle as pkl
 
-from pagos.core import u as _u, sto as _sto, _possibly_iterable, wraptpint
-from pagos.constants import NOBLEGASES, STABLETRANSIENTGASES, BIOLOGICALGASES
-from pagos.constants import (
-    NG_JENKINS_19_COEFFS,
-    WANNINKHOF_92_COEFFS,
-    EYRING_36_COEFFS,
-    CFC_WARNERWEISS_85_COEFFS,
-    SF6_BULLISTER_02_COEFFS,
-    ArNeN2_HAMMEEMERSON_04,
-)
 from pagos.constants import (
     ABUNDANCES,
-    MOLAR_VOLUMES,
-    MOLAR_MASSES,
-    ICE_FRACTIONATION_COEFFS,
+    CFC_WARNERWEISS_85_COEFFS,
+    EYRING_36_COEFFS,
+    EYRING_36_HAMME_SALT_CORRECTION,
+    K100,
     MGC,
-    TPW,
+    MOLAR_MASSES,
+    MOLAR_VOLUMES,
+    NG_JENKINS_19_COEFFS,
     PAT,
-    MMW,
+    SF6_BULLISTER_02_COEFFS,
+    WANNINKHOF_92_COEFFS,
+    WANNINKHOF_92_SALTFACTOR_COEFFS,
+    ArNeN2_HAMMEEMERSON_04_COEFFS,
 )
-from pagos.water import (
-    calc_dens,
-    calc_dens_Tderiv,
-    calc_dens_Sderiv,
-    calc_kinvisc,
-    calc_vappres,
-    calc_vappres_Tderiv,
-)
-from pagos.units import *
-from pagos.modelling import mc
+from pagos.core import PAGOSQuantity, mc_possible, pQ, unit_aware
+from pagos.water import calc_kinvisc, calc_vappres
+
+PREDEFINED_GASES = ["He", "Ne", "Ar", "Kr", "Xe", "N2", "CFC11", "CFC12", "SF6"]
+
+# Gases grouped according to properties
+STABLETRANSIENTGASES = ["CFC11", "CFC12", "SF6"]
+NOBLEGASES = ["He", "Ne", "Ar", "Kr", "Xe"]
+BIOLOGICALGASES = ["N2"]
 
 
-# Some data required for calc_Cstar
-# FIXME MAKE SURE THESE SURFACES ARE CREATED WITH THE SAME SCIPY VERSION AS PAGOS! Also add in contingency so that if the error surfaces
-# are not compatible with the current PAGOS version, that it falls back on some other method.
-this_dir, this_file = os.path.split(__file__)
-ngmethods = ["Jenkins2019", "Weiss1970", "SmithKennedy1983", "HammeEmerson2004"]
-# these are "Monte Carlo coefficients"; not to be confused with PAGOS's built-in MC functionality,
-# these are coefficients of literature solubility functions whose values were determined by least-squares
-# fitting, repeatedly, in an MC-sense.
-mccs = {
-    s: read_csv(
-        os.path.join(this_dir, f"assets/gas/{s}/Monte Carlo Coefficients.csv"),
-        index_col=0,
-    )
-    .transpose()
-    .to_dict()
-    for s in ngmethods
-}
-Cstar_errsurfs = {s: {} for s in ngmethods}
-# pre-determined error surfaces for the Cstar values at different T and S
-for s in Cstar_errsurfs:
-    for g in NOBLEGASES:
+class Gas:
+    def __init__(self, name, *kwargs):
+        self.msg = ""
+        self._initialise_from_name(name)
+        print(self.msg, end="")
+
+    def _initialise_from_name(self, name):
+        self.name = name
+
+        if self.name not in PREDEFINED_GASES:
+            self.msg += f"Tried to intialise {name} but the name of the gas is not implemented!\n"
+
+        # ++++++ initialise gas properties ++++++
         try:
-            f = open(
-                os.path.join(this_dir, f"assets/gas/{s}/{g}_err_surf.pickle"), "rb"
+            self.abundance = ABUNDANCES[self.name]
+        except KeyError:
+            self.abundance = NotImplementedError(
+                f"{self.name} has no implemented atmospheric abundance."
             )
-            surface = pkl.load(f)
-            setattr(surface, "bounds_error", False)
-            setattr(surface, "fill_value", 0)
-            Cstar_errsurfs[s][g] = surface
-        except FileNotFoundError as e:
-            pass
 
-possible_coeffs = [
-    "A0",
-    "AR",
-    "AL",
-    "A1",
-    "B0",
-    "BR",
-    "BL",
-    "B1",
-    "B2",
-    "C0",
-    "D1",
-    "D2",
-    "D3",
-    "E1",
-    "E2",
-]
+        try:
+            self.molar_volume = MOLAR_VOLUMES[self.name]
+        except KeyError:
+            self.molar_volume = NotImplementedError(
+                f"{self.name} has no implemented molar volume."
+            )
 
+        try:
+            self.molar_mass = MOLAR_MASSES[self.name]
+        except KeyError:
+            self.molar_mass = NotImplementedError(
+                f"{self.name} has no implemented molar mass."
+            )
 
-def hasgasprop(gas: str, condition: str) -> bool:
-    """
-    Returns True if the gas fulfils the condition specified by arguments `condition`.
-
-    :param str gas:  Gas species to be checked.
-    :param str condition:
-        Condition to be checked, e.g. condition='isstabletransient' checks if the gas is a stable transient gas (e.g. SF6 or CFC12).
-        possible conditions are 'spcis' (needs the species in specific), 'isnoble', 'isng', 'isstabletransient', 'isst'
-    :return bool:
-        Truth value of the condition.
-    """
-    if condition in ["isnoble", "isng"]:
-        if gas in NOBLEGASES:
-            return True
+        # ++++++ initialise methods ++++++
+        # initialise Schmidt number calculation
+        if self.name in STABLETRANSIENTGASES:
+            self.calc_Sc = lambda T, S: self.__calc_Sc_W92(T, S)
+        elif self.name in NOBLEGASES + ["N2"]:
+            self.calc_Sc = lambda T, S: self.__calc_Sc_HE17(T, S)
         else:
-            return False
-    if condition in ["isstabletransient", "isst"]:
-        if gas in STABLETRANSIENTGASES:
-            return True
+            self.calc_Sc = NotImplementedError(
+                f"calc_Sc is not defined for {self.name}"
+            )
+        self.calc_Sc = mc_possible(0.0)(self.calc_Sc)
+        # initialise C* calculation
+        # NOTE some of the cases (e.g. noble gases) have an ab argument that does nothing!
+        if self.name in NOBLEGASES:
+            self.calc_Cstar = lambda T, S, ab="default": self.__calc_Cstar_J19(T, S)
+        elif self.name in {"CFC11", "CFC12"}:
+            self.calc_Cstar = lambda T, S, ab="default": self.__calc_Cstar_WW85(
+                T, S, ab
+            )
+        elif self.name in {"SF6"}:
+            self.calc_Cstar = lambda T, S, ab="default": self.__calc_Cstar_B02(T, S, ab)
+        elif self.name in {"N2"}:
+            self.calc_Cstar = lambda T, S, ab="default": self.__calc_Cstar_HE04(T, S)
         else:
-            return False
-    else:
-        raise ValueError("%s is not a valid condition." % (condition))
+            self.calc_Cstar = NotImplementedError(
+                f"calc_Cstar is not defined for {self.name}"
+            )
+        self.calc_Cstar = mc_possible(0.05)(self.calc_Cstar)
 
-
-"""
-GETTERS
-"""
-
-
-@_possibly_iterable
-def jkc(gas: str | Iterable[str]) -> dict[float] | Iterable[dict[float]]:
-    """Get a dictionary of the Jenkins 2019 solubility equation coefficients of the gas:
-    {A1, A2, A3, A4, B1, B2, B3, C1}.
-
-    :param gas: Gas whose Jenkins coefficients are to be returned.
-    :type gas: str | Iterable[str]
-    :raises AttributeError: If the given gas is not noble.
-    :return: Dictionary of gas's Jenkins coefficients.
-    :rtype: dict[float]|Iterable[dict[float]]
-    """
-    try:
-        return NG_JENKINS_19_COEFFS[gas]
-    except:
-        print("Only noble gases have Jenkins coefficients.")
-
-
-@_possibly_iterable
-def wkc(gas: str | Iterable[str]) -> dict[float] | Iterable[dict[float]]:
-    """Get a dictionary of the Wanninkhof 1992 Schmidt number equation coefficients of the
-    gas: {A, B, C, D}.
-    NOTE: for xenon, the W92 formula has been estimated by fitting the Eyring diffusivity
-    curve from Jähne et al. 1987 to the W92 formula and using the coefficients of best fit.
-
-    :param gas: Gas whose Wanninkhof coefficients are to be returned.
-    :type gas: str | Iterable[str]
-    :return: Dictionary of gas's Wanninkhof coefficients.
-    :rtype: dict[float]|Iterable[dict[float]]
-    """
-    try:
-        return WANNINKHOF_92_COEFFS[gas]
-    except:
-        print("Only noble gases, CFCs, SF6 and N2 have Wanningkhof coefficients.")
-
-
-@_possibly_iterable
-def erc(gas: str | Iterable[str]) -> dict[float] | Iterable[dict[float]]:
-    """Get a dictionary of the Eyring 1936 coeffs {A, Ea} for the diffusivity. Noble gas
-    coefficients from Jähne 1987, except argon, interpolated from Wanninkhof 1992. N2 is
-    from Ferrel and Himmelblau 1967.
-
-    :param gas: Gas whose Eyring coefficients are to be returned.
-    :type gas: str | Iterable[str]
-    :return: Dictionary of gas's Eyring coefficients.
-    :rtype: dict[float]|Iterable[dict[float]]
-    """
-    try:
-        return EYRING_36_COEFFS[gas]
-    except:
-        print("Only noble gases and N2 have Eyring coefficients.")
-
-
-@_possibly_iterable
-def mv(gas: str | Iterable[str]) -> float | Iterable[float]:
-    """Get the molar volume of the given gas at STP in cm3/mol.
-
-    :param gas: Gas whose molar volume is to be returned.
-    :type gas: str | Iterable[str]
-    :return: STP molar volume of given gas in cm3/mol.
-    :rtype: float|Iterable[float]
-    """
-    try:
-        return MOLAR_VOLUMES[gas]
-    except:
-        print("The given gas does not have a corresponding molar volume in PAGOS.")
-
-
-@_possibly_iterable
-def mm(gas: str | Iterable[str]) -> float | Iterable[float]:
-    """Get the molar mass of the given gas in g/mol.
-
-    :param gas: Gas whose molar mass is to be returned.
-    :type gas: str | Iterable[str]
-    :return: Molar mass of given gas in g/mol.
-    :rtype: float|Iterable[float]
-    """
-    try:
-        return MOLAR_MASSES[gas]
-    except:
-        print("The given gas does not have a corresponding molar mass in PAGOS.")
-
-
-@_possibly_iterable
-def wwc(gas: str | Iterable[str]) -> dict[float] | Iterable[dict[float]]:
-    """Get a dictionary of the Warner and Weiss 1985 equation coefficients of the gas:
-    {a1, a2, a3, a4, b1, b2, b3}.
-
-    :param gas: Gas whose Warner/Weiss coefficients are to be returned.
-    :type gas: str | Iterable[str]
-    :return: Dictionary of gas's Warner/Weiss coefficients.
-    :rtype: dict[float]|Iterable[dict[float]]
-    """
-    try:
-        return CFC_WARNERWEISS_85_COEFFS[gas]
-    except:
-        print(
-            "The given gas does not have corresponding Warner-Weiss-1985-coefficients in PAGOS."
-        )
-
-
-@_possibly_iterable
-def abn(gas: str | Iterable[str]) -> float | Iterable[float]:
-    """Get the atmospheric abundance of the given gas.
-
-    :param gas: Gas whose abundance is to be returned.
-    :type gas: str | Iterable[str]
-    :return: Atmospheric abundance of given gas.
-    :rtype: float|Iterable[float]
-    """
-    try:
-        return ABUNDANCES[gas]
-    except:
-        print("The given gas does not have a corresponding abundance in PAGOS.")
-
-
-@_possibly_iterable
-def blc(gas: str | Iterable[str]) -> dict[float] | Iterable[dict[float]]:
-    """Get a dictionary of the Bullister 2002 equation coefficients of the gas:
-    {a1, a2, a3, b1, b2, b3}.
-
-    :param gas: Gas whose Bullister coefficients are to be returned.
-    :type gas: str | Iterable[str]
-    :return: Dictionary of gas's Bullister coefficients.
-    :rtype: dict[float]|Iterable[dict[float]]
-    """
-    try:
-        return SF6_BULLISTER_02_COEFFS[gas]
-    except:
-        print(
-            "The given gas does not have corresponding Bullister-2002-coefficients in PAGOS."
-        )
-
-
-@_possibly_iterable
-def hec(gas: str | Iterable[str]) -> dict[float] | Iterable[dict[float]]:
-    """Get a dictionary of the Hamme and Emerson 2004 equation coefficients of the gas:
-    {A0, A1, A2, A3, B0, B1, B2}.
-
-    :param gas: Gas whose Hamme/Emerson coefficients are to be returned
-    :type gas: str | Iterable[str]
-    :return: Dictionary of gas's Hamme/Emerson coefficients.
-    :rtype: dict[float]|Iterable[dict[float]]
-    """
-    try:
-        return ArNeN2_HAMMEEMERSON_04[gas]
-    except:
-        print(
-            "The given gas does not have corresponding Hamme-Emerson-2004-coefficients in PAGOS."
-        )
-
-
-@_possibly_iterable
-def ice(gas: str | Iterable[str]) -> float | Iterable[float]:
-    """
-    Get the ice fractionation coefficient of the given gas from Loose et al. 2020.
-
-    :param gas: Gas whose ice fractionation coefficient is to be returned.
-    :type gas: str | Iterable[str]
-    :return: Ice fractionation coefficient of given gas.
-    :rtype: float|Iterable[float]
-    """
-    try:
-        return ICE_FRACTIONATION_COEFFS[gas]
-    except:
-        print(
-            "The given gas does not have corresponding ice fractionation coefficients in PAGOS."
-        )
-
-
-"""
-PROPERTY CALCULATIONS
-"""
-
-
-@_possibly_iterable
-@wraptpint((None, "degC", "permille", None, None, None), False)
-def calc_Sc(
-    gas: str | Iterable[str],
-    T: float | Quantity,
-    S: float | Quantity,
-    method: str = "auto",
-    units="dimensionless",
-    magnitude=False,
-) -> Quantity | Iterable[Quantity]:
-    """Calculates the Schmidt number Sc of given gas in seawater.\\
-    **Default input units** --- `T`:°C, `S`:‰\\
-    **Output units** --- dimensionless\\
-    There are three methods of calculation:
-        - 'HE17'
-            - Hamme and Emerson 2017, combination of various methods.
-            - Based off of Roberta Hamme's Matlab scripts, available at
-              https://oceangaseslab.uvic.ca/download.html.
-        - 'W92'
-            - Wanninkhof 1992
-            - Threshold between fresh and salty water chosen to be S = 5 g/kg, but isn't
-              well defined, so this method is best used only for waters with salinities
-              around 34 g/kg.
-        - 'auto':
-            - Default to HE17
-            - Transient stable gases (CFCs and SF6) use W92 because required data for HE17
-              with these gases are not available.
-
-    :param gas: Gas(es) for which Sc should be calculated
-    :type gas: str | Iterable[str]
-    :param T: Temperature
-    :type T: float | Quantity
-    :param S: Salinity
-    :type S: float | Quantity
-    :param method: Sc calculation method, defaults to 'auto'
-    :type method: str, optional
-    :raises ValueError: if `S` < 0
-    :raises ValueError: if invalid `method` is given
-    :return: Calculated Schmidt number
-    :rtype: float | Quantity | Iterable[float] | Iterable[Quantity]
-    """
-
-    if method == "auto":
-        if hasgasprop(gas, "isst"):
-            method = "W92"
+        # initialise Ceq calculation
+        if self.name in NOBLEGASES + STABLETRANSIENTGASES + ["N2"]:
+            self.calc_Ceq = lambda T, S, p, ab="default": self.__calc_Ceq(T, S, p, ab)
         else:
-            method = "HE17"
+            self.calc_Ceq = NotImplementedError(
+                f"calc_Ceq is not defined for {self.name}"
+            )
 
-    # Wanninkhof 1992 method
-    if method == "W92":
+    @unit_aware({"self": None, "T": "degC", "S": "permille"}, "dimensionless")
+    def __calc_Sc_W92(
+        self,
+        T: float,
+        S: float,
+    ) -> float:
+        # Wanninkhof 1992 method
         # salt factor for if the water is salty or not. Threshold is low, therefore this method is only recommended
         # for waters with salinity approx. equal to 34 g/kg.
-        if S > 5:
-            saltfactor = (1.052 + 1.3e-3 * T + 5e-6 * T**2 - 5e-7 * T**3) / 0.94
-        elif 0 <= S <= 5:
+        if S > 0.005:  # (> 5 permille)
+            f0, f1, f2, f3 = (
+                WANNINKHOF_92_SALTFACTOR_COEFFS[s] for s in ["f0", "f1", "f2", "f3"]
+            )
+            saltfactor = (f0 + f1 * T + f2 * T**2 + f3 * T**3) / 0.94
+        elif 0 <= S <= 0.005:
             saltfactor = 1
         else:
             raise ValueError("S must be a number >= 0.")
-        (A, B, C, D) = (wkc(gas)[s] for s in ["A", "B", "C", "D"])
+        A, B, C, D = (WANNINKHOF_92_COEFFS[self.name][s] for s in ["A", "B", "C", "D"])
         Sc = saltfactor * (A - B * T + C * T**2 - D * T**3)
-    # Hamme & Emerson 2017 method
-    elif method == "HE17":
+        return Sc
+
+    @unit_aware({"self": None, "T": "degC", "S": "permille"}, "dimensionless")
+    def __calc_Sc_HE17(self, T: float, S: float) -> float:
+        # Hamme & Emerson 2017 method
         # Eyring diffusivity calculation
         # units (cm2/s, kJ/mol)
-        (A_coeff, activation_energy) = (erc(gas)[s] for s in ["A", "Ea"])
-        # *1000 in exponent to convert kJ/J to J/J
-        D0 = A_coeff * np.exp(-activation_energy / (MGC * (T + TPW)) * 1000)  # -> cm2/s
+        (A_coeff, activation_energy) = (
+            EYRING_36_COEFFS[self.name][s] for s in ["A", "Ea"]
+        )
+        D0 = A_coeff * np.exp(-activation_energy / (MGC * T.to("K")))  # -> cm2/s
         # Saltwater correction used by R. Hamme in her Matlab script (https://oceangaseslab.uvic.ca/download.html)
-        # *1e-4 to convert cm2/s to m2/s
-        D = D0 * (1 - 0.049 * S / 35.5) * 1e-4  # PSS78 as Salinity
+        D = D0 * (1 - 0.049 * S / EYRING_36_HAMME_SALT_CORRECTION)  # PSS78 as Salinity
         # Kinematic viscosity calculation
-        nu_sw = calc_kinvisc(T, S, magnitude=True)
+        nu_sw = calc_kinvisc(T, S)
         Sc = nu_sw / D
-    else:
-        raise ValueError(
-            "%s is not a valid method. Try 'auto', 'HE17' or 'W92'" % (method)
+        return Sc
+
+    @unit_aware({"self": None, "T": "degC", "S": "permille"}, "mol_g/kg")
+    def __calc_Cstar_J19(self, T: float, S: float) -> float:
+        T_K = T.to("K")
+        T_N = T_K / K100
+        A0, AR, AL, A1, B0, B1, B2, C0 = (
+            NG_JENKINS_19_COEFFS[self.name][c]
+            for c in ["A0", "AR", "AL", "A1", "B0", "B1", "B2", "C0"]
         )
+        Cstar = np.exp(
+            A0
+            + AR / T_N
+            + AL * np.log(T_N)
+            + A1 * T_N
+            + S * (B0 + B1 * T_N + B2 * T_N**2)
+            + S**2 * C0
+        ) * pQ(1, "mol_g/kg", self.name)
+        return Cstar
 
-    global SCUNIT_CACHE
-    id = hash(units)
-    if cache_hit := SCUNIT_CACHE.get(id):  # if the hashed unit is in our cache...
-        compat_unit, unconverted_unit, unit_change = (
-            cache_hit  # access the relevant values in the cache
-        )
-    else:
-        if not isinstance(
-            units, Unit
-        ):  # create pint.Unit object from unit string argument
-            units = _u.Unit(units)
-
-        dmly = units.dimensionality
-        if dmly == u_dimless.dimensionality:
-            compat_unit = UEnum.DIMLESS
-            unconverted_unit = u_dimless
-        else:
-            raise ValueError(
-                f"Invalid/unimplemented value for unit ({units}). Currently, only dimensionless units are supported for Schmidt number"
-            )
-
-        unit_change = unconverted_unit != units
-        SCUNIT_CACHE[id] = (
-            compat_unit,
-            unconverted_unit,
-            unit_change,
-        )  # add the unit to the cache if it's not already there
-
-    # return H with desired units
-    if compat_unit == UEnum.DIMLESS:
-        ret = Sc
-    else:
-        raise ValueError(
-            f"Invalid/unimplemented value for unit ({units}). Currently, only dimensionless units are supported for  Schmidt number"
-        )
-
-    # return, after conversion if necessary - written like this to avoid _sto() for speed reasons
-    if magnitude and not unit_change:
-        return ret
-    elif magnitude:
-        return _sto(ret * unconverted_unit, units).magnitude
-    elif not unit_change:
-        return ret * unconverted_unit
-    else:
-        return _sto(ret * unconverted_unit, units)
-
-
-# TODO error surfaces only defined between 0 and 30 degrees and 0 and 35 permille! Should add in something to prohibit
-# coming out of these bounds, or at least a warning!
-def calc_Cstar(
-    gas: str,
-    T: float | Quantity,
-    S: float | Quantity,
-    ab="default",
-    noblemethod="Jenkins2019",
-) -> float:  # TODO calc_Cstar returns a single-valued array due to unumpy... why did I use unumpy here again?
-    """Calculate the moist atmospheric equilibrium concentration C* in mol/kg of a given gas at
-    temperature T and salinity S.\\
-    **Default input units** --- `T`:°C, `S`:‰\\
-    **Output units** --- None\\
-    C* = waterside gas concentration when the total water
-    vapour-saturated atmospheric pressure is 1 atm (see Solubility of Gases in Water, W.
-    Aeschbach-Hertig, Jan. 2004).
-
-    :param gas: Gas for which C* should be calculated
-    :type gas: str
-    :param T: Temperature
-    :type T: float | Quantity
-    :param S: Salinity
-    :type S: float | Quantity
-    :param ab: Prescribed abundance of the gas in the atmosphere ("default" takes the literature value)
-    :type ab: float | string
-    :param noblemethod: Method to use for noble gas calulations. "Jenkins2019" by default, but can be "Weiss1970", "SmithKennedy1983" or  "HammeEmerson2004"
-    :type noblemethod: string
-    :return: Moist atmospheric equilibrium concentration C* of the given gas
-    :rtype: Quantity
-    """
-    # calculation of C* (units mol/kg)
-    T_K = T + TPW
-    T_N = T_K / 100
-    if hasgasprop(gas, "isnoble"):
-        if gas not in (coeffsdict := mccs[noblemethod]):
-            print(
-                f"WARNING: noblemethod {noblemethod} is not implemented for {gas}. Returning None."
-            )
-            return None
-        if noblemethod == "Weiss1970":
-            A0, AR, AL, A1, B0, B1, B2 = (
-                coeffsdict[gas][c] for c in ["A0", "AR", "AL", "A1", "B0", "B1", "B2"]
-            )
-            Cstar_mL_per_L = np.exp(
-                A0
-                + AR / T_N
-                + AL * np.log(T_N)
-                + A1 * T_N
-                + S * (B0 + B1 * T_N + B2 * T_N**2)
-            )
-            rhos = calc_dens(T, S, units="kg_w/L_w", magnitude=True)
-            error = Cstar_errsurfs[noblemethod][gas]((T, S)) / 100
-            Cstar = mc(error)(Cstar_mL_per_L / rhos / mv(gas))
-
-        elif noblemethod == "SmithKennedy1983":
-            A0, AR, AL, B0, BR, BL = (
-                coeffsdict[gas][c] for c in ["A0", "AR", "AL", "B0", "BR", "BL"]
-            )
-            X_mol_per_mol_per_atmpure = np.exp(
-                A0
-                + AR / T_N
-                + AL * np.log(T_N)
-                + S * (B0 + BR / T_N + BL * np.log(T_N))
-            )
-            vps = calc_vappres(T, units="atm", magnitude=True)
-            error = Cstar_errsurfs[noblemethod][gas]((T, S)) / 100
-            Cstar = mc(error)(
-                X_mol_per_mol_per_atmpure * (1 - vps) * abn(gas) / MMW * 1000
-            )  #
-
-        elif noblemethod == "HammeEmerson2004":
-            if gas == "Ne":
-                HE04conv = 1e-9
-            elif gas == "Ar":
-                HE04conv = 1e-6
-            T_s = np.log((298.15 - T) / T_K)
-            A0, D1, D2, D3, B0, E1, E2 = (
-                coeffsdict[gas][c] for c in ["A0", "D1", "D2", "D3", "B0", "E1", "E2"]
-            )
-            Cstar_umol_or_nmol_per_kg = np.exp(
-                A0
-                + D1 * T_s
-                + D2 * T_s**2
-                + D3 * T_s**3
-                + S * (B0 + E1 * T_s + E2 * T_s**2)
-            )
-            error = Cstar_errsurfs[noblemethod][gas]((T, S)) / 100
-            Cstar = mc(error)(Cstar_umol_or_nmol_per_kg * HE04conv)
-
-        elif noblemethod == "Jenkins2019":
-            A0, AR, AL, A1, B0, B1, B2, C0 = (
-                coeffsdict[gas][c]
-                for c in ["A0", "AR", "AL", "A1", "B0", "B1", "B2", "C0"]
-            )
-            error = Cstar_errsurfs[noblemethod][gas]((T, S)) / 100
-            Cstar = mc(error)(
-                np.exp(
-                    A0
-                    + AR / T_N
-                    + AL * np.log(T_N)
-                    + A1 * T_N
-                    + S * (B0 + B1 * T_N + B2 * T_N**2)
-                    + S**2 * C0
-                )
-            )
-
-        else:
-            raise NotImplementedError(
-                f"The noblemethod {noblemethod} is not implemented."
-            )
-
-    elif gas in ["CFC11", "CFC12"]:
-        a1, a2, a3, a4, b1, b2, b3 = wwc(gas).values()  # needs S in parts per thousand
+    @unit_aware({"self": None, "T": "degC", "S": "permille", "ab": None}, "mol_g/kg")
+    def __calc_Cstar_WW85(self, T: float, S: float, ab: str = "default") -> float:
+        T_K = T.to("K")
+        T_N = T_K / K100
+        a1, a2, a3, a4, b1, b2, b3 = CFC_WARNERWEISS_85_COEFFS[
+            self.name
+        ].values()  # needs S in parts per thousand
         # TODO adopt for absolute salinity??
         # abundance
         if ab == "default":
-            ab = abn(gas)
-        else:
-            ab = ab
-        # C* = F*abundance, concentration calculated from Warner and Weiss 1985
+            ab = ABUNDANCES[self.name]
+        # C* = F * abundance, concentration calculated from Warner and Weiss 1985
         Cstar = (
             np.exp(
                 a1
-                + a2 * 100 / T_K
-                + a3 * np.log(T_K / 100)
-                + a4 * (T_K / 100) ** 2
-                + S * (b1 + b2 * T_K / 100 + b3 * (T_K / 100) ** 2)
+                + a2 / T_N
+                + a3 * np.log(T_N)
+                + a4 * T_N**2
+                + S * (b1 + b2 * T_N + b3 * T_N**2)
             )
             * ab
-        )
-    elif gas == "SF6":
-        a1, a2, a3, b1, b2, b3 = blc(gas).values()  # don't know salinity unit
+        ) * pQ(1, "mol_g/kg", self.name)
+        return Cstar
+
+    @unit_aware({"self": None, "T": "degC", "S": "permille", "ab": None}, "mol_g/kg")
+    def __calc_Cstar_B02(self, T: float, S: float, ab: str = "default") -> float:
+        T_K = T.to("K")
+        T_N = T_K / K100
+        a1, a2, a3, b1, b2, b3 = SF6_BULLISTER_02_COEFFS[
+            self.name
+        ].values()  # don't know salinity unit
         # abundance
         if ab == "default":
-            ab = abn(gas)
-        else:
-            ab = ab
+            ab = ABUNDANCES[self.name]
         # C* = F*abundance, concentration calculated from Bullister et al. 2002
         Cstar = (
-            np.exp(
-                a1
-                + a2 * (100 / T_K)
-                + a3 * np.log(T_K / 100)
-                + S * (b1 + b2 * T_K / 100 + b3 * (T_K / 100) ** 2)
-            )
+            np.exp(a1 + a2 / T_N + a3 * np.log(T_N) + S * (b1 + b2 * T_N + b3 * T_N**2))
             * ab
-        )
-    elif gas == "N2":
-        A0, A1, A2, A3, B0, B1, B2 = hec(gas).values()  # PSS salinity
+        ) * pQ(1, "mol_g/kg", self.name)
+        return Cstar
+
+    @unit_aware({"self": None, "T": "degC", "S": "permille"}, "mol_g/kg")
+    def __calc_Cstar_HE04(self, T: float, S: float) -> float:
+        T_K = T.to("K")
+        A0, A1, A2, A3, B0, B1, B2 = ArNeN2_HAMMEEMERSON_04_COEFFS[
+            self.name
+        ].values()  # PSS salinity
         # T_s, temperature expression used in the calculation of C*
-        T_s = np.log((298.15 - T) / T_K)
+        T_s = np.log((pQ(298.15, "degC") - T) / T_K)
         # C*, concentration calculated from Hamme and Emerson 2004. Multiplication by 10^-6 to have units of mol/kg
         Cstar = (
             np.exp(
@@ -584,784 +212,194 @@ def calc_Cstar(
                 + A3 * T_s**3
                 + S * (B0 + B1 * T_s + B2 * T_s**2)
             )
-            * 1e-6
-        )
-    return Cstar
+        ) * pQ(1e-6, "mol_g/kg", self.name)
+        return Cstar
+
+    @unit_aware(
+        {"self": None, "T": "degC", "S": "permille", "p": "atm", "ab": None}, "mol_g/kg"
+    )
+    def __calc_Ceq(
+        self,
+        T: float,
+        S: float,
+        p: float,
+        ab="default",
+    ) -> float:
+        # vapour pressure over the water, calculated according to Dyck and Peschke 1995 (atm)
+        e_w = calc_vappres(T).to("atm")
+        # calculation of C*, the gas solubility/water-side concentration expressed in units of mol/kg
+        Cstar = self.calc_Cstar(T, S, ab)
+        # factor to account for pressure
+        pref = (p - e_w) / (PAT - e_w)
+
+        return pref * Cstar
 
 
-# TODO is Iterable[Quantity] here the best way, or should it specify that they have to be numpy arrays?
-# TODO is instead a dict output the best choice for the multi-gas option? All other multi-gas functionalities in this program just spit out arrays... i.e., prioritise clarity or consistency?
-@_possibly_iterable
-@wraptpint((None, "degC", "permille", "atm", None, None, None, None), strict=False)
+"""
+Creation of Gas objects
+"""
+He = Gas("He")
+Ne = Gas("Ne")
+Ar = Gas("Ar")
+Kr = Gas("Kr")
+Xe = Gas("Xe")
+N2 = Gas("N2")
+CFC11 = Gas("CFC11")
+CFC12 = Gas("CFC12")
+SF6 = Gas("SF6")
+
+gases_dict = {
+    "He": He,
+    "Ne": Ne,
+    "Ar": Ar,
+    "Kr": Kr,
+    "Xe": Xe,
+    "N2": N2,
+    "CFC12": CFC12,
+    "CFC11": CFC11,
+    "SF6": SF6,
+}
+
+"""
+Functional wrappers around Gas object methods
+"""
+
+# ++++++ Getters ++++++
+
+
+def abn(gas: Gas | str) -> PAGOSQuantity:
+    """Abundance of `gas`.
+
+    ## Units
+        **default units out** — mol_gas / mol
+
+    Args:
+        gas (Gas | str): Gas for which to get abundance
+
+    Returns:
+        PAGOSQuantity: Abundance of `gas`
+    """
+    try:
+        return gas.abundance
+    except AttributeError:
+        return gases_dict[gas].abundance
+
+
+def molvol(gas: Gas | str) -> PAGOSQuantity:
+    """Molar volume of `gas`.
+
+    ## Units
+        **default units out** — ccSTP_gas / mol_gas
+
+    Args:
+        gas (Gas | str): Gas for which to get molar volume
+
+    Returns:
+        PAGOSQuantity: Molar volume of `gas`
+    """
+    try:
+        return gas.molar_volume
+    except AttributeError:
+        return gases_dict[gas].molar_volume
+
+
+def molmass(gas: Gas | str) -> PAGOSQuantity:
+    """Molar mass of `gas`.\\
+
+    ## Units
+        **default units out** — g_gas / mol_gas
+
+    Args:
+        gas (Gas | str): Gas for which to get molar mass
+
+    Returns:
+        PAGOSQuantity: Molar mass of `gas`.
+    """
+    try:
+        return gas.molar_mass
+    except AttributeError:
+        return gases_dict[gas].molar_mass
+
+
+# ++++++ Calculators ++++++
+
+
+def calc_Sc(
+    gas: Gas | str, T: float | PAGOSQuantity, S: float | PAGOSQuantity
+) -> PAGOSQuantity:
+    """Calculates the Schmidt number Sc of given gas in seawater.
+
+    ## Units
+        **default units in** — `T`: °C, `S`: ‰
+        **default units out** — dimensionless
+
+    Args:
+        gas (Gas | str): Gas for which Sc should be calculated
+        T (float | PAGOSQuantity): Temperature
+        S (float | PAGOSQuantity): Salinity
+
+    Returns:
+        PAGOSQuantity: Schmidt number of `gas` in seawater
+    """
+    try:
+        return gas.calc_Sc(T, S)
+    except AttributeError:
+        return gases_dict[gas].calc_Sc(T, S)
+
+
+def calc_Cstar(
+    gas: Gas | str,
+    T: float | PAGOSQuantity,
+    S: float | PAGOSQuantity,
+    ab: str = "default",
+) -> PAGOSQuantity:
+    """Calculate the waterside concentration C* of a given gas at water
+    temperature T, salinity S and 1 atm (moist) air pressure.
+
+    ## Units
+        **default units in** — `T`: °C, `S`: ‰
+        **default units out** — mol_gas/kg
+
+    Args:
+        gas (Gas | str): Gas for which C* should be calculated
+        T (float | PAGOSQuantity): Temperature
+        S (float | PAGOSQuantity): Salinity
+        ab (str): Abundance of gas in atmosphere, defaults to "default"
+
+    Returns:
+        PAGOSQuantity: C* (Waterside eqbm. concentration at 1 atm moist air pressure)
+    """
+    try:
+        return gas.calc_Cstar(T, S, ab)
+    except AttributeError:
+        return gases_dict[gas].calc_Cstar(T, S, ab)
+
+
 def calc_Ceq(
-    gas: str | Iterable[str],
-    T: float | Quantity,
-    S: float | Quantity,
-    p: float | Quantity,
-    ab="default",
-    noblemethod="Jenkins2019",
-    units="mol_gas/kg_water",
-    magnitude=False,
-) -> float | Iterable[float] | Quantity | Iterable[Quantity]:
+    gas: Gas | str,
+    T: float | PAGOSQuantity,
+    S: float | PAGOSQuantity,
+    p: float | PAGOSQuantity,
+    ab: str = "default",
+) -> PAGOSQuantity:
     """Calculate the waterside equilibrium concentration Ceq of a given gas at water
-    temperature T, salinity S and airside pressure p.\\
-    **Default input units** --- `T`:°C, `S`:‰, `p`:atm\\
-    **Default output units** --- mol_gas/kg_water
+    temperature T, salinity S and airside pressure p.
 
-    :param gas: Gas(es) for which Ceq should be calculated
-    :type gas: str | Iterable[str]
-    :param T: Temperature
-    :type T: float | Quantity
-    :param S: Salinity
-    :type S: float | Quantity
-    :param p: Pressure
-    :type p: float | Quantity
-    :raises ValueError: If the units given in units are unimplemented
-    :return: Waterside equilibrium concentration Ceq of the given gas
-    :rtype: float | Iterable[float] | Quantity | Iterable[Quantity]
+    ## Units
+        **default units in** — `T`: °C, `S`: ‰, `p`: atm
+        **default units out** — mol_gas/kg
+
+    Args:
+        gas (Gas | str): Gas for which Ceq should be calculated
+        T (float | PAGOSQuantity): Temperature
+        S (float | PAGOSQuantity): Salinity
+        p (float | PAGOSQuantity): Pressure
+        ab (str): Abundance of gas in atmosphere, defaults to "default"
+
+    Returns:
+        PAGOSQuantity: Waterside eqbm. concentration
     """
-    # vapour pressure over the water, calculated according to Dyck and Peschke 1995 (atm)
-    e_w = calc_vappres(T, magnitude=True) / 1013.25
-    # calculation of C*, the gas solubility/water-side concentration expressed in units of mol/kg
-    Cstar = calc_Cstar(gas, T, S, ab, noblemethod)
-    # factor to account for pressure
-    pref = (p - e_w) / (1 - e_w)
-
-    ret = pref * Cstar
-    """
-    Cache-and-compare system, written by Kai Riedmiller (Heidelberg Scientific Software Centre 
-    (https://www.ssc.uni-heidelberg.de/en/what-the-scientific-software-center-is-all-about/meet-our-team))
-    Steps:
-    1)  check if units has been used before (check for its hash in the keys of CEQUNIT_CACHE)
-    2a) if it has, take the values from the cache for compat_unit, unconverted_unit and
-        unit_change, which are the desired unit of the user, the "base" unconverted unit stored
-        in PAGOS and whether the two are different.
-    2b) otherwise, set these three values and store them under a new entry in the cache
-    3)  calculate the Ceq-value in the requisite "base" unconverted unit
-    4)  convert to the desired unit if necessary
-    The reason for this caching system is to avoid calls of pint.Unit.is_compatible_with. Before
-    this system was implemented, we called is_compatible_with every time the function was run. In
-    fitting procedures, this meant that almost 1/3 of the entire execution time was spent inside
-    is_compatible_with.
-    """
-    global CEQUNIT_CACHE
-    id = hash(units)
-    if cache_hit := CEQUNIT_CACHE.get(id):  # if the hashed units is in our cache...
-        compat_unit, unconverted_unit, unit_change = (
-            cache_hit  # access the relevant values in the cache
-        )
-    else:
-        if not isinstance(
-            units, Unit
-        ):  # create pint.Unit object from unit string argument
-            units = _u.Unit(units)
-
-        dmly = units.dimensionality
-        if dmly == ugw_mol_kg.dimensionality:  # amount gas / mass water
-            compat_unit = UEnum.GW_MOL_KG
-            unconverted_unit = ugw_mol_kg
-        elif dmly == ugw_mol_m3.dimensionality:  # amount gas / volume water
-            compat_unit = UEnum.GW_MOL_M3
-            unconverted_unit = ugw_mol_m3
-        elif dmly == ugw_mol_mol.dimensionality:  # amount gas / amount water
-            compat_unit = UEnum.GW_MOL_MOL
-            unconverted_unit = ugw_mol_mol
-        elif dmly == ugw_ccSTP_g.dimensionality:  # STP volume gas / mass water
-            compat_unit = UEnum.GW_CCSTP_G
-            unconverted_unit = ugw_ccSTP_g
-        elif dmly == ugw_ccSTP_m3.dimensionality:  # STP volume gas / volume water
-            compat_unit = UEnum.GW_CCSTP_M3
-            unconverted_unit = ugw_ccSTP_m3
-        elif dmly == ugw_ccSTP_mol.dimensionality:  # STP volume gas / amount water
-            compat_unit = UEnum.GW_CCSTP_MOL
-            unconverted_unit = ugw_ccSTP_mol
-        elif dmly == ugw_g_mol.dimensionality:  # mass gas / amount water
-            compat_unit = UEnum.GW_G_MOL
-            unconverted_unit = ugw_g_mol
-        elif dmly == ugw_g_m3.dimensionality:  # mass gas / volume water
-            compat_unit = UEnum.GW_G_M3
-            unconverted_unit = ugw_g_m3
-        elif dmly == ugw_g_g.dimensionality:  # mass gas / mass water
-            compat_unit = UEnum.GW_G_G
-            unconverted_unit = ugw_g_g
-        else:
-            raise ValueError(
-                f'Invalid/unimplemented value for unit ({units}). Try something like "mol_g/kg_w", "ccSTP_g/g_w" or "mol_g/m3_w".'
-            )
-
-        unit_change = unconverted_unit != units
-        CEQUNIT_CACHE[id] = (
-            compat_unit,
-            unconverted_unit,
-            unit_change,
-        )  # add the units to the cache if they're not already there
-
-    # return equilibrium concentration with desired units
-    if compat_unit == UEnum.GW_MOL_KG:
-        ret = pref * Cstar
-    elif compat_unit == UEnum.GW_MOL_M3:
-        rho = calc_dens(T, S, magnitude=True)
-        ret = pref * rho * Cstar
-    elif compat_unit == UEnum.GW_MOL_MOL:
-        ret = pref * Cstar * MMW * 1e-3  # *1e-3: mol/kmol -> mol/mol
-    elif compat_unit == UEnum.GW_CCSTP_G:
-        mvol = mv(gas)
-        ret = pref * mvol * Cstar * 1e-3  # *1e-3: cc/kg -> cc/g
-    elif compat_unit == UEnum.GW_CCSTP_MOL:
-        mvol = mv(gas)
-        ret = pref * mvol * MMW * Cstar * 1e-3  # *1e-3: cc/kmol -> cc/mol
-    elif compat_unit == UEnum.GW_CCSTP_M3:
-        rho = calc_dens(T, S, magnitude=True)
-        mvol = mv(gas)
-        ret = pref * mvol * rho * Cstar
-    elif compat_unit == UEnum.GW_G_MOL:
-        mmass = mm(gas)
-        ret = pref * mmass * MMW * Cstar * 1e-3  # *1e-3: g/kmol -> g/mol
-    elif compat_unit == UEnum.GW_G_M3:
-        rho = calc_dens(T, S, magnitude=True)
-        mmass = mm(gas)
-        ret = pref * mmass * rho * Cstar
-    elif compat_unit == UEnum.GW_G_G:
-        mmass = mm(gas)
-        ret = pref * mmass * Cstar * 1e-3  # *1e-3: g/kg -> g/g
-    else:
-        raise ValueError(
-            f'Invalid/unimplemented value for unit ({units}). Try something like "mol_g/kg_w", "ccSTP_g/g_w" or "mol_g/m3_w".'
-        )
-
-    # return, after conversion if necessary - written like this to avoid _sto() for speed reasons
-    if magnitude and not unit_change:
-        return ret
-    elif magnitude:
-        print("bzzt")
-        return _sto(ret * unconverted_unit, units).magnitude
-    elif not unit_change:
-        return ret * unconverted_unit
-    else:
-        return _sto(ret * unconverted_unit, units)
-
-
-@_possibly_iterable
-@wraptpint((None, "degC", "permille", "atm", None, None, None), strict=False)
-def calc_dCeq_dT(
-    gas: str,
-    T: float | Quantity,
-    S: float | Quantity,
-    p: float | Quantity,
-    ab="default",
-    units="mol_gas/kg_water/K",
-    magnitude=False,
-) -> float | Iterable[float] | Quantity | Iterable[Quantity]:
-    """Calculate the temperature-derivative dCeq_dT of the waterside equilibrium
-    concentration of a given gas at water temperature T, salinity S and airside pressure p.\\
-    **Default input units** --- `T`:°C, `S`:‰, `p`:atm\\
-    **Output units** --- None
-
-    :param gas: Gas(es) for which dCeq_dT should be calculated
-    :type gas: str
-    :param T: Temperature
-    :type T: float | Quantity
-    :param S: Salinity
-    :type S: float | Quantity
-    :param p: Pressure
-    :type p: float | Quantity
-    :param units: Units in which dCeq_dT should be expressed
-    :type units: str | Unit, optional
-    :param ret_quant: Whether to return the result as a Pint Quantity instead of just a float, defaults to False
-    :type ret_quant: bool, optional
-    :raises ValueError: If the units given in units are unimplemented
-    :return: Waterside equilibrium concentration temperature derivative dCeq_dT of the given gas
-    :rtype: float|Iterable[float]|Quantity|Iterable[Quantity]
-    """
-    # vapour pressure over the water, calculated according to Dyck and Peschke 1995 (atm)
-    e_w = calc_vappres(T, magnitude=True) / 1013.25
-    # calculation of C*, the gas solubility/water-side concentration (mol/kg)
-    Cstar = calc_Cstar(gas, T, S, ab)
-    # factor to account for pressure
-    pref = (p - e_w) / (1 - e_w)
-    # return equilibrium concentration with desired units
-    # calculation of dC*/dT at the given T, S, p
-    T_K = T + TPW
-    if hasgasprop(gas, "isnoble"):
-        A1, A2, A3, A4, B1, B2, B3, C1 = jkc(gas).values()  # needs S in PSS78
-        dCstar_dT = (
-            S * (B3 * T_K / 5000 + B2 / 100) + A3 / T_K - 100 * A2 / (T_K**2) + A4 / 100
-        ) * Cstar
-    elif gas in ["CFC11", "CFC12"]:
-        a1, a2, a3, a4, b1, b2, b3 = wwc(gas).values()  # needs S in parts per thousand
-        # TODO adopt for absolute salinity??
-        dCstar_dT = (
-            S * (b3 * T_K / 5000 + b2 / 100)
-            + a3 / T_K
-            - 100 * a2 / T_K**2
-            + a4 * T_K / 5000
-        ) * Cstar
-    elif gas == "SF6":
-        a1, a2, a3, b1, b2, b3 = blc(gas).values()  # don't know salinity unit
-        dCstar_dT = (
-            S * (b3 * T_K / 5000 + b2 / 100) + a3 / T_K - 100 * a2 / T_K**2
-        ) * Cstar
-    elif gas == "N2":
-        A0, A1, A2, A3, B0, B1, B2 = hec(gas).values()  # PSS salinity
-        # T_s, temperature expression used in the calculation of C*
-        T_s = np.log((298.15 - T) / T_K)
-        dCstar_dT = (
-            Cstar
-            * 25
-            / ((T_K - 25) * T_K)
-            * (A1 + S * B1 + 2 * (A2 + S * B2) * T_s + 3 * A3 * T_s**2)
-            * 1e-6
-        )
-
-    de_w_dT = calc_vappres_Tderiv(T, magnitude=True) / 1013.25  # mbar/K -> atm/K
-    dCeq_dT_molkgK = pref * dCstar_dT + (p - 1) / ((e_w - 1) ** 2) * de_w_dT * Cstar
-
-    """
-    Cache-and-compare system, written by Kai Riedmiller (Heidelberg Scientific Software Centre 
-    (https://www.ssc.uni-heidelberg.de/en/what-the-scientific-software-center-is-all-about/meet-our-team))
-    See calc_Ceq for a description of how this works.
-    """
-    global DT_CEQUNIT_CACHE
-    id = hash(units)
-    if cache_hit := DT_CEQUNIT_CACHE.get(id):  # if the hashed units is in our cache...
-        compat_unit, unconverted_unit, unit_change = (
-            cache_hit  # access the relevant values in the cache
-        )
-    else:
-        if not isinstance(
-            units, Unit
-        ):  # create pint.Unit object from unit string argument
-            units = _u.Unit(units)
-
-        dmly = units.dimensionality
-        if dmly == ugw_mol_kg_K.dimensionality:  # amount gas / mass water / temperature
-            compat_unit = UEnum.GW_MOL_KG_K
-            unconverted_unit = ugw_mol_kg_K
-        elif (
-            dmly == ugw_mol_m3_K.dimensionality
-        ):  # amount gas / volume water / temperature
-            compat_unit = UEnum.GW_MOL_M3_K
-            unconverted_unit = ugw_mol_m3_K
-        elif (
-            dmly == ugw_mol_mol_K.dimensionality
-        ):  # amount gas / amount water / temperature
-            compat_unit = UEnum.GW_MOL_MOL_K
-            unconverted_unit = ugw_mol_mol_K
-        elif (
-            dmly == ugw_ccSTP_g_K.dimensionality
-        ):  # STP volume gas / mass water / temperature
-            compat_unit = UEnum.GW_CCSTP_G_K
-            unconverted_unit = ugw_ccSTP_g_K
-        elif (
-            dmly == ugw_ccSTP_mol_K.dimensionality
-        ):  # STP volume gas / amount water / temperature
-            compat_unit = UEnum.GW_CCSTP_MOL_K
-            unconverted_unit = ugw_ccSTP_mol_K
-        elif (
-            dmly == ugw_ccSTP_m3_K.dimensionality
-        ):  # STP volume gas / volume water / temperature
-            compat_unit = UEnum.GW_CCSTP_M3_K
-            unconverted_unit = ugw_ccSTP_m3_K
-        elif (
-            dmly == ugw_g_mol_K.dimensionality
-        ):  # mass gas / amount water / temperature
-            compat_unit = UEnum.GW_G_MOL_K
-            unconverted_unit = ugw_g_mol_K
-        elif dmly == ugw_g_m3_K.dimensionality:  # mass gas / volume water / temperature
-            compat_unit = UEnum.GW_G_M3_K
-            unconverted_unit = ugw_g_m3_K
-        elif dmly == ugw_g_g_K.dimensionality:  # mass gas / mass water / temperature
-            compat_unit = UEnum.GW_G_G_K
-            unconverted_unit = ugw_g_g_K
-        else:
-            raise ValueError(
-                f'Invalid/unimplemented value for unit ({units}). Try something like "mol_g/kg_w/K", "ccSTP_g/g_w/K" or "mol_g/m3_w/K".'
-            )
-
-        unit_change = unconverted_unit != units
-        DT_CEQUNIT_CACHE[id] = (
-            compat_unit,
-            unconverted_unit,
-            unit_change,
-        )  # add the units to the cache if it's not already there
-
-    # return dCeq/dT with desired units
-    if compat_unit == UEnum.GW_MOL_KG_K:
-        ret = dCeq_dT_molkgK
-    elif compat_unit == UEnum.GW_MOL_M3_K:
-        rho = calc_dens(T, S, magnitude=True)
-        drho_dT = calc_dens_Tderiv(T, S, magnitude=True)
-        ret = dCeq_dT_molkgK * rho + pref * Cstar * drho_dT
-    elif compat_unit == UEnum.GW_MOL_MOL_K:
-        ret = dCeq_dT_molkgK * MMW * 1e-3  # *1e-3: mol/kmol/K -> mol/mol/K
-    elif compat_unit == UEnum.GW_CCSTP_G_K:
-        mvol = mv(gas)
-        ret = dCeq_dT_molkgK * mvol * 1e-3  # *1e-3: cc/kg/K -> cc/g/K
-    elif compat_unit == UEnum.GW_CCSTP_MOL_K:
-        mvol = mv(gas)
-        ret = dCeq_dT_molkgK * MMW * mvol * 1e-3  # *1e-3: cc/kmol/K -> cc/mol/K
-    elif compat_unit == UEnum.GW_CCSTP_M3_K:
-        rho = calc_dens(T, S, magnitude=True)
-        mvol = mv(gas)
-        ret = dCeq_dT_molkgK * mvol * rho + pref * Cstar * mvol * drho_dT
-    elif compat_unit == UEnum.GW_G_MOL_K:
-        mmass = mm(gas)
-        ret = dCeq_dT_molkgK * mmass * MMW * 1e-3  # *1e-3: g/kmol/K -> g/mol/K
-    elif compat_unit == UEnum.GW_G_M3_K:
-        rho = calc_dens(T, S, magnitude=True)
-        drho_dT = calc_dens_Tderiv(T, S, magnitude=True)
-        mmass = mm(gas)
-        ret = dCeq_dT_molkgK * mmass * rho + pref * mmass * drho_dT * Cstar
-    elif compat_unit == UEnum.GW_G_G_K:
-        mmass = mm(gas)
-        ret = dCeq_dT_molkgK * mmass * 1e-3  # *1e-3: g/kg/K -> g/g/K
-    else:
-        raise ValueError(
-            f'Invalid/unimplemented value for unit ({units}). Try something like "mol_g/kg_w/K", "ccSTP_g/g_w/K" or "mol_g/m3_w/K".'
-        )
-
-    # return, after conversion if necessary - written like this to avoid _sto() for speed reasons
-    if magnitude and not unit_change:
-        return ret
-    elif magnitude:
-        return _sto(ret * unconverted_unit, units).magnitude
-    elif not unit_change:
-        return ret * unconverted_unit
-    else:
-        return _sto(ret * unconverted_unit, units)
-
-
-@_possibly_iterable
-@wraptpint((None, "degC", "permille", "atm", None, None, None), strict=False)
-def calc_dCeq_dS(
-    gas: str,
-    T: float | Quantity,
-    S: float | Quantity,
-    p: float | Quantity,
-    ab="default",
-    units="mol_g/kg_water/permille",
-    magnitude=False,
-) -> float | Iterable[float] | Quantity | Iterable[Quantity]:
-    """Calculate the salinity-derivative dCeq_dS of the waterside equilibrium
-    concentration of a given gas at water temperature T, salinity S and airside pressure p.\\
-    **Default input units** --- `T`:°C, `S`:‰, `p`:atm\\
-    **Output units** --- None
-
-    :param gas: Gas(es) for which dCeq_dS should be calculated
-    :type gas: str
-    :param T: Temperature
-    :type T: float | Quantity
-    :param S: Salinity
-    :type S: float | Quantity
-    :param p: Pressure
-    :type p: float | Quantity
-    :param units: Units in which dCeq_dS should be expressed
-    :type units: str | Unit, optional
-    :param ret_quant: Whether to return the result as a Pint Quantity instead of just a float, defaults to False
-    :type ret_quant: bool, optional
-    :raises ValueError: If the units given in units are unimplemented
-    :return: Waterside equilibrium concentration salinity derivative dCeq_dS of the given gas
-    :rtype: float|Iterable[float]|Quantity|Iterable[Quantity]
-    """
-    # vapour pressure over the water, calculated according to Dyck and Peschke 1995 (atm)
-    e_w = calc_vappres(T, magnitude=True) / 1013.25
-    # calculation of C*, the gas solubility/water-side concentration (mol/kg)
-    Cstar = calc_Cstar(gas, T, S, ab)
-    # factor to account for pressure
-    pref = (p - e_w) / (1 - e_w)
-    # return equilibrium concentration with desired units
-    # calculation of dC*/dS at the given T, S, p
-    T_K = T + TPW
-    if hasgasprop(gas, "isnoble"):
-        A1, A2, A3, A4, B1, B2, B3, C1 = jkc(gas).values()  # needs S in PSS78
-        dCstar_dS = (B1 + B2 * (T_K / 100) + B3 * (T_K / 100) ** 2 + 2 * C1 * S) * Cstar
-    elif gas in ["CFC11", "CFC12"]:
-        a1, a2, a3, a4, b1, b2, b3 = wwc(gas).values()  # needs S in parts per thousand
-        # TODO adopt for absolute salinity??
-        dCstar_dS = (b1 + b2 * (T_K / 100) + b3 * (T_K / 100) ** 2) * Cstar
-    elif gas == "SF6":
-        a1, a2, a3, b1, b2, b3 = blc(gas).values()  # don't know salinity unit
-        dCstar_dS = (b1 + b2 * (T_K / 100) + b3 * (T_K / 100) ** 2) * Cstar
-    elif gas == "N2":
-        A0, A1, A2, A3, B0, B1, B2 = hec(gas).values()  # PSS salinity
-        # T_s, temperature expression used in the calculation of C*
-        T_s = np.log((298.15 - T) / T_K)
-        dCstar_dS = (B0 + B1 * T_s + B2 * T_s**2) * Cstar
-
-    dCeq_dS_molkgpm = pref * dCstar_dS
-
-    """
-    Cache-and-compare system, written by Kai Riedmiller (Heidelberg Scientific Software Centre 
-    (https://www.ssc.uni-heidelberg.de/en/what-the-scientific-software-center-is-all-about/meet-our-team))
-    See calc_Ceq for a description of how this works.
-    """
-    global DS_CEQUNIT_CACHE
-    id = hash(units)
-    if cache_hit := DS_CEQUNIT_CACHE.get(id):  # if the hashed units is in our cache...
-        compat_unit, unconverted_unit, unit_change = (
-            cache_hit  # access the relevant values in the cache
-        )
-    else:
-        if not isinstance(
-            units, Unit
-        ):  # create pint.Unit object from unit string argument
-            units = _u.Unit(units)
-
-        dmly = units.dimensionality
-        if dmly == ugw_mol_kg_pml.dimensionality:  # amount gas / mass water / salinity
-            compat_unit = UEnum.GW_MOL_KG_PML
-            unconverted_unit = ugw_mol_kg_pml
-        elif (
-            dmly == ugw_mol_m3_pml.dimensionality
-        ):  # amount gas / volume water / salinity
-            compat_unit = UEnum.GW_MOL_M3_PML
-            unconverted_unit = ugw_mol_m3_pml
-        elif (
-            dmly == ugw_mol_mol_pml.dimensionality
-        ):  # amount gas / amount water / salinity
-            compat_unit = UEnum.GW_MOL_MOL_PML
-            unconverted_unit = ugw_mol_mol_pml
-        elif (
-            dmly == ugw_ccSTP_g_pml.dimensionality
-        ):  # STP volume gas / mass water / salinity
-            compat_unit = UEnum.GW_CCSTP_G_PML
-            unconverted_unit = ugw_ccSTP_g_pml
-        elif (
-            dmly == ugw_ccSTP_mol_pml.dimensionality
-        ):  # STP volume gas / amount water / salinity
-            compat_unit = UEnum.GW_CCSTP_MOL_PML
-            unconverted_unit = ugw_ccSTP_mol_pml
-        elif (
-            dmly == ugw_ccSTP_m3_pml.dimensionality
-        ):  # STP volume gas / volume water / salinity
-            compat_unit = UEnum.GW_CCSTP_M3_PML
-            unconverted_unit = ugw_ccSTP_m3_pml
-        elif dmly == ugw_g_mol_pml.dimensionality:  # mass gas / amount water / salinity
-            compat_unit = UEnum.GW_G_MOL_PML
-            unconverted_unit = ugw_g_mol_pml
-        elif dmly == ugw_g_m3_pml.dimensionality:  # mass gas / volume water / salinity
-            compat_unit = UEnum.GW_G_M3_PML
-            unconverted_unit = ugw_g_m3_pml
-        elif dmly == ugw_g_g_pml.dimensionality:  # mass gas / mass water / salinity
-            compat_unit = UEnum.GW_G_G_PML
-            unconverted_unit = ugw_g_g_pml
-        else:
-            raise ValueError(
-                f'Invalid/unimplemented value for unit ({units}). Try something like "mol_g/kg_w/permille", "ccSTP_g/g_w/permille" or "mol_g/m3_w/permille".'
-            )
-
-        unit_change = unconverted_unit != units
-        DS_CEQUNIT_CACHE[id] = (
-            compat_unit,
-            unconverted_unit,
-            unit_change,
-        )  # add the units to the cache if it's not already there
-
-    # return dCeq/dS with desired units
-    if compat_unit == UEnum.GW_MOL_KG_PML:
-        ret = dCeq_dS_molkgpm
-    elif compat_unit == UEnum.GW_MOL_M3_PML:
-        rho = calc_dens(T, S, magnitude=True)
-        drho_dS = calc_dens_Sderiv(T, S, magnitude=True)
-        ret = dCeq_dS_molkgpm * rho + pref * Cstar * drho_dS
-    elif compat_unit == UEnum.GW_MOL_MOL_PML:
-        ret = (
-            dCeq_dS_molkgpm * MMW * 1e-3
-        )  # *1e-3: mol/kmol/permille -> mol/mol/permille
-    elif compat_unit == UEnum.GW_CCSTP_G_PML:
-        mvol = mv(gas)
-        ret = dCeq_dS_molkgpm * mvol * 1e-3  # *1e-3: cc/kg/permille -> cc/g/permille
-    elif compat_unit == UEnum.GW_CCSTP_M3_PML:
-        rho = calc_dens(T, S, magnitude=True)
-        drho_dS = calc_dens_Sderiv(T, S, magnitude=True)
-        mvol = mv(gas)
-        ret = dCeq_dS_molkgpm * mvol * rho + pref * Cstar * mvol * drho_dS
-    elif compat_unit == UEnum.GW_CCSTP_MOL_PML:
-        mvol = mv(gas)
-        ret = (
-            dCeq_dS_molkgpm * MMW * mvol * 1e-3
-        )  # *1e-3: cc/kmol/permille -> cc/mol/permille
-    elif compat_unit == UEnum.GW_G_MOL_PML:
-        mmass = mm(gas)
-        ret = (
-            dCeq_dS_molkgpm * mmass * MMW * 1e-3
-        )  # *1e-3: g/kmol/permille -> g/mol/permille
-    elif compat_unit == UEnum.GW_G_M3_PML:
-        rho = calc_dens(T, S, magnitude=True)
-        drho_dS = calc_dens_Sderiv(T, S, magnitude=True)
-        mmass = mm(gas)
-        ret = dCeq_dS_molkgpm * mmass * rho + pref * mmass * drho_dS * Cstar
-    elif compat_unit == UEnum.GW_G_G_PML:
-        mmass = mm(gas)
-        ret = dCeq_dS_molkgpm * mmass * 1e-3  # *1e-3: g/kg/permille -> g/g/permille
-    else:
-        raise ValueError(
-            f'Invalid/unimplemented value for unit ({units}). Try something like "mol_g/kg_w/permille", "ccSTP_g/g_w/permille" or "mol_g/m3_w/permille".'
-        )
-
-    # return, after conversion if necessary - written like this to avoid _sto() for speed reasons
-    if magnitude and not unit_change:
-        return ret
-    elif magnitude:
-        return _sto(ret * unconverted_unit, units).magnitude
-    elif not unit_change:
-        return ret * unconverted_unit
-    else:
-        return _sto(ret * unconverted_unit, units)
-
-
-@_possibly_iterable
-@wraptpint((None, "degC", "permille", "atm", None, None, None), strict=False)
-def calc_dCeq_dp(
-    gas: str,
-    T: float | Quantity,
-    S: float | Quantity,
-    p: float | Quantity,
-    ab="default",
-    units="mol_gas/kg_water/atm",
-    magnitude=False,
-) -> float | Iterable[float] | Quantity | Iterable[Quantity]:
-    """Calculate the pressure-derivative dCeq_dp of the waterside equilibrium
-    concentration of a given gas at water temperature T, salinity S and airside pressure p.\\
-    **Default input units** --- `T`:°C, `S`:‰, `p`:atm\\
-    **Output units** --- None
-
-    :param gas: Gas(es) for which dCeq_dp should be calculated
-    :type gas: str
-    :param T: Temperature
-    :type T: float | Quantity
-    :param S: Salinity
-    :type S: float | Quantity
-    :param p: Pressure
-    :type p: float | Quantity
-    :param dCeq_dp_unit: Units in which dCeq_dp should be expressed
-    :type dCeq_dp_unit: str | Unit, optional
-    :param ret_quant: Whether to return the result as a Pint Quantity instead of just a float, defaults to False
-    :type ret_quant: bool, optional
-    :raises ValueError: If the units given in dCeq_dp_unit are unimplemented
-    :return: Waterside equilibrium concentration pressure derivative dCeq_dp of the given gas
-    :rtype: float | Iterable[float] | Quantity | Iterable[Quantity]
-    """
-    # molar volume and molar mass
-    mvol = mv(gas)
-    mmass = mm(gas)
-    # vapour pressure over the water, calculated according to Dyck and Peschke 1995 (atm)
-    e_w = calc_vappres(T, magnitude=True) / 1013.25
-    # density of the water (kg/m3)
-    rho = calc_dens(T, S, magnitude=True)
-    # calculation of C*, the gas solubility/water-side concentration (mol/kg)
-    Cstar = calc_Cstar(gas, T, S, ab)
-    # factor to account for pressure (this is the pressure-derivative of (p - e_w) / (1 - e_w))
-    pref = 1 / (1 - e_w)
-    # return equilibrium concentration with desired units
-
-    """
-    Cache-and-compare system, written by Kai Riedmiller (Heidelberg Scientific Software Centre 
-    (https://www.ssc.uni-heidelberg.de/en/what-the-scientific-software-center-is-all-about/meet-our-team))
-    See calc_Ceq for a description of how this works.
-    """
-    global DP_CEQUNIT_CACHE
-    id = hash(units)
-    if cache_hit := DP_CEQUNIT_CACHE.get(
-        id
-    ):  # if the hashed dCeq_dp_unit is in our cache...
-        compat_unit, unconverted_unit, unit_change = (
-            cache_hit  # access the relevant values in the cache
-        )
-    else:
-        if not isinstance(
-            units, Unit
-        ):  # create pint.Unit object from unit string argument
-            units = _u.Unit(units)
-
-        dmly = units.dimensionality
-        if dmly == ugw_mol_kg_atm.dimensionality:  # amount gas / mass water / pressure
-            compat_unit = UEnum.GW_MOL_KG_ATM
-            unconverted_unit = ugw_mol_kg_atm
-        elif (
-            dmly == ugw_mol_m3_atm.dimensionality
-        ):  # amount gas / volume water / pressure
-            compat_unit = UEnum.GW_MOL_M3_ATM
-            unconverted_unit = ugw_mol_m3_atm
-        elif (
-            dmly == ugw_mol_mol_atm.dimensionality
-        ):  # amount gas / amount water / pressure
-            compat_unit = UEnum.GW_MOL_MOL_ATM
-            unconverted_unit = ugw_mol_mol_atm
-        elif (
-            dmly == ugw_ccSTP_g_atm.dimensionality
-        ):  # STP volume gas / mass water / pressure
-            compat_unit = UEnum.GW_CCSTP_G_ATM
-            unconverted_unit = ugw_ccSTP_g_atm
-        elif (
-            dmly == ugw_ccSTP_mol_atm.dimensionality
-        ):  # STP volume gas / amount water / pressure
-            compat_unit = UEnum.GW_CCSTP_MOL_ATM
-            unconverted_unit = ugw_ccSTP_mol_atm
-        elif (
-            dmly == ugw_ccSTP_m3_atm.dimensionality
-        ):  # STP volume gas / volume water / pressure
-            compat_unit = UEnum.GW_CCSTP_M3_ATM
-            unconverted_unit = ugw_ccSTP_m3_atm
-        elif dmly == ugw_g_mol_atm.dimensionality:  # mass gas / amount water / pressure
-            compat_unit = UEnum.GW_G_MOL_ATM
-            unconverted_unit = ugw_g_mol_atm
-        elif dmly == ugw_g_m3_atm.dimensionality:  # mass gas / volume water / pressure
-            compat_unit = UEnum.GW_G_M3_ATM
-            unconverted_unit = ugw_g_m3_atm
-        elif dmly == ugw_g_g_atm.dimensionality:  # mass gas / mass water / pressure
-            compat_unit = UEnum.GW_G_G_ATM
-            unconverted_unit = ugw_g_g_atm
-        else:
-            raise ValueError(
-                f'Invalid/unimplemented value for unit ({units}). Try something like "mol_g/kg_w/atm", "ccSTP_g/g_w/atm" or "mol_g/m3_w/atm".'
-            )
-
-        unit_change = unconverted_unit != units
-        DP_CEQUNIT_CACHE[id] = (
-            compat_unit,
-            unconverted_unit,
-            unit_change,
-        )  # add the units to the cache if it's not already there
-
-    # return dCeq/dp with desired units
-    if compat_unit == UEnum.GW_MOL_KG_ATM:
-        ret = pref * Cstar
-    elif compat_unit == UEnum.GW_MOL_M3_ATM:
-        rho = calc_dens(T, S, magnitude=True)
-        ret = pref * Cstar * rho
-    elif compat_unit == UEnum.GW_MOL_MOL_ATM:
-        ret = pref * Cstar * MMW * 1e-3  # *1e-3: mol/kmol/atm -> mol/mol/atm
-    elif compat_unit == UEnum.GW_CCSTP_G_ATM:
-        mvol = mv(gas)
-        ret = pref * Cstar * mvol * 1e-3  # *1e-3: cc/kg/atm -> cc/g/atm
-    elif compat_unit == UEnum.GW_CCSTP_MOL_ATM:
-        mvol = mv(gas)
-        ret = pref * Cstar * MMW * mvol * 1e-3  # *1e-3: cc/kmol/atm -> cc/mol/atm
-    elif compat_unit == UEnum.GW_CCSTP_M3_ATM:
-        rho = calc_dens(T, S, magnitude=True)
-        mvol = mv(gas)
-        ret = pref * Cstar * mvol * rho
-    elif compat_unit == UEnum.GW_G_MOL_ATM:
-        mmass = mm(gas)
-        ret = pref * Cstar * mmass * MMW * 1e-3  # *1e-3: g/kmol/atm -> g/mol/atm
-    elif compat_unit == UEnum.GW_G_M3_ATM:
-        rho = calc_dens(T, S, magnitude=True)
-        mmass = mm(gas)
-        ret = pref * Cstar * mmass * rho
-    elif compat_unit == UEnum.GW_G_G_ATM:
-        mmass = mm(gas)
-        ret = pref * Cstar * mmass * 1e-3  # *1e-3: g/kg/permille -> g/g/permille
-    else:
-        raise ValueError(
-            f'Invalid/unimplemented value for unit ({units}). Try something like "mol_g/kg_w/atm", "ccSTP_g/g_w/atm" or "mol_g/m3_w/atm".'
-        )
-
-    # return, after conversion if necessary - written like this to avoid _sto() for speed reasons
-    if magnitude and not unit_change:
-        return ret
-    elif magnitude:
-        return _sto(ret * unconverted_unit, units).magnitude
-    elif not unit_change:
-        return ret * unconverted_unit
-    else:
-        return _sto(ret * unconverted_unit, units)
-
-
-@_possibly_iterable
-@wraptpint((None, "degC", "permille", "atm", None, None, None), strict=False)
-def calc_henry(
-    gas: str,
-    T: float | Quantity,
-    S: float | Quantity,
-    p: float | Quantity,
-    ab="default",
-    units="dimensionless",
-    magnitude=False,
-) -> float | Iterable[float] | Quantity | Iterable[Quantity]:
-    """Calculate the Henry solubility coefficient of a gas in water at water temperature T, salinity S and airside pressure p.\\
-    **Default input units** --- `T`:°C, `S`:‰, `p`:atm\\
-    **Output units** --- dimensionless\\
-    The type of solubility coefficient (`solcoeff_type`) can be:
-    * dimensionless (`'dimensionless'`, `''`)
-    * amount gas / volume water / partial pressure (`'mol/L/Pa'`)
-    * STP volume gas / volume water / partial pressure (`'Pa^-1'`)
-    * amount gas / amount water / partial pressure (`Pa^-1`)
-
-    :param gas: Gas(es) for which the solubility coefficient should be calculated.
-    :type gas: str
-    :param T: Temperature
-    :type T: float | Quantity
-    :param S: Salinity
-    :type S: float | Quantity
-    :param p: Pressure
-    :type p: float | Quantity
-    :param solcoeff_type: Units of solubility coefficient, defaults to 'dimensionless'
-    :type solcoeff_type: str, optional
-    :raises ValueError: If the type of solubility coefficient is unimplemented
-    :return: Solubility coefficient of the given gas
-    :rtype: float | Iterable[float] | Quantity | Iterable[Quantity]
-    """
-    # gas abundance
-    if ab == "default":
-        ab = abn(gas)
-    else:
-        ab = ab
-    # vapour pressure in air
-    e_w = calc_vappres(T, magnitude=True)
-    # temperature degrees to K
-    T_K = T + TPW
-    # gas-side concentration
-    C_g = (
-        100 * ab * (p * 1013.25 - e_w) / MGC / T_K
-    )  # x100 to convert from hPa mol / J to mol / m^3
-    # water-side concentration
-    C_w = calc_Ceq(gas, T, S, p, ab=ab, magnitude=True, units="mol_gas/m3_water")
-    # calculate Henry coefficient H [L_water / L_air]
-    H = C_g / C_w
-
-    global HENUNIT_CACHE
-    id = hash(units)
-    if cache_hit := HENUNIT_CACHE.get(id):  # if the hashed unit is in our cache...
-        compat_unit, unconverted_unit, unit_change = (
-            cache_hit  # access the relevant values in the cache
-        )
-    else:
-        if not isinstance(
-            units, Unit
-        ):  # create pint.Unit object from unit string argument
-            units = _u.Unit(units)
-
-        dmly = units.dimensionality
-        if dmly == u_dimless.dimensionality:
-            compat_unit = UEnum.DIMLESS
-            unconverted_unit = u_dimless
-        else:
-            raise ValueError(
-                f"Invalid/unimplemented value for unit ({units}). Currently, only dimensionless units are supported for Henry coefficients"
-            )
-
-        unit_change = unconverted_unit != units
-        HENUNIT_CACHE[id] = (
-            compat_unit,
-            unconverted_unit,
-            unit_change,
-        )  # add the unit to the cache if it's not already there
-
-    # return H with desired units
-    if compat_unit == UEnum.DIMLESS:
-        ret = H
-    else:
-        raise ValueError(
-            f"Invalid/unimplemented value for unit ({units}). Currently, only dimensionless units are supported for Henry coefficients"
-        )
-
-    # return, after conversion if necessary - written like this to avoid _sto() for speed reasons
-    if magnitude and not unit_change:
-        return ret
-    elif magnitude:
-        return _sto(ret * unconverted_unit, units).magnitude
-    elif not unit_change:
-        return ret * unconverted_unit
-    else:
-        return _sto(ret * unconverted_unit, units)
+    try:
+        return gas.calc_Ceq(T, S, p, ab)
+    except AttributeError:
+        return gases_dict[gas].calc_Ceq(T, S, p, ab)

@@ -1,6 +1,6 @@
 from pint.testing import assert_allclose, assert_equal
 
-from pagos.newcore import pQ, set_warn_nonmult
+from pagos.core import pQ, set_warn_nonmult
 
 import unittest
 

@@ -1,6 +1,6 @@
-from pagos.newcore import pQ
-from pagos.newmodelling import TracerModel
-from pagos.gasobject import calc_Ceq, abn
+from pagos.core import pQ
+from pagos.modelling import TracerModel
+from pagos.gas import calc_Ceq, abn
 from numpy.testing import assert_approx_equal
 
 

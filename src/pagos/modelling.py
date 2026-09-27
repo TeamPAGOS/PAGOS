@@ -1,936 +1,787 @@
-"""
-Functions for fitting models, creating new ones and running existing ones.
-"""
-
-from pint import Quantity, Unit
-from uncertainties import ufloat
-from uncertainties.core import Variable, AffineScalarFunc
-from collections.abc import Iterable
-from typing import Callable
-import inspect
-import numpy as np
-import pandas as pd
-from lmfit import minimize, Parameters, Model, Minimizer
-import wrapt
-from tqdm import tqdm
-from inspect import signature
+from numbers import Number
 import re
 import warnings
-from numpy.random import normal
+
+from pagos.core import (
+    MC_LIST,
+    PAGOSQuantity,
+    end_mc_cycle,
+    is_first_mc_pass,
+    pQ,
+    set_mc,
+    unit_aware,
+    _set_fast,
+    begin_new_mc_cycle,
+    end_of_first_mc_cycle_pass,
+)
+import numpy as np
+import pandas as pd
+from lmfit import fit_report, minimize, Parameters
 from tqdm import tqdm
+from collections.abc import Callable, Iterable
+from inspect import getfullargspec, signature
 
-from pagos.core import u as _u, Q as _Q, snv as _snv, sto as _sto
-from pagos.core import _possibly_iterable, _set_possit, _set_wp
+rng = np.random.default_rng()
 
 
-class GasExchangeModel:
-    """
-    Object that holds a function representing a gas exchange model and its methods, including
-    fitting to data and forward-modelling given an input.
-    """
+class FitDataFrameMCResult:
+    def __init__(
+        self, index: pd.Index, regressors_to_fit: list | dict, n_mc_draws: int
+    ):
+        """Holds results of TracerModel.fit_dataframe, when a Monte Carlo procedure has been performed.
 
+        Args:
+            index (Index): `Index` of each `DataFrame` corresponding to one MC draw
+            regressors_to_fit (list | dict): Fit parameters
+            n_mc_draws (int): Number of MC draws
+        """
+
+        self.mc_frames: list[pd.DataFrame] = [
+            pd.DataFrame(
+                index=index,
+                columns=(
+                    regressors_to_fit
+                    if isinstance(regressors_to_fit, list)
+                    else regressors_to_fit.keys()
+                ),
+                dtype=np.float64,
+            )
+            for k in range(n_mc_draws)
+        ]
+
+    def set_results(self, result, j: int, k: int):
+        self.mc_frames[k].iloc[j] = result
+
+    def get_result(self, param: str | tuple[str]):
+        """Get the results of a parameter or many parameters after an MC-fitting procedure.
+
+        Args:
+            param (str | tuple[str]): The parameter(s) to obtain.
+
+        Returns:
+            NDArray | dict[str, NDArray]: (`n` x `m`) array, where `n` is the number of samples that were fitted, and `m` the number of MC draws.
+        """
+
+        def _return(p):
+            return np.array(
+                [mc_frame[p].to_numpy() for mc_frame in self.mc_frames]
+            ).transpose()
+
+        if isinstance(param, str):
+            return _return(param)
+        else:
+            return {p: _return(p) for p in param}
+
+
+class TracerModel:
     def __init__(
         self,
         model_function: Callable,
-        default_units_in: list[str],
-        default_units_out: str,
-        jacobian: Callable = None,
-        jacobian_units: list[str] = None,
+        default_units_in: dict | None = None,
+        default_units_out: str | None = None,
+        # jacobian: Callable = None,        TODO later?
+        # jacobian_units: list[str] = None  TODO later?
     ):
+        """Object that holds a function representing a tracer model and its methods,
+        including fitting to data and forward modelling given an input.
+
+        Args:
+            model_function (Callable): function representing the model
+            default_units_in (dict | None): units of the input arguments to `model_function` to be **assumed** if none are explicitly given.
+                Must be in the same order as the arguments to `model_function`.
+                If `None`, then tries to proceed assuming that `model_function` is already wrapped with `unit_aware`.
+            default_units_out (str): the units which the output of `model_function` should be **converted to**
+
+        Raises:
+            TypeError: if default_units_in is not a dictionary or None
+            ValueError: if default_units_in does not have one entry for every argument to model_function (except the tracer)
         """
-        :param model_function: function represented in the GasExchangeModel object.
-        :type model_function: Callable
-        :param default_units_in: strings specifying the units of the input arguments to `model_function` that will be **assumed** if none are given.
-        Must be in the same order as the arguments to `model_function`.
-        :type default_units_in: list[str]
-        :param default_units_out: single string specifying which units to **convert** the output of `model_function` to.
-        Note that conversion happens **after** calculation.
-        :type default_units_out: str
-        :param jacobian: function returning a numpy array of derivatives of `model_function` with respect to its parameters, i.e. a jacobian matrix.
-        Defaults to None.
-        :type jacobian: Callable, optional
-        :param jacobian_units: strings specifying which units to **convert** the output of the `jacobian` to.
-        Note that this has **no effect** on the `fit` method. Defaults to None
-        :type jacobian_units: list[str], optional
-        """
-        # force default units into list:
-        if default_units_in == None or type(default_units_in) == str:
-            default_units_in = [default_units_in]
-        else:
-            default_units_in = list(default_units_in)
+
+        # check type of default_units_in
+        if not isinstance(default_units_in, (dict)) and default_units_in is not None:
+            raise TypeError("default_units_in must be a dictionary or None")
+
         # set instance variables
-        # if default_units_in argument did not include None at the start for the gas parameter, add this in here
-        self._model_function_in = model_function
-        self.default_units_in = self._check_units_list_against_sig(
-            model_function, default_units_in
-        )
-        self.default_units_out = default_units_out
-        self.model_arguments = inspect.getfullargspec(self._model_function_in).args
-        self.default_units_in_dict = {
-            key: val for key, val in zip(self.model_arguments, self.default_units_in)
-        }
 
-        self._jacobian_in = jacobian
-        self.jacobian_units = jacobian_units
+        # list of parameters in the model function's signature
+        self.modelfunc_params = list(signature(model_function).parameters)
 
-        # the function and jacobian that will run if the user does not specify units_in or units_out when calling run() and runjac()
-        self.model_function = _possibly_iterable(
-            _u.wraps(self.default_units_out, self.default_units_in, strict=False)(
-                self._model_function_in
-            )
-        )
-        self.model_func_sig = signature(self.model_function)
-        # fast versions that are called in fit()
-        self.model_function_fast = _possibly_iterable(self._model_function_in)
-        self.model_func_fast_sig = signature(self.model_function_fast)
-
-        if self._jacobian_in is None:
-            self.runjac = None
-        else:
-            # case: no output units are provided for the Jacobian - defaults to model function units divided by parameter units
-            if self.jacobian_units is None:
-                # Jacobian units set according to:
-                self.jacobian_units = [
-                    default_units_out
-                    if dui
-                    in (
-                        "",
-                        "dimensionless",
-                        None,
-                    )  # Uᴶᵢ = Uᴼᵁᵀ                if Uᴵᴺ do not have dimensions
-                    else default_units_out
-                    + "/("
-                    + dui
-                    + ")"  # Uᴶᵢ = Uᴼᵁᵀ / Uᴵᴺᵢ         if Uᴵᴺ have dimensions
-                    for dui in default_units_in
-                ]  #     where Uᴶᵢ = units of Jacobian row i, Uᴼᵁᵀ = default units out, Uᴵᴺᵢ = iᵗʰ default unit in
-                # NOTE this^ used to be tuple() but this screwed up possibly_iterable... should the units all have to be lists?
-                self.model_jacobian = _possibly_iterable(
-                    _u.wraps(self.jacobian_units, self.default_units_in, strict=False)(
-                        self._jacobian_in
-                    )
-                )
-                self.model_jac_sig = signature(self.model_jacobian)
-            # case: user-defined Jacobian output units are given
-            elif all(
-                ju is None
-                or (_u.Unit(dui) * _u.Unit(ju)).is_compatible_with(
-                    _u.Unit(default_units_out)
-                )
-                for dui, ju in zip(default_units_in, jacobian_units)
-            ):
-                self.model_jacobian = _possibly_iterable(
-                    _u.wraps(self.jacobian_units, self.default_units_in, strict=False)(
-                        self._jacobian_in
-                    )
-                )
-                self.model_jac_sig = signature(self.model_jacobian)
+        if default_units_in is not None:
+            # if default_units_in argument did not include None
+            # at the start for the tracer parameter, add this in here
+            if len(default_units_in) == len(self.modelfunc_params) - 1:
+                self.default_units_in = {
+                    self.modelfunc_params[0]: None
+                } | default_units_in
+            elif len(default_units_in) == len(self.modelfunc_params):
+                self.default_units_in = default_units_in
             else:
                 raise ValueError(
-                    "Jacobian output units are incommensurable with the model function input and output units.\nShould follow dim[jacobian_i] = dim[output] / dim[input_i]."
+                    "default_units_in should have one entry for every argument to model_function (except the tracer)."
                 )
-            self.model_jacobian_fast = _possibly_iterable(self._jacobian_in)
-            self.model_jac_fast_sig = signature(self.model_jacobian_fast)
+        else:
+            try:
+                self.default_units_in = model_function.default_units_in
+            except AttributeError:
+                self.default_units_in = None
+
+        self.default_units_out = default_units_out
+        self.model_function = unit_aware(self.default_units_in, self.default_units_out)(
+            model_function
+        )
+
+        # initialisation of objective function which will be used for fitting
+        def objfunc(
+            regressors: Parameters,
+            tracers: list,
+            obs_tr: np.ndarray,
+            obs_tr_errs: np.ndarray,
+        ):
+            """This is the objective function that will be minimised by
+            lmfit.minimize. It is the residual of observed and modelled data.
+
+            Args:
+                regressors (Parameters): `Parameters` object holding all fixed and variable regressors to be passed to `minimize` (all non-tracer variables of the model)
+                tracers (list): the tracers that will be used (e.g. `['He', 'Ne', 'Ar']`)
+                obs_tr (np.ndarray): observed tracer values, in the order of the `tracers` list, stripped of units
+                obs_tr_errs (np.ndarray): observed tracer errors, in the order of the `tracers` list, stripped of units
+            """
+
+            # unpack parameters
+            regr_dict = regressors.valuesdict()
+
+            mod_tr = np.array(
+                [self.model_function(tr, **regr_dict).value for tr in tracers]
+            )
+            if obs_tr_errs is not None:
+                norm_resid = (mod_tr - obs_tr) / obs_tr_errs
+            else:
+                norm_resid = mod_tr - obs_tr
+
+            if is_first_mc_pass():
+                # at the end of the first call of the objective function,
+                # we convert the stored list of MC factors into a cycle
+                # and activate fast calculations
+                end_of_first_mc_cycle_pass()
+
+            # returns an array of residuals. minimize() will automatically square and sum the elements of the array for the LM algorithm
+            return norm_resid
+
+        self.objfunc = objfunc
 
     def run(
         self,
-        *args_to_model_func,
-        units_in="default",
-        units_out="default",
-        **kwargs_to_model_func,
-    ):
+        *args_to_model_func: Iterable,
+        units_in: Iterable[str] = "default",
+        units_out: str = "default",
+        **kwargs_to_model_func: dict,
+    ) -> PAGOSQuantity:
         """Run the model function.
 
+        :param *args_to_model_func: Arguments to be passed into the model function
+        :type *args_to_model_func: Iterable
         :param units_in: Units of the parameters going into the model, defaults to 'default'
-        :type units_in: str, optional
+        :type units_in: Iterable[str], optional
         :param units_out: Units returned by the model, defaults to 'default'
         :type units_out: str, optional
+        :param **kwargs_to_model_func: Keyword arguments to be passed into the model function
+        :type **kwargs_to_model_func: dict
         :return: Result of model function run with the given parameters
+        :rtype: PAGOSQuantity
         """
-        # prescribe units if units out or in differ from defaults
+
+        # prescribe units if units_out or units_in differ from defaults
+        # if units_in argument did not include None
+        # at the start for the tracer parameter, add this in here
         if units_in == "default":
-            units_in = self.default_units_in_dict
-        elif type(units_in) != dict:
-            # set the units_in - append a None value to the units_in tuple for the "units" of the gas argument if this has not already been done by the user
-            units_in = self._check_units_list_against_sig(
-                self._model_function_in, units_in
-            )
-            # if units are provided in the form of an array instead of a dict, make it a dict
-            units_in = {k: u for k, u in zip(self.model_func_sig.parameters, units_in)}
+            units_in = self.default_units_in
+        elif len(units_in) == len(self.modelfunc_params) - 1:
+            units_in = {self.modelfunc_params[0]: None} | units_in
+        elif len(units_in) == len(self.modelfunc_params):
+            pass
         else:
-            units_in = self._check_units_dict_against_sig(
-                self._model_function_in, units_in
+            raise ValueError(
+                'units_in should either be "default" or an array with one entry per argument to the model function (except the tracer).'
             )
-        args_to_model_func = self._convert_or_make_quants_list(
-            args_to_model_func, units_in
-        )
-        kwargs_to_model_func = self._convert_or_make_quants_dict(
-            kwargs_to_model_func, units_in
-        )
 
-        # TODO is wraps functionality lost here by passing in quantities?
-        result = self.model_function(
-            *args_to_model_func, disablenext=True, **kwargs_to_model_func
-        )
-        _set_possit(True)
+        # force to list
+        args_to_model_func = list(args_to_model_func)
+
+        if units_in is not None:
+            # convert all arguments passed in to PAGOSQuantity objects
+            for i, (argname, val) in enumerate(
+                zip(self.modelfunc_params[1:], args_to_model_func[1:]), start=1
+            ):
+                # we skip the first element of args_to_model_func, as this must be the tracer,
+                # which has no units
+                if isinstance(val, Number):
+                    args_to_model_func[i] = pQ(val, units_in[argname])
+            # the keyword arguments, if they have units, will take units
+            for k in kwargs_to_model_func:  # noqa: PLC0206
+                if isinstance(kwargs_to_model_func[k], Number):
+                    kwargs_to_model_func[k] = pQ(kwargs_to_model_func[k], units_in[k])
+
+        result = self.model_function(*args_to_model_func, **kwargs_to_model_func)
+
         if units_out != "default":
-            result = _sto(result, units_out, strict=False)
-        return result
+            return result.to(units_out)
+        else:
+            return result
 
-    def runjac(
+    def _fit(
         self,
-        *args_to_jac_func,
-        units_in="default",
-        units_out="default",
-        **kwargs_to_jac_func,
+        regr_params_object: Parameters,
+        tracers: list,
+        obs_tr: np.ndarray,
+        obs_tr_errs: np.ndarray | None,
+        regr_to_fit_bounds: dict | None = None,
     ):
-        """Run the model Jacobian.
-
-        :param units_in: Units of the parameters going into the Jacobian, defaults to 'default'
-        :type units_in: str, optional
-        :param units_out: Units returned by the Jacobian, defaults to 'default'
-        :type units_out: str, optional
-        :return: Result of model Jacobian run with the given parameters
-        """
-        # NOTE I think due to the nature of this construction, jacobian should always have the same signature as model_function
-        # prescribe units if units out or in differ from defaults
-        if units_in == "default":
-            units_in = self.default_units_in_dict
-        elif type(units_in) != dict:
-            # set the units_in - append a None value to the units_in tuple for the "units" of the gas argument if this has not already been done by the user
-            units_in = self._check_units_list_against_sig(self._jacobian_in, units_in)
-            # if units are provided in the form of an array instead of a dict, make it a dict
-            units_in = {k: u for k, u in zip(self.model_jac_sig.parameters, units_in)}
-        else:
-            units_in = self._check_units_dict_against_sig(self._jacobian_in, units_in)
-        args_to_jac_func = self._convert_or_make_quants_list(args_to_jac_func, units_in)
-        kwargs_to_jac_func = self._convert_or_make_quants_dict(
-            kwargs_to_jac_func, units_in
+        # fit objective function to provided data
+        fit_result = minimize(
+            self.objfunc, regr_params_object, args=(tracers, obs_tr, obs_tr_errs)
         )
-
-        result = self.model_jacobian(
-            *args_to_jac_func, disablenext=True, **kwargs_to_jac_func
-        )  # list(self.model_jacobian(*args_to_jac_func, **kwargs_to_jac_func)) # TODO have to wrap this in list(), I think due to pint wraps() handling arrays... could this lead to performance slowdown via redundant casting?
-        _set_possit(True)
-        if units_out != "default":
-            result = _sto(
-                result, units_out, strict=False, possit=(0, 1)
-            )  # possit keyword makes _sto iterate over result and units_out simultaneously, see core.py > _possibly_iterable
-        return result
-
-    def run_fast(self, *args_to_model_func, **kwargs_to_model_func):
-        _set_wp(
-            False
-        )  # TODO should this be outside the run function and instead in an enclosing fit scope?
-        result = self.model_function_fast(
-            *args_to_model_func, disablenext=True, **kwargs_to_model_func
-        )  # TODO should this be the unwrapped version without possibly_iterable?
-        _set_possit(True)
-        _set_wp(True)
-        return result
-
-    def runjac_fast(self, *args_to_jac_func, **kwargs_to_jac_func):
-        _set_wp(
-            False
-        )  # TODO should this be outside the run function and instead in an enclosing fit scope?
-        result = self.model_jacobian_fast(
-            *args_to_jac_func, disablenext=True, **kwargs_to_jac_func
-        )
-        _set_possit(True)
-        _set_wp(True)
-        return result
-
-    @staticmethod
-    def _check_units_list_against_sig(func, units):
-        if len(units) == len(signature(func).parameters) - 1:
-            return [None] + units
-        else:
-            return units
-
-    @staticmethod
-    def _check_units_dict_against_sig(func, units):
-        sigparams = signature(func).parameters
-        if len(units) == len(sigparams) - 1:
-            ret = units
-            gasparam = [p for p in sigparams if p not in units][0]
-            ret[gasparam] = None
-            return ret
-        else:
-            return units
-
-    @staticmethod
-    def _convert_or_make_quants_list(values, units):
-        ret = [
-            v
-            if units[k] is None
-            else _sto(v, units[k])
-            if isinstance(v, Quantity)
-            else _Q(v, units[k])
-            for v, k in zip(values, units)
-        ]
-        return ret
-
-    @staticmethod
-    def _convert_or_make_quants_dict(valsdict, units):
-        ret = {
-            k: (
-                v
-                if units[k] is None
-                else _sto(v, units[k])
-                if isinstance(v, Quantity)
-                else _Q(v, units[k])
-            )
-            for v, k in zip(valsdict.values(), valsdict.keys())
-        }
-        return ret
+        return fit_result
 
     def fit(
         self,
-        data: pd.DataFrame,
-        to_fit: Iterable[str],
-        init_guess: Iterable[float] | Iterable[str] | Iterable[Iterable[float]],
-        tracers_used: Iterable[str],
-        constraints: dict = None,
-        tqdm_bar: bool = False,
-        do_warnings: bool = True,
-    ) -> pd.DataFrame:
-        """Fit the parameters of a `GasExchangeModel` using a `DataFrame` of hydrological observations.
-
-        :param data: Hydrological data.
-        :type data: pd.DataFrame
-        :param to_fit: List of parameters to be fitted, corresponding to arguments of the function of the `model_function`/`run`.
-        :type to_fit: Iterable[str]
-        :param init_guess: List of initial guesses for the fitted parameters in `to_fit`. Can be 2D (n_initguesses x n_data), specifying a set of IGs for each sample in `data`, or a list of strings corresponding to columns in `data` to use as sets of IGs.
-        :type init_guess: Iterable[float] | Iterable[str] | Iterable[Iterable[float]]
-        :param tracers_used: List of tracers used to fit each set of parameters.
-        :type tracers_used: Iterable[str]
-        :param custom_labels: Dictionary describing the correspondences of the column headings of `data` to the tracer strings in `tracers_used`, in format `{heading1:tracer1, heading2:tracer2, ...}`, defaults to None.
-        :type custom_labels: dict, optional
-        :param constraints: Dictionary of bounds on the fitted parameters, in format `{param1:(min1, max1), param2:(min2, max2), ...}`, defaults to None.
-        :type constraints: dict, optional
-        :return: `DataFrame` of the hydrological data and the corresponding fitted parameters.
-        :rtype: pd.DataFrame
-        """
-
-        # input to objective function: all parameters (fitted and set), tracers to calculate, observed data and their errors, parameter and tracer units
-        def objfunc(
-            parameters,
-            tracers,
-            observed_data,
-            observed_errors,
-            observed_parameter_errors,
-        ):
-            # separation of parameter names and values
-            parameter_names = list(parameters.valuesdict().keys())
-            parameter_values = list(parameters.valuesdict().values())
-            paramsdict = {
-                parameter_names[i]: parameter_values[i]
-                for i in range(len(parameter_names))
+        fixed_regressors: dict,
+        regressors_to_fit: dict,
+        tracers: list,
+        obs_tr: np.ndarray,
+        obs_tr_errs: np.ndarray | None,
+        regr_to_fit_bounds: dict | None = None,
+        comes_from_fit_df: bool = False,
+    ):
+        if not comes_from_fit_df:
+            # Perform pre-conversion of inputs' units to self.default_units_in and always
+            # take the value. This is because self.objfunc will expect non-unit-laden inputs
+            # that are nevertheless valued as if with units of self.default_units_in.
+            # This is unnecessary if the data came from the method fit_dataframe, hence the
+            # if statement
+            fixed_regressors = {
+                k: pQ(fixed_regressors[k], self.default_units_in[k]).value
+                if isinstance(fixed_regressors[k], (PAGOSQuantity, Number))
+                else fixed_regressors[k]
+                for k in fixed_regressors
+            }
+            regressors_to_fit = {
+                k: pQ(regressors_to_fit[k], self.default_units_in[k]).value
+                for k in regressors_to_fit
             }
 
-            # TODO NEXT hotfix for MC, refine this later!
-            if isMCEnabled():
-                # for example, this should definitely not be called every time to get the length!
-                new_obs = np.empty(len(observed_data))
-                for i in range(len(observed_data)):
-                    # can we make mc _possibly_iterable?
-                    new_obs[i] = mc(observed_errors[i] / observed_data[i])(
-                        observed_data[i]
-                    )
-                observed_data = new_obs
-
-                # TODO also part of hotfix - allowing parameters set by observation to vary with MC
-                new_observed_params = paramsdict.copy()
-                for i in range(len(observed_parameter_errors)):
-                    p = parameter_names[i]
-                    if observed_parameter_errors[i] is not None:
-                        mcdraw_param = mc(observed_parameter_errors[i] / paramsdict[p])(
-                            paramsdict[p]
-                        )
-                        new_observed_params[parameter_names[i]] = mcdraw_param
-                paramsdict = new_observed_params
-
-            modelled_data = self.run_fast(tracers, **paramsdict)
-            resetMCPointer()
-
-            # if there is an error associated with every observation, weight by the errors
-            if all(e is not None and not np.isnan(e) for e in observed_errors):
-                return (modelled_data - observed_data) / observed_errors
+        # turn regressors dictionary into Parameters object (passed into minimize())
+        regr_params_object = Parameters()
+        for k in fixed_regressors:
+            # add fixed regressor to Parameters object
+            regr_params_object.add(k, fixed_regressors[k], vary=False)
+        for k in regressors_to_fit:
+            # apply bounds to fitted parameters if they are present
+            if regr_to_fit_bounds:
+                try:
+                    _min, _max = regr_to_fit_bounds[k]
+                except KeyError:
+                    _min, _max = (-np.inf, np.inf)
             else:
-                return modelled_data - observed_data
+                _min, _max = (-np.inf, np.inf)
+            # add variable regressor to Parameters object
+            regr_params_object.add(
+                k, regressors_to_fit[k], vary=True, min=_min, max=_max
+            )
 
-        def jacfunc(parameters, tracers, observed_data, observed_errors):
-            # separation of parameter names and values
-            parameter_names = list(parameters.valuesdict().keys())
-            parameter_values = list(parameters.valuesdict().values())
-            paramsdict = {
-                parameter_names[i]: parameter_values[i]
-                for i in range(len(parameter_names))
-            }
+        # begin a new Monte Carlo cycle - all calls to the objective function should repeat the same MC variations
+        # otherwise the objective function can never be minimised!
+        begin_new_mc_cycle()
 
-            modelled_jac = self.runjac_fast(tracers, **paramsdict)
-
-            # Jacobian term selection (different Jacobian depending on which parameters are to be fitted)
-            # e.g. if only parameters T, S of a model C(T, S, p, A) are to be fitted, Jacobian should be [dC/dT, dC/dS] without p and A derivatives
-            jindx = [
-                i
-                for i, p in enumerate(list(self.model_jac_sig.parameters)[1:])
-                if p in to_fit
-            ]  # TODO can this be moved outside of jacfunc?
-
-            ntracers = len(tracers)
-            if (
-                modelled_jac.shape[0] != ntracers
-            ):  # TODO: verify that either that modelled_jac will ALWAYS be np.ndarray or change to accommodate other iterables
-                raise ValueError(
-                    "The columns of the jacobian have length %s. All columns must have length %s"
-                    % (modelled_jac.shape[1], ntracers)
-                )
-            jac_cut_to_fit = modelled_jac[:, jindx]
-
-            for i in range(len(jindx)):
-                jac_cut_to_fit[:, i] = jac_cut_to_fit[:, i] / observed_errors
-
-            return jac_cut_to_fit
-
-        data_is_df = isinstance(data, pd.DataFrame)
-        model_arg_names = self.model_arguments
-
-        # convert tracers_used to list
-        if type(tracers_used) == np.ndarray:
-            tracers_used = tracers_used.tolist()
-
-        # get list of model parameters set by observation
-        dont_fit_these_args = [
-            a for a in model_arg_names if a not in to_fit and a != "gas"
-        ]  # TODO is != 'gas' the most robust way?
-
-        # get list of fitted parameter units
-        def_fit_param_units = [
-            self.default_units_in_dict[p] for p in to_fit
-        ]  # ordered in the same way as to_fit
-
-        # prevent jacobian from entering minimize() function if none was provided
-        if self.runjac is None:
-            jacfunc = None
-
-        # convert input to numpy arrays
-        tracers_used, dont_fit_these_args, to_fit = (
-            np.array(tracers_used),
-            np.array(dont_fit_these_args),
-            np.array(to_fit),
+        fitted = self._fit(
+            regr_params_object,
+            tracers,
+            obs_tr,
+            obs_tr_errs,
+            regr_to_fit_bounds,
         )
 
-        if data_is_df:
-            # fit procedure if the data is a DataFrame
-            obs_tracers, obs_tr_errs, obs_tr_units, obs_params, obs_params_errs = (
-                _prepare_data(
-                    data,
-                    tracers_used,
-                    dont_fit_these_args,
-                    self.default_units_out,
-                    do_warnings,
-                )
-            )
+        end_mc_cycle()
 
-            # perform fit for each row
-            ret = pd.DataFrame(columns=to_fit, index=np.arange(len(obs_tracers)))
-            # show loading bar if desired
-            if tqdm_bar:
-                ran = tqdm(range(len(obs_tracers)))
-            else:
-                ran = range(len(obs_tracers))
-            for i in ran:
-                vi, ei, ui, opi, opei = (
-                    obs_tracers[i],
-                    obs_tr_errs[i],
-                    obs_tr_units[i],
-                    obs_params[i],
-                    obs_params_errs[i],
-                )
+        return fitted
 
-                fitted_params = _perform_single_fit(
-                    objfunc,
-                    vi,
-                    ei,
-                    ui,
-                    opi,
-                    opei,
-                    tracers_used,
-                    dont_fit_these_args,
-                    to_fit,
-                    init_guess,
-                    constraints,
-                    def_fit_param_units,
-                    self.default_units_out,
-                    jacfunc,
-                )
-                for j, tf in enumerate(to_fit):
-                    ret.loc[i, tf] = _Q(
-                        fitted_params[tf].value,
-                        def_fit_param_units[j],
-                        fitted_params[tf].stderr,
-                    )
-        else:
-            # fit procedure if the data is a single tuple
-            obs_tracers, obs_tr_errs, obs_tr_units, obs_params = data
+    def fit_dataframe(
+        self,
+        data: pd.DataFrame,
+        tracers: list,
+        regressors_to_fit: dict | list,
+        regr_to_fit_bounds: dict | None = None,
+        do_warnings: bool = True,
+        tqdm_bar: bool = True,
+        nmc: int = 0,
+    ) -> pd.DataFrame | FitDataFrameMCResult:
 
-            # allow for just single values to have been input for errors and units
-            if not hasattr(
-                obs_tr_errs, "__len__"
-            ):  # <- checks if a single value was given for the error
-                obs_tr_errs = np.full(len(obs_tracers), obs_tr_errs)
-            if isinstance(
-                obs_tr_units, str
-            ):  # <- checks if a single string was given for the unit
-                obs_tr_units = np.full(len(obs_tracers), obs_tr_units)
+        n_samples = data.shape[0]
 
-            # force input into numpy arrays
-            obs_tracers, obs_tr_errs, obs_tr_units, obs_params = (
-                np.array(obs_tracers),
-                np.array(obs_tr_errs),
-                np.array(obs_tr_units),
-                np.array(obs_params),
-            )
+        # The observations for each fixed regressor as a dictionary of parameter names and an array of values
+        # The tracer observations as a matrix [n_tracers] x [n_samples]
+        # The tracer observation errors as a matrix [n_tracers] x [n_samples]
+        (
+            obs_foreach_fixed_regressor,
+            errs_foreach_fixed_regressor,
+            tracer_obs_matrix,
+            tracer_errs_matrix,
+        ) = self.prepare_dataframe_for_fitting(
+            data, tracers, regressors_to_fit, do_warnings
+        )
 
-            fitted_params = _perform_single_fit(
-                objfunc,
-                obs_tracers,
-                obs_tr_errs,
-                obs_tr_units,
-                obs_params,
-                obs_params_errs,
-                tracers_used,
-                dont_fit_these_args,
-                to_fit,
-                init_guess,
-                constraints,
-                def_fit_param_units,
-                self.default_units_out,
-                jacfunc,
-            )
-            ret = []
-            for j, tf in enumerate(to_fit):
-                ret.append(
-                    _Q(
-                        fitted_params[tf].value,
-                        def_fit_param_units[j],
-                        fitted_params[tf].stderr,
-                    )
-                )
+        # the fixed regressors are the parameters which are not fitted, and are also not the tracer parameter (hence [1:])
+        fixed_regressors = [
+            p for p in self.modelfunc_params[1:] if p not in regressors_to_fit
+        ]
 
-        return ret
-
-    def fit_mc(self, *args, tqdm_mc=False, **kwargs):
-        """
-        Monte-Carlo fit function - works in very much the same way as GaseExchangeModel.fit(), but returns the means and standard deviations of the resultant
-        distributions of results after performing a number of MC runs of the fit.
-        """
-        # TODO make this more efficient than list comprehension!
-        # This will likely have to be done by not repeating self.fit() over and over, but by patching perform_single_fit and wrapping the lmfit.minimize function
-
-        # first mc draw is done independently, so that cols can be extracted
-        r0 = self.fit(*args, **kwargs, do_warnings=False)
-        resetMCCycles()
-        cols = r0.columns
-        # perform the remaining mc draws
-        if tqdm_mc:
-            resultsarr = []
-            for i in tqdm(range(getNMC() - 1)):
-                resultsarr.append(
-                    self.fit(*args, **kwargs, do_warnings=False).to_numpy()
-                )
-                resetMCCycles()
-        else:
-            resultsarr = []
-            for i in range(getNMC() - 1):
-                resultsarr.append(
-                    self.fit(*args, **kwargs, do_warnings=False).to_numpy()
-                )
-                resetMCCycles()
-
-        results = np.array([r0.to_numpy()] + resultsarr)
-        result_nvs = np.apply_along_axis(_snv, 2, results)
-
-        # rearrange into the standard format returned by GasExchangeModel.fit:
-        #   index       param1              param2              param3              ...
-        #   0           Q(val+-err, unit)   Q(val+-err, unit)   Q(val+-err, unit)   ...
-        #   1           Q(val+-err, unit)   Q(val+-err, unit)   Q(val+-err, unit)   ...
-        #   2           Q(val+-err, unit)   Q(val+-err, unit)   Q(val+-err, unit)   ...
-        #   ...         ...                 ...                 ...                 ...
-        # but here, the vals are the mean mc run values, and the errs are the standard deviations of the mc runs
-        result_means = np.mean(result_nvs, axis=0)
-        result_stds = np.std(result_nvs, axis=0)
-
-        mc_results_dict = {
-            c: np.array(
-                [_Q(m, "", s) for m, s in zip(result_means[:, i], result_stds[:, i])]
-            )
-            for i, c in enumerate(cols)
+        # convert initial guesses for regressors to fit to default_units_in
+        regressors_to_fit = {
+            k: pQ(regressors_to_fit[k], self.default_units_in[k]).value
+            for k in regressors_to_fit
         }
 
-        return pd.DataFrame(mc_results_dict)
-
-
-def _prepare_data(
-    data: pd.DataFrame, tracers, obs_params, default_units_out, do_warnings=True
-):
-    headers = data.columns.to_list()
-
-    # finding the instances of the tracer names in headers
-
-    obs_foreach_tracer = []
-    errs_foreach_tracer = []
-    units_foreach_tracer = []
-    obs_foreach_parameter = []
-    errs_foreach_parameter = []
-    for tracername in tracers:
-        # find the occurrences of the tracer name
-        tracerpattern = rf"(\s|^)({re.escape(tracername)})(\s|$)"
-        where_tracername = [
-            index
-            for index, item in enumerate(headers)
-            if re.search(tracerpattern, item)
-        ]
-
-        # find the occurrences of an error indicator
-        errorpattern = r"(\s|^)(err|errs|error|errors|uncertainty|uncertainties|sigma|sigmas|err\.|err\.s|Err|Errs|Error|Errors|Uncertainty|Uncertainties|Sigma|Sigmas|Err\.|Err\.s)(\s|$)"
-        where_error = [
-            index
-            for index, item in enumerate(headers)
-            if re.search(tracerpattern, item) and re.search(errorpattern, item)
-        ]
-        if len(where_error) == 0:
-            tracer_err_index = None
-            if do_warnings:
-                warnings.warn(
-                    "No columns found for the error on %s, setting all such errors to nan."
-                    % (tracername),
-                    stacklevel=4,
-                )
-        else:
-            tracer_err_index = where_error[0]
-            if len(where_error) > 1:
-                if do_warnings:
-                    warnings.warn(
-                        "Multiple columns found for the error on %s, taking '%s'."
-                        % (tracername, headers[tracer_err_index]),
-                        stacklevel=4,
-                    )
-
-        # find the occurrences of a unit indicator
-        unitpattern = r"(?:\b|_)(unit|units|dim|dims|dimension|dimensions|dim\.|dim\.s|Unit|Units|Dim|Dims|Dimension|Dimensions|Dim\.|Dim\.s)(?=\b|_)"
-        where_unit = [
-            index
-            for index, item in enumerate(headers)
-            if re.search(tracerpattern, item) and re.search(unitpattern, item)
-        ]
-        if len(where_unit) == 0:
-            tracer_unit_index = None
-            if do_warnings:
-                warnings.warn(
-                    "No columns found for the unit of %s, assuming the default units of the function return (%s)."
-                    % (tracername, default_units_out),
-                    stacklevel=4,
-                )
-        else:
-            tracer_unit_index = where_unit[0]
-            if len(where_unit) > 1:
-                if do_warnings:
-                    warnings.warn(
-                        "Multiple columns found for the unit of %s, taking '%s'."
-                        % (tracername, headers[tracer_unit_index]),
-                        stacklevel=4,
-                    )
-
-        # remove the error and unit indices from the tracer indices so we are (hopefully) left with only the index of the tracer amount
-        where_tracername = np.setdiff1d(
-            np.setdiff1d(where_tracername, where_error), where_unit
-        )
-        if len(where_tracername) == 0:
-            raise KeyError("No column was found for the tracer %s." % (tracername))
-        else:
-            tracername_index = where_tracername[0]
-            if len(where_tracername) > 1:
-                if do_warnings:
-                    warnings.warn(
-                        "Multiple columns found for the tracer %s, taking '%s'."
-                        % (tracername, headers[tracername_index]),
-                        stacklevel=4,
-                    )
-
-        # append the tracer data, errors and units to the external arrays
-        obs_foreach_tracer.append(data[headers[tracername_index]].to_numpy())
-        if tracer_err_index is not None:
-            errs_foreach_tracer.append(data[headers[tracer_err_index]].to_numpy())
-        else:
-            errs_foreach_tracer.append(np.full(len(data), np.nan, dtype="float64"))
-        if tracer_unit_index is not None:
-            units_foreach_tracer.append(data[headers[tracer_unit_index]].to_numpy())
-        else:
-            units_foreach_tracer.append(
-                np.full(len(data), default_units_out, dtype=object)
+        # prepare mc variations around the values for the tracers and fixed regressors, if Monte Carlo should be performed
+        if nmc:
+            set_mc(True)
+            # varying each (t x s) tracer-sample pairs, nmc times, to get a cube with (t x s x nmc) entries
+            tracer_obs_cubematrix = tracer_obs_matrix + rng.normal(
+                loc=np.zeros(tracer_obs_matrix.shape),
+                scale=tracer_errs_matrix,
+                size=(nmc, *tracer_obs_matrix.shape),
             )
-
-    for opname in obs_params:
-        # find the occurrences of the parameter name
-        oppattern = rf"(\s|^)({re.escape(opname)})(\s|$)"
-        where_opname = [
-            index for index, item in enumerate(headers) if re.search(oppattern, item)
-        ]
-        if len(where_opname) == 0:
-            raise KeyError(
-                "No column was found for the parameter %s, which should be set by observation."
-                % (opname)
-            )
-        else:
-            opname_index = where_opname[0]
-            if len(where_opname) > 1:
-                if do_warnings:
-                    warnings.warn(
-                        "Multiple columns found for the parameter %s, taking '%s'."
-                        % (opname, headers[opname_index]),
-                        stacklevel=4,
-                    )
-
-        # find the occurrences of an error indicator
-        errorpattern = r"(\s|^)(err|errs|error|errors|uncertainty|uncertainties|sigma|sigmas|err\.|err\.s|Err|Errs|Error|Errors|Uncertainty|Uncertainties|Sigma|Sigmas|Err\.|Err\.s)(\s|$)"
-        where_error = [
-            index
-            for index, item in enumerate(headers)
-            if re.search(oppattern, item) and re.search(errorpattern, item)
-        ]
-        if len(where_error) == 0:
-            op_err_index = None
-            if do_warnings:
-                warnings.warn(
-                    "No columns found for the error on %s, setting all such errors to nan."
-                    % (opname),
-                    stacklevel=4,
+            # doing the same with the fixed regressors (but adhering to dictionary structure)
+            fixed_regressor_cubedict = {
+                r: obs_foreach_fixed_regressor[r]
+                + rng.normal(
+                    loc=np.zeros(n_samples),
+                    scale=errs_foreach_fixed_regressor[r],
+                    size=(nmc, n_samples),
                 )
-        else:
-            op_err_index = where_error[0]
-            if len(where_error) > 1:
-                if do_warnings:
-                    warnings.warn(
-                        "Multiple columns found for the error on %s, taking '%s'."
-                        % (opname, headers[op_err_index]),
-                        stacklevel=4,
-                    )
+                for r in fixed_regressors
+            }
 
-        # remove the error and unit indices from the op indices so we are (hopefully) left with only the index of the op amount
-        where_opname = np.setdiff1d(where_opname, where_error)
-        if len(where_opname) == 0:
-            raise KeyError(
-                "No column was found for the observed parameter %s." % (opname)
-            )
-        else:
-            opname_index = where_opname[0]
-            if len(where_opname) > 1:
-                if do_warnings:
-                    warnings.warn(
-                        "Multiple columns found for the observed parameter %s, taking '%s'."
-                        % (opname, headers[opname_index]),
-                        stacklevel=4,
-                    )
+            out_dfs = FitDataFrameMCResult(data.index, regressors_to_fit, nmc)
 
-        # append the op data and errors and units to the external arrays
-        obs_foreach_parameter.append(data[headers[opname_index]].to_numpy())
-        if op_err_index is not None:
-            errs_foreach_parameter.append(data[headers[op_err_index]].to_numpy())
-        else:
-            errs_foreach_parameter.append(np.full(len(data), np.nan, dtype="float64"))
-
-    return (
-        np.vstack(obs_foreach_tracer).transpose(),
-        np.vstack(errs_foreach_tracer).transpose(),
-        np.vstack(units_foreach_tracer).transpose(),
-        np.vstack(obs_foreach_parameter).transpose(),
-        np.vstack(errs_foreach_parameter).transpose(),
-    )
-
-
-def _perform_single_fit(
-    objfunc,
-    obs,
-    errs,
-    units,
-    obs_params_values,
-    obs_params_errors,
-    tracers,
-    obs_params,
-    fit_params,
-    init_guess,
-    bounds,
-    default_fitparam_units,
-    default_units_out,
-    jacfunc,
-):
-    # setup tracer data
-    # remove nan-values and discard corresponding tracers
-    wherevalidobs = np.nonzero(~np.isnan(obs))[
-        0
-    ]  # gets the indices of where obs are not nan
-    tracers_tomin = tracers[wherevalidobs]  # removes tracers where obs are nan
-    obs_tomin = obs[wherevalidobs]  # "       obs     "     "   "   "
-    errs_tomin = errs[wherevalidobs]  # "       errs    "     "   "   "
-    units_used = units[wherevalidobs]
-
-    # make units the same as the default units out
-    for i in range(len(tracers_tomin)):
-        obs_tomin[i] = _sto(
-            _Q(obs_tomin[i], units_used[i]), default_units_out
-        ).magnitude
-        errs_tomin[i] = _sto(
-            _Q(errs_tomin[i], units_used[i]), default_units_out
-        ).magnitude
-
-    # setup parameters set by observation
-    all_params = Parameters()
-    # add_many tuple order: (NAME VALUE VARY MIN  MAX  EXPR  BRUTE_STEP)
-    all_params.add_many(
-        *[(obs_params[i], obs_params_values[i], False) for i in range(len(obs_params))]
-    )
-
-    # setup parameters to be fitted
-    # set bounds to infinite none are given
-    if bounds is None:
-        bounds = [(-np.inf, np.inf) for i in range(len(fit_params))]
-    # make units of the initial guess and bounds the same as the default units in
-    for i in range(len(fit_params)):
-        # convert bounds to list so that items may be assigned
-        bounds[i] = list(bounds[i])
-        init_guess[i] = _snv(
-            _sto(init_guess[i], default_fitparam_units[i], strict=False)
-        )
-        bounds[i][0] = _snv(_sto(bounds[i][0], default_fitparam_units[i], strict=False))
-        bounds[i][1] = _snv(_sto(bounds[i][1], default_fitparam_units[i], strict=False))
-        all_params.add(fit_params[i], init_guess[i], True, bounds[i][0], bounds[i][1])
-
-    # perform minimisation and return
-    M = minimize(
-        objfunc,
-        all_params,
-        args=(tracers_tomin, obs_tomin, errs_tomin, obs_params_errors),
-        method="leastsq",
-        nan_policy="omit",
-        Dfun=jacfunc,
-    )
-    return M.params
-
-
-"""
-MONTE CARLO IMPLEMENTATION
-
-Say we have a regular model, such as the ua model from the builtin models:
-
-def ua(gas, T, S, p, A):
-    mvol = mv(gas)
-    return calc_Ceq(gas, T, S, p, magnitude=True, units='ccSTP_g/g_w') + A * abn(gas)
-
-We want to be able to write synactic sugar into this model so that when an MC "switch" is flipped (presumably in GasExchangeModel.fit),
-each function decorated with the sugar becomes part of the MC process. For example:
-
-def ua(gas, T, S, p, A):
-    mvol = mv(gas) @mc(0.01)
-    return calc_Ceq(gas, T, S, p, magnitude=True, units='ccSTP_g/g_w') + A * abn(gas)
-
-becomes parsed on compilation to
-    mvol = mc(mv(gas), 0.01)
-    return ...
-
-Obviously the @-version can only be done in the GUI version, NOT in the command line. For now I will just write the mc() function without
-it being a decorator, then we'll see how to proceed later (TODO).
-"""
-
-NMC = 100
-ENABLE_MC = False
-_MC_OUTER = True
-
-
-def setNMC(nmc):
-    global NMC
-    NMC = nmc
-
-
-def getNMC():
-    return NMC
-
-
-def setEnableMC(val: bool):
-    global ENABLE_MC
-    ENABLE_MC = val
-
-
-def isMCEnabled():
-    return ENABLE_MC
-
-
-def setMCOuter(val: bool):
-    global _MC_OUTER
-    _MC_OUTER = val
-
-
-def isMCOuter():
-    return _MC_OUTER
-
-
-# this cycles through Monte Carlo values so that a different MC value is not chosen every time an iteration inside fit() is performed
-# TODO write proper explanation on how this works
-_MC_CYCLES = 0
-_MC_POINTER = 0
-_MC_REGISTER: list[float] = []
-
-
-def cycleMC(factor):
-    global _MC_POINTER
-    global _MC_CYCLES
-    if _MC_POINTER == _MC_CYCLES:
-        _MC_CYCLES += 1
-        ret = normal(1, factor)
-        _MC_REGISTER.append(ret)
-    else:
-        ret = _MC_REGISTER[_MC_POINTER]
-    _MC_POINTER += 1
-    return ret
-
-
-def resetMCPointer():
-    global _MC_POINTER
-    _MC_POINTER = 0
-
-
-def resetMCCycles():
-    global _MC_CYCLES
-    global _MC_REGISTER
-    # print(_MC_CYCLES, _MC_POINTER, _MC_REGISTER)
-    _MC_CYCLES = 0
-    _MC_REGISTER.clear()
-
-
-class mc:
-    # TODO make it so ENABLE_MC is true only if running inside GasExchangeModel.fit_mc or .run_mc, not .fit or .run?
-    def __init__(self, relative_err):
-        # on initialisation, assign the relative standard deviation to the normal distribution associated with this MC process
-        self.relative_err = relative_err
-        # if this is the outermost usage of mc(...)(...), then set self.outer to true
-        self.outer = False
-        if isMCOuter():
-            self.outer = True
-        setMCOuter(False)
-
-    def __call__(self, obj):
-        if isMCEnabled():
-            # only if this is the outermost usage of mc(...)(...) will the MC draw be triggered. Otherwise the regular value is returned
-            if self.outer:
-                to_return = obj * cycleMC(self.relative_err)
+            # loading bar, increments on every mc variation of the input parameters
+            if tqdm_bar:
+                _range_nmc = tqdm(range(nmc))
             else:
-                to_return = obj
-        else:
-            to_return = obj
-        return to_return
+                _range_nmc = range(nmc)
 
-    def __del__(self):
-        # reset the global variable which defines if the mc(...)(...) usage is outermost, when the outermost object is destroyed
-        if self.outer:
-            setMCOuter(True)
+            # exception counters
+            value_error_exceptions: int = 0
+            overflow_error_exceptions: int = 0
+
+            # perform fits for every row in every "slice" of the data cubes
+            for k in _range_nmc:
+                for j in range(n_samples):
+                    try:
+                        fitresult_jk = self.fit(
+                            fixed_regressors={
+                                r: fixed_regressor_cubedict[r][k, j]
+                                for r in fixed_regressors
+                            },
+                            regressors_to_fit=regressors_to_fit,
+                            tracers=tracers,
+                            obs_tr=tracer_obs_cubematrix[k, :, j],
+                            obs_tr_errs=None,
+                            regr_to_fit_bounds=regr_to_fit_bounds,
+                            comes_from_fit_df=True,
+                        )
+                        params_out_jk = np.array(
+                            [fitresult_jk.params[r].value for r in regressors_to_fit]
+                        )
+
+                        out_dfs.set_results(params_out_jk, j, k)
+                    except ValueError:
+                        out_dfs.set_results(
+                            np.full(len(regressors_to_fit), np.nan), j, k
+                        )
+                        value_error_exceptions += 1
+                    except OverflowError:
+                        out_dfs.set_results(
+                            np.full(len(regressors_to_fit), np.nan), j, k
+                        )
+                        overflow_error_exceptions += 1
+
+            set_mc(False)
+            success_rate = (
+                100
+                - (value_error_exceptions + overflow_error_exceptions)
+                / (n_samples * nmc)
+                * 100
+            )
+            print(
+                f"Completed fitting DataFrame with {value_error_exceptions} ValueErrors and {overflow_error_exceptions} OverflowErrors ({success_rate:.1f}% success rate)"
+            )
+            return out_dfs
+        # otherwise just fit the data once, if no MC procedure is requested
+        else:
+            out_df = pd.DataFrame(
+                index=data.index,
+                columns=[x for reg in regressors_to_fit for x in (reg, f"{reg} err")],
+            )
+
+            # loading bar, increments on each sample
+            if tqdm_bar:
+                _range_nsamples = tqdm(range(n_samples))
+            else:
+                _range_nsamples = range(n_samples)
+
+            # perform fit for every row in the dataframe
+            for j in _range_nsamples:
+                fitresult_j = self.fit(
+                    fixed_regressors={
+                        r: obs_foreach_fixed_regressor[r][j] for r in fixed_regressors
+                    },
+                    regressors_to_fit=regressors_to_fit,
+                    tracers=tracers,
+                    obs_tr=tracer_obs_matrix[:, j],
+                    obs_tr_errs=tracer_errs_matrix[:, j],
+                    regr_to_fit_bounds=regr_to_fit_bounds,
+                    comes_from_fit_df=True,
+                )
+                params_out_j = np.array(
+                    [
+                        [fitresult_j.params[r].value, fitresult_j.params[r].stderr]
+                        for r in regressors_to_fit
+                    ]
+                ).flatten()
+
+                out_df.iloc[j] = params_out_j
+
+            return out_df
+
+    def prepare_dataframe_for_fitting(
+        self,
+        data: pd.DataFrame,
+        tracers: list,
+        regressors_to_fit: dict | list,
+        do_warnings=True,
+    ):
+        """Mostly just parsing the dataframe's columns, kept separate from fit_dataframe for readability"""
+
+        n_samples = data.shape[0]
+        n_tracers = len(tracers)
+
+        tracer_obs_matrix = np.empty((n_tracers, n_samples), dtype=np.float64)
+        tracer_errs_matrix = np.empty((n_tracers, n_samples), dtype=np.float64)
+        tracer_units_matrix = np.empty((n_tracers, n_samples), dtype=object)
+
+        # the fixed regressors are the parameters which are not fitted, and are also not the tracer parameter (hence [1:])
+        fixed_regressors = [
+            p for p in self.modelfunc_params[1:] if p not in regressors_to_fit
+        ]
+        obs_foreach_fixed_regressor: dict[str, np.typing.NDArray[np.float64]] = {}
+        errs_foreach_fixed_regressor: dict[str, np.typing.NDArray[np.float64]] = {}
+        units_foreach_fixed_regressor: dict[str, np.typing.NDArray[np.str_]] = {}
+        headers = data.columns.to_list()
+        # this loop is in TRACER ORDER, which the tracer observation matrices must also obey!
+        for i, tracername in enumerate(tracers):
+            # find the occurrences of the tracer name
+            tracerpattern = rf"(\s|^)({re.escape(tracername)})(\s|$)"
+            where_tracername = [
+                index
+                for index, item in enumerate(headers)
+                if re.search(tracerpattern, item)
+            ]
+
+            # find the occurrences of an error indicator
+            errorpattern = r"(\s|^)(err|errs|error|errors|uncertainty|uncertainties|sigma|sigmas|err\.|err\.s|Err|Errs|Error|Errors|Uncertainty|Uncertainties|Sigma|Sigmas|Err\.|Err\.s)(\s|$)"
+            where_error = [
+                index
+                for index, item in enumerate(headers)
+                if re.search(tracerpattern, item) and re.search(errorpattern, item)
+            ]
+            if len(where_error) == 0:
+                tracer_err_index = None
+                if do_warnings:
+                    warnings.warn(
+                        f"No columns found for the error on {tracername}, setting all such errors to zero.",
+                        stacklevel=4,
+                    )
+            else:
+                tracer_err_index = where_error[0]
+                if len(where_error) > 1 and do_warnings:
+                    warnings.warn(
+                        f"Multiple columns found for the error on {tracername}, taking '{headers[tracer_err_index]}'.",
+                        stacklevel=4,
+                    )
+
+            # find the occurrences of a unit indicator
+            unitpattern = r"(?:\b|_)(unit|units|dim|dims|dimension|dimensions|dim\.|dim\.s|Unit|Units|Dim|Dims|Dimension|Dimensions|Dim\.|Dim\.s)(?=\b|_)"
+            where_unit = [
+                index
+                for index, item in enumerate(headers)
+                if re.search(tracerpattern, item) and re.search(unitpattern, item)
+            ]
+            if len(where_unit) == 0:
+                tracer_unit_index = None
+                if do_warnings:
+                    warnings.warn(
+                        f"No columns found for the unit of {tracername}, assuming the default units of the function return ({self.default_units_out}).",
+                        stacklevel=4,
+                    )
+            else:
+                tracer_unit_index = where_unit[0]
+                if len(where_unit) > 1 and do_warnings:
+                    warnings.warn(
+                        f"Multiple columns found for the unit of {tracername}, taking '{headers[tracer_unit_index]}'.",
+                        stacklevel=4,
+                    )
+
+            # remove the error and unit indices from the tracer indices so we are (hopefully) left with only the index of the tracer amount
+            where_tracername = np.setdiff1d(
+                np.setdiff1d(where_tracername, where_error), where_unit
+            )
+            if len(where_tracername) == 0:
+                raise KeyError(f"No column was found for the tracer {tracername}.")
+            else:
+                tracername_index = where_tracername[0]
+                if len(where_tracername) > 1 and do_warnings:
+                    warnings.warn(
+                        f"Multiple columns found for the tracer {tracername}, taking '{headers[tracername_index]}'.",
+                        stacklevel=4,
+                    )
+
+            # fill out tracer observation matrices with observations, errors and units
+            tracer_obs_matrix[i] = data[headers[tracername_index]].to_numpy()
+            if tracer_err_index is not None:
+                tracer_errs_matrix[i] = data[headers[tracer_err_index]].to_numpy()
+            else:
+                tracer_errs_matrix[i] = np.full(len(data), 0, dtype="float64")
+            if tracer_unit_index is not None:
+                tracer_units_matrix[i] = data[headers[tracer_unit_index]].to_numpy()
+            else:
+                tracer_units_matrix[i] = np.full(
+                    len(data), self.default_units_out, dtype=object
+                )
+
+        for parname in fixed_regressors:
+            # find the occurrences of the parameter name
+            parpattern = rf"(\s|^)({re.escape(parname)})(\s|$)"
+            where_parname = [
+                index
+                for index, item in enumerate(headers)
+                if re.search(parpattern, item)
+            ]
+
+            if len(where_parname) == 0:
+                raise KeyError(
+                    f"No column was found for the parameter {parname}, which should be set by observation."
+                )
+            else:
+                parname_index = where_parname[0]
+                if len(where_parname) > 1 and do_warnings:
+                    warnings.warn(
+                        f"Multiple columns found for the parameter {parname}, taking '{headers[parname_index]}'.",
+                        stacklevel=4,
+                    )
+
+            # find the occurrences of an error indicator
+            errorpattern = r"(\s|^)(err|errs|error|errors|uncertainty|uncertainties|sigma|sigmas|err\.|err\.s|Err|Errs|Error|Errors|Uncertainty|Uncertainties|Sigma|Sigmas|Err\.|Err\.s)(\s|$)"
+            where_error = [
+                index
+                for index, item in enumerate(headers)
+                if re.search(parpattern, item) and re.search(errorpattern, item)
+            ]
+            if len(where_error) == 0:
+                par_err_index = None
+                if do_warnings:
+                    warnings.warn(
+                        f"No columns found for the error on {parname}, setting all such errors to zero.",
+                        stacklevel=4,
+                    )
+            else:
+                par_err_index = where_error[0]
+                if len(where_error) > 1 and do_warnings:
+                    warnings.warn(
+                        f"Multiple columns found for the error on {parname}, taking '{headers[par_err_index]}'.",
+                        stacklevel=4,
+                    )
+
+            # find the occurrences of a unit indicator
+            unitpattern = r"(?:\b|_)(unit|units|dim|dims|dimension|dimensions|dim\.|dim\.s|Unit|Units|Dim|Dims|Dimension|Dimensions|Dim\.|Dim\.s)(?=\b|_)"
+            where_unit = [
+                index
+                for index, item in enumerate(headers)
+                if re.search(parpattern, item) and re.search(unitpattern, item)
+            ]
+            if len(where_unit) == 0:
+                par_unit_index = None
+                if do_warnings:
+                    warnings.warn(
+                        f"No columns found for the unit of {parname}, assuming the default units in for the function ({self.default_units_in[parname]}).",
+                        stacklevel=4,
+                    )
+            else:
+                par_unit_index = where_unit[0]
+                if len(where_unit) > 1 and do_warnings:
+                    warnings.warn(
+                        f"Multiple columns found for the unit of {parname}, taking '{headers[par_unit_index]}'.",
+                        stacklevel=4,
+                    )
+
+            # remove the error and unit indices from the parameter name indices so we are (hopefully) left with only the index of the parameter name
+            where_parname = np.setdiff1d(
+                np.setdiff1d(where_parname, where_error), where_unit
+            )
+            if len(where_parname) == 0:
+                raise KeyError(
+                    f"No column was found for the observed parameter {parname}."
+                )
+            else:
+                parname_index = where_parname[0]
+                if len(where_parname) > 1 and do_warnings:
+                    warnings.warn(
+                        f"Multiple columns found for the observed parameter {parname}, taking '{headers[parname]}'.",
+                        stacklevel=4,
+                    )
+
+            # append the fixed regressor data, errors and units to the external dictionaries
+            obs_foreach_fixed_regressor[parname] = data[
+                headers[parname_index]
+            ].to_numpy()
+            if par_err_index is not None:
+                errs_foreach_fixed_regressor[parname] = data[
+                    headers[par_err_index]
+                ].to_numpy()
+            else:
+                errs_foreach_fixed_regressor[parname] = np.full(
+                    len(data), 0, dtype="float64"
+                )
+            if par_unit_index is not None:
+                units_foreach_fixed_regressor[parname] = data[
+                    headers[par_unit_index]
+                ].to_numpy()
+            else:
+                units_foreach_fixed_regressor[parname] = np.full(
+                    len(data), self.default_units_in[parname], dtype=object
+                )
+
+        # convert all tracer inputs to default_units_out (loop in TRACER ORDER)
+        for i in range(n_tracers):
+            if not np.all((ut := tracer_units_matrix[i]) == self.default_units_out):
+                if np.all(ut == ut[0]):
+                    tracer_obs_matrix[i] = (
+                        pQ(tracer_obs_matrix[i], ut[0]).to(self.default_units_out).value
+                    )
+                    tracer_err_index[i] = (
+                        pQ(tracer_err_index[i], ut[0]).to(self.default_units_out).value
+                    )
+                else:
+                    for j in range(n_samples):
+                        tracer_obs_matrix[i][j] = (
+                            pQ(tracer_obs_matrix[i][j], ut[j])
+                            .to(self.default_units_out)
+                            .value
+                        )
+                        tracer_err_index[i][j] = (
+                            pQ(tracer_err_index[i][j], ut[j])
+                            .to(self.default_units_out)
+                            .value
+                        )
+
+        # convert all fixed regressor inputs to default_units_in
+        for r in fixed_regressors:
+            if not np.all(
+                (ur := units_foreach_fixed_regressor[r]) == self.default_units_in[r]
+            ):
+                if np.all(ur == ur[0]):
+                    obs_foreach_fixed_regressor[r] = (
+                        pQ(obs_foreach_fixed_regressor[r], ur[0])
+                        .to(self.default_units_in[r])
+                        .value
+                    )
+                    errs_foreach_fixed_regressor[r] = (
+                        pQ(errs_foreach_fixed_regressor[r], ur[0])
+                        .to(self.default_units_in[r])
+                        .value
+                    )
+                else:
+                    for i in range(len(obs_foreach_fixed_regressor[r])):
+                        obs_foreach_fixed_regressor[r][i] = (
+                            pQ(obs_foreach_fixed_regressor[r][i], ur[i])
+                            .to(self.default_units_in[r])
+                            .value
+                        )
+                    for i in range(len(errs_foreach_fixed_regressor[r])):
+                        errs_foreach_fixed_regressor[r][i] = (
+                            pQ(errs_foreach_fixed_regressor[r][i], ur[i])
+                            .to(self.default_units_in[r])
+                            .value
+                        )
+
+        return (
+            obs_foreach_fixed_regressor,
+            errs_foreach_fixed_regressor,
+            tracer_obs_matrix,
+            tracer_errs_matrix,
+        )
+
+
+# +++++++ TESTING ++++++++
+
+if __name__ == "__main__":
+    from pagos.gas import calc_Ceq, abn
+    from pagos.core import set_warn_nonmult
+
+    set_warn_nonmult(False)
+
+    def ua(gas, T, S, p, A):
+        ceq = calc_Ceq(gas, T, S, p)
+        excess_air = A * abn(gas)
+        return ceq + excess_air
+
+    print(ua("He", 15, 20, 0.97, pQ(2e-4, "mol/kg")))
+
+    ua_model = TracerModel(
+        model_function=ua,
+        default_units_in={"T": "degC", "S": "permille", "p": "atm", "A": "mol/kg"},
+        default_units_out="mol_g/kg",
+    )
+
+    X = ua_model.run("He", pQ(288.15, "K"), 20, 0.97, 2e-4)
+    print(X)
+
+    observations = np.array(
+        [
+            ua_model.run(g, 15, 20, 0.97, 2e-4).value * np.random.normal(1, 0.1)
+            for g in ["He", "Ne", "Ar", "Kr", "Xe"]
+        ]
+    )
+    errs = observations / 80
+
+    fit_ua = ua_model.fit(
+        fixed_regressors={"S": 20, "p": 0.97},
+        regressors_to_fit={"T": 10, "A": 1e-5},
+        tracers=["He", "Ne", "Ar", "Kr", "Xe"],
+        obs_tr=observations,
+        obs_tr_errs=errs,
+    )
+
+    print(fit_ua.params)
+
+    # THIS WORKS! Note that fit(...) at the moment is does not perform any of the pre-preparation required
+    # for the observations (needs to take in quantities with no units, will not perform any MC stuff,
+    # appropriate conversions need to have been done beforehand). This is intentional and should happen
+    # before fit(...) is called!
+
+    fit_ua = ua_model.fit(
+        fixed_regressors={"S": pQ(20, "g/kg"), "p": pQ(0.97 * 1013.25, "mbar")},
+        regressors_to_fit={"T": pQ(283.15, "K"), "A": 1e-5},
+        tracers=["He", "Ne", "Ar", "Kr", "Xe"],
+        obs_tr=observations,
+        obs_tr_errs=errs,
+    )
+
+    print(fit_ua.params)
+
+    my_data = pd.read_csv("temp/tempdata.csv")
+
+    fit_df_ua = ua_model.fit_dataframe(
+        my_data, ["He", "Ne", "Ar", "Kr", "Xe"], {"T": pQ(283.15, "K"), "A": 1e-5}
+    )
+
+    print(fit_df_ua)
+    print(my_data[["T", "A"]].compare(fit_df_ua[["T", "A"]]))
