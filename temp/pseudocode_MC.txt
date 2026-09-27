@@ -1,0 +1,31 @@
+
+
+
+fit T, A on He, Ne, Ar, Kr, Xe, T and S:
+
+    draw He
+    draw Ne
+    draw Ar
+    draw Kr
+    draw Xe
+
+    draw T
+    draw S
+
+
+    objfunc:
+        
+        for each gas:
+            mod_gas = calc_Ceq(He, T, S, p)    + A * abn(gas)
+                      |                     |
+                      calc_Ceq(He, T, S, p):|
+                      |   calc vappres (T)  |----draw draw vappres
+                      |   calc Cstar (T, S) |----draw inside Cstar
+                      |   return p - e_w ...|----draw p
+                      |                     |
+
+            return mod_gas - meas_gas
+
+
+
+basically means that the MC decorator needs to just by default always be on
