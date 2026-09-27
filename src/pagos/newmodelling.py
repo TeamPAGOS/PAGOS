@@ -24,6 +24,55 @@ from inspect import getfullargspec, signature
 rng = np.random.default_rng()
 
 
+class FitDataFrameMCResult:
+    def __init__(
+        self, index: pd.Index, regressors_to_fit: list | dict, n_mc_draws: int
+    ):
+        """Holds results of TracerModel.fit_dataframe, when a Monte Carlo procedure has been performed.
+
+        Args:
+            index (Index): `Index` of each `DataFrame` corresponding to one MC draw
+            regressors_to_fit (list | dict): Fit parameters
+            n_mc_draws (int): Number of MC draws
+        """
+
+        self.mc_frames: list[pd.DataFrame] = [
+            pd.DataFrame(
+                index=index,
+                columns=(
+                    regressors_to_fit
+                    if isinstance(regressors_to_fit, list)
+                    else regressors_to_fit.keys()
+                ),
+                dtype=np.float64,
+            )
+            for k in range(n_mc_draws)
+        ]
+
+    def set_results(self, result, j: int, k: int):
+        self.mc_frames[k].iloc[j] = result
+
+    def get_result(self, param: str | tuple[str]):
+        """Get the results of a parameter or many parameters after an MC-fitting procedure.
+
+        Args:
+            param (str | tuple[str]): The parameter(s) to obtain.
+
+        Returns:
+            NDArray | dict[str, NDArray]: (`n` x `m`) array, where `n` is the number of samples that were fitted, and `m` the number of MC draws.
+        """
+
+        def _return(p):
+            return np.array(
+                [mc_frame[p].to_numpy() for mc_frame in self.mc_frames]
+            ).transpose()
+
+        if isinstance(param, str):
+            return _return(param)
+        else:
+            return {p: _return(p) for p in param}
+
+
 class TracerModel:
     def __init__(
         self,
@@ -264,7 +313,7 @@ class TracerModel:
         do_warnings: bool = True,
         tqdm_bar: bool = True,
         nmc: int = 0,
-    ) -> pd.DataFrame | list[pd.DataFrame]:
+    ) -> pd.DataFrame | FitDataFrameMCResult:
 
         n_samples = data.shape[0]
 
@@ -311,24 +360,17 @@ class TracerModel:
                 for r in fixed_regressors
             }
 
-            out_dfs: list[pd.DataFrame] = [
-                pd.DataFrame(
-                    index=data.index,
-                    columns=(
-                        regressors_to_fit
-                        if isinstance(regressors_to_fit, list)
-                        else regressors_to_fit.keys()
-                    ),
-                    dtype=np.float64,
-                )
-                for k in range(nmc)
-            ]
+            out_dfs = FitDataFrameMCResult(data.index, regressors_to_fit, nmc)
 
             # loading bar, increments on every mc variation of the input parameters
             if tqdm_bar:
                 _range_nmc = tqdm(range(nmc))
             else:
                 _range_nmc = range(nmc)
+
+            # exception counters
+            value_error_exceptions: int = 0
+            overflow_error_exceptions: int = 0
 
             # perform fits for every row in every "slice" of the data cubes
             for k in _range_nmc:
@@ -350,11 +392,28 @@ class TracerModel:
                             [fitresult_jk.params[r].value for r in regressors_to_fit]
                         )
 
-                        out_dfs[k].iloc[j] = params_out_jk
+                        out_dfs.set_results(params_out_jk, j, k)
                     except ValueError:
-                        out_dfs[k].iloc[j] = np.full(len(regressors_to_fit), np.nan)
+                        out_dfs.set_results(
+                            np.full(len(regressors_to_fit), np.nan), j, k
+                        )
+                        value_error_exceptions += 1
+                    except OverflowError:
+                        out_dfs.set_results(
+                            np.full(len(regressors_to_fit), np.nan), j, k
+                        )
+                        overflow_error_exceptions += 1
 
             set_mc(False)
+            success_rate = (
+                100
+                - (value_error_exceptions + overflow_error_exceptions)
+                / (n_samples * nmc)
+                * 100
+            )
+            print(
+                f"Completed fitting DataFrame with {value_error_exceptions} ValueErrors and {overflow_error_exceptions} OverflowErrors ({success_rate:.1f}% success rate)"
+            )
             return out_dfs
         # otherwise just fit the data once, if no MC procedure is requested
         else:

@@ -88,7 +88,7 @@ class Gas:
             self.calc_Cstar = NotImplementedError(
                 f"calc_Cstar is not defined for {self.name}"
             )
-        self.calc_Cstar = mc_possible(0.0)(self.calc_Cstar)
+        self.calc_Cstar = mc_possible(0.05)(self.calc_Cstar)
 
         # initialise Ceq calculation
         if self.name in NOBLEGASES + STABLETRANSIENTGASES + ["N2"]:

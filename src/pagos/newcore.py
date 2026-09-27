@@ -911,6 +911,12 @@ TODO Better documentation of how the PAGOSCalculator.unitaware and mc_possible w
 
 MC_ENABLED = False
 
+
+def set_mc(value: bool):
+    global MC_ENABLED
+    MC_ENABLED = value
+
+
 FIRST_MC_PASS = True
 MC_LIST: list[float | Callable] = []
 MC_CYCLE: cycle
@@ -979,19 +985,15 @@ def cycle_mc_dist(dist):
 errfuncs = {}
 
 
-def mc_possible(dist_std: str | float):
-    """
-    Decorator factory for Monte Carlo utility. The resultant decorator will enable its decorated function to be
+def mc_possible(dist_std: str | float, override: bool = False):
+    """Decorator factory for Monte Carlo utility. The resultant decorator will enable its decorated function to be
     varied according to a normal distribution, corresponding to `dist_std`. If `dist_std` is a float, it
-    will be the standard deviation of that normal distribution. If it is a string, it is a key of an internal
-    dictionary of pre-defined distributions.\\
-    [TODO explain which presets there are]
+    will be the standard deviation of that normal distribution. In future, strings will be allowed to denote pre-defined
+    distributions
 
-    :param dist_std: Standard deviation of the normal distribution about which the target function will be varied,
-    or key corresponding to pre-defined distribution.
-    :type data: str
-    :return: Decorator to make a function MC-aware.
-    :rtype: Callable
+    Args:
+        dist_std (str | float): Standard deviation of normal distribution from which the MC draws should be taken
+        override (bool, optional): Whether or not to block internal functions from being MC-aware (i.e. to force `dist_std` to be the only source of uncertainty). Defaults to False.
     """
 
     def _mc_possible(func):
@@ -1003,7 +1005,15 @@ def mc_possible(dist_std: str | float):
         @wraps(func)
         def wrapper(*args, **kwargs):
 
-            ret = func(*args, **kwargs)
+            # Block the inner function from performing any MC business if blockinner is True
+            # This is useful if the user wants to overwrite any uncertainties built-in to PAGOS
+            if override:
+                was_mc_enabled = MC_ENABLED
+                set_mc(False)
+                ret = func(*args, **kwargs)
+                set_mc(was_mc_enabled)
+            else:
+                ret = func(*args, **kwargs)
 
             if MC_ENABLED:
                 if isinstance(dist_std, Number):
@@ -1012,7 +1022,7 @@ def mc_possible(dist_std: str | float):
                     raise NotImplementedError(
                         "Custom MC distributions have not yet been implemented!"
                     )
-                    # TODO later:
+                    # TODO later: custom distributions:
                     ret = cycle_mc_dist(dist_std)(ret)
                 else:
                     raise TypeError("Argument dist_std must be str or float")
@@ -1023,6 +1033,5 @@ def mc_possible(dist_std: str | float):
     return _mc_possible
 
 
-def set_mc(value: bool):
-    global MC_ENABLED
-    MC_ENABLED = value
+# function alias for ease of use
+mc = mc_possible
