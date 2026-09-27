@@ -1,102 +1,144 @@
+import json
+from functools import reduce
+from operator import add
+
+# gases json file
+with open("src/pagos/gases.json", "r") as gases_file:
+    gases_info = json.load(gases_file)["gases"]
+
+# strings with unit definitions. Will be imported using ureg.define in pagos.core
+
+PAGOSUnits = {}
+
+PAGOSDims = set()
+
+PAGOSDimPatterns = [
+    ["[mass_", "gram", "g"],
+    ["[amount_", "mole", "mol"],
+    ["[STPvolume_", "cubic_centimeter_STP", "cm3STP", "ccSTP"],
+]
+
+# These are generic function definitions that will be generatively called later
+# For each transformation, there is a regular version with units and a "bare" version without them
+# The bare version is called when fast calculations should be done.
+GenericPAGOSTransformations = {
+    hash(("[amount_gas]", "[mass_gas]")): (
+        'def __amount_to_mass_[GAS](reg, x): return x * [MOLARMASS] * reg.Quantity(1, "gram_[GAS]/mole_[GAS]")',
+        "def __bare_amount_to_mass_[GAS](reg, x): return x * [MOLARMASS]",
+    ),
+    hash(("[amount_gas]", "[STPvolume_gas]")): (
+        'def __amount_to_STPvolume_[GAS](reg, x): return x * [MOLARVOLUME] * reg.Quantity(1, "cubic_centimeter_STP_[GAS]/mole_[GAS]")',
+        "def __bare_amount_to_STPvolume_[GAS](reg, x): return x * [MOLARVOLUME]",
+    ),
+    hash(("[mass_gas]", "[amount_gas]")): (
+        'def __mass_to_amount_[GAS](reg, x): return x / [MOLARMASS] * reg.Quantity(1, "mole_[GAS]/gram_[GAS]")',
+        "def __bare_mass_to_amount_[GAS](reg, x): return x / [MOLARMASS]",
+    ),
+    hash(("[mass_gas]", "[STPvolume_gas]")): (
+        'def __mass_to_STPvolume_[GAS](reg, x): return x / [MOLARMASS] * [MOLARVOLUME] * reg.Quantity(1, "cubic_centimeter_STP_[GAS]/gram_[GAS]")',
+        "def __bare_mass_to_STPvolume_[GAS](reg, x): return x / [MOLARMASS] * [MOLARVOLUME]",
+    ),
+    hash(("[STPvolume_gas]", "[amount_gas]")): (
+        'def __STPvolume_to_amount_[GAS](reg, x): return x / [MOLARVOLUME] * reg.Quantity(1, "mole_[GAS]/cubic_centimeter_STP_[GAS]")',
+        "def __bare_STPvolume_to_amount_[GAS](reg, x): return x / [MOLARVOLUME]",
+    ),
+    hash(("[STPvolume_gas]", "[mass_gas]")): (
+        'def __STPvolume_to_mass_[GAS](reg, x): return x / [MOLARVOLUME] * [MOLARMASS] * reg.Quantity(1, "gram_[GAS]/cubic_centimeter_STP_[GAS]")',
+        "def __bare_STPvolume_to_mass_[GAS](reg, x): return x / [MOLARVOLUME] * [MOLARMASS]",
+    ),
+}
+PAGOSTransformations = {}
+BarePAGOSTransformations = {}
+
+# generate Pint definitions of PAGOSUnits like mole_He, mole_Ne, ccSTP_He, gram_SF6, ...
+# for example, we take ["amount_", "mole", "mol"] from PAGOSDimPatterns and create
+# "mole_<GAS> = [amount_<GAS>] = mol_<GAS>" for <GAS> in the list of relevant gases
+for pattern in PAGOSDimPatterns:
+    for gas in gases_info:
+        gdict = gases_info[gas]
+        dimension = pattern[0] + gdict["name"] + "]"
+        baseunit = pattern[1] + "_" + gdict["name"]
+        aliases = [pattern[i] + "_" + gdict["name"] for i in range(2, len(pattern))]
+        # add units to PAGOSUnits
+        PAGOSUnits[baseunit] = reduce(
+            add, (" = " + a for a in aliases), f"{baseunit} = {dimension}"
+        )
+        # add dimensions to PAGOSDims
+        PAGOSDims.add(dimension)
+        # add transformations to PAGOSTransformations
+        generic_dimension = pattern[0] + "gas]"
+        for target_pattern in PAGOSDimPatterns:
+            if target_pattern != pattern:
+                generic_target_dimension = target_pattern[0] + "gas]"
+                # load string for definition of transform function from [dimension] -> [targetdimension]
+                # do this for both regular and bare function definitions
+                _id = hash((generic_dimension, generic_target_dimension))
+                transf_func_str = GenericPAGOSTransformations[_id][0]
+                bare_transf_func_str = GenericPAGOSTransformations[_id][1]
+                transf_func_name = (
+                    transf_func_str.split("[GAS]")[0].removeprefix("def ")
+                    + gdict["name"]
+                )
+                bare_transf_func_name = (
+                    bare_transf_func_str.split("[GAS]")[0].removeprefix("def ")
+                    + gdict["name"]
+                )
+                # rename the generic functions with the specific gas
+                transf_func_str = transf_func_str.replace("[GAS]", gdict["name"])
+                bare_transf_func_str = bare_transf_func_str.replace(
+                    "[GAS]", gdict["name"]
+                )
+                # replace instances of placeholder tags in string with actual representative numbers
+                # MOLAR MASSES
+                transf_func_str = transf_func_str.replace(
+                    "[MOLARMASS]", str(gdict["mmol [g_g/mol_g]"])
+                )
+                bare_transf_func_str = bare_transf_func_str.replace(
+                    "[MOLARMASS]", str(gdict["mmol [g_g/mol_g]"])
+                )
+                # MOLAR VOLUMES
+                transf_func_str = transf_func_str.replace(
+                    "[MOLARVOLUME]", str(gdict["vmol [ccSTP_g/mol_g]"])
+                )
+                bare_transf_func_str = bare_transf_func_str.replace(
+                    "[MOLARVOLUME]", str(gdict["vmol [ccSTP_g/mol_g]"])
+                )
+                # ABUDANCES
+                transf_func_str = transf_func_str.replace(
+                    "[ABUNDANCE]", str(gdict["abn [mol_g/mol]"])
+                )
+                bare_transf_func_str = bare_transf_func_str.replace(
+                    "[ABUNDANCE]", str(gdict["abn [mol_g/mol]"])
+                )
+                # create function objects
+                exec(transf_func_str, globals(), locals())
+                exec(bare_transf_func_str, globals(), locals())
+                # create association between functions and hash key in PAGOSTransformations
+                target_dimension = target_pattern[0] + gdict["name"] + "]"
+                id = hash((dimension, target_dimension))
+                exec(
+                    f"PAGOSTransformations[id] = ('{dimension}', '{target_dimension}', {transf_func_name}, {bare_transf_func_name})",
+                    globals(),
+                    locals(),
+                )
+
+    # generic gas pattern
+    dimension = pattern[0] + "gas]"
+    baseunit = pattern[1] + "_gas"
+    aliases = [pattern[i] + "_gas" for i in range(2, len(pattern))] + [
+        pattern[i] + "_g" for i in range(1, len(pattern))
+    ]
+    PAGOSUnits[baseunit] = reduce(
+        add, (" = " + a for a in aliases), f"{baseunit} = {dimension}"
+    )
+    PAGOSDims.add(dimension)
+
+"""for p in PAGOSUnits:
+    print(PAGOSUnits[p])
+
+for d in PAGOSDims:
+    print(d)
+
+for k in PAGOSTransformations:
+    print(PAGOSTransformations[k])
 """
-Units for the PAGOS package. The universal UnitRegistry `u` is included here.
-"""
-
-from pint import UnitRegistry
-from enum import Enum, auto
-
-"""
-THE UNIT REGISTRY u
-
-This is the object from which ALL units within PAGOS and with which PAGOS should
-interact will come from. If the user defines another UnitRegistry v in their program, and then
-attempts to use PAGOS, it will fail and throw: "ValueError: Cannot operate with Quantity and
-Quantity of different registries."
-"""
-# unit registry
-u = UnitRegistry()
-
-# common units that PAGOS methods will access. We define them explicitly here to avoid many
-# __getattr__ calls
-u_mol = u.mol
-u_kg = u.kg
-u_cc = u.cc
-u_g = u.g
-u_m3 = u.m**3
-u_K = u.K
-u_permille = u.permille
-u_atm = u.atm
-u_Pa = u.Pa
-u_dimless = u.dimensionless
-
-# common unit combinations to avoid many __truediv__ calls
-# used in calc_Ceq
-u_mol_kg = u_mol / u_kg
-u_mol_g = u_mol / u_g
-u_mol_cc = u_mol / u_cc
-u_kg_mol = u_kg / u_mol
-u_cc_mol = u_cc / u_mol
-u_cc_g = u_cc / u_g
-u_kg_m3 = u_kg / u_m3
-
-# used in calc_dCeq_dT
-u_mol_kg_K = u_mol / u_kg / u_K
-u_mol_g_K = u_mol / u_g / u_K
-u_mol_cc_K = u_mol / u_cc / u_K
-u_kg_mol_K = u_kg / u_mol / u_K
-u_cc_mol_K = u_cc / u_mol / u_K
-u_cc_g_K = u_cc / u_g / u_K
-u_kg_m3_K = u_kg / u_m3 / u_K
-
-# used in calc_dCeq_dS
-u_mol_kg_permille = u_mol / u_kg / u_permille
-u_mol_g_permille = u_mol / u_g / u_permille
-u_mol_cc_permille = u_mol / u_cc / u_permille
-u_kg_mol_permille = u_kg / u_mol / u_permille
-u_cc_mol_permille = u_cc / u_mol / u_permille
-u_cc_g_permille = u_cc / u_g / u_permille
-u_kg_m3_permille = u_kg / u_m3 / u_permille
-
-# used in calc_dCeq_dp
-u_mol_kg_atm = u_mol / u_kg / u_atm
-u_mol_g_atm = u_mol / u_g / u_atm
-u_mol_cc_atm = u_mol / u_cc / u_atm
-u_kg_mol_atm = u_kg / u_mol / u_atm
-u_cc_mol_atm = u_cc / u_mol / u_atm
-u_cc_g_atm = u_cc / u_g / u_atm
-u_kg_m3_atm = u_kg / u_m3 / u_atm
-
-# used in calc_solcoeff
-u_mol_m3_Pa = u_mol / u_m3 / u_Pa
-u_perPa = u_Pa ** -1
-
-
-# Enum of units combinations, used in caching in gas.py
-class UEnum(Enum):
-    MOL_KG = auto()
-    MOL_CC = auto()
-    CC_G = auto()
-    KG_MOL = auto()
-    CC_MOL = auto()
-    KG_M3 = auto()
-
-    MOL_KG_K = auto()
-    MOL_CC_K = auto()
-    CC_G_K = auto()
-    KG_MOL_K = auto()
-    CC_MOL_K = auto()
-    KG_M3_K = auto()
-
-    MOL_KG_PERMILLE = auto()
-    MOL_CC_PERMILLE = auto()
-    CC_G_PERMILLE = auto()
-    KG_MOL_PERMILLE = auto()
-    CC_MOL_PERMILLE = auto()
-    KG_M3_PERMILLE = auto()
-
-    MOL_KG_ATM = auto()
-    MOL_CC_ATM = auto()
-    CC_G_ATM = auto()
-    KG_MOL_ATM = auto()
-    CC_MOL_ATM = auto()
-    KG_M3_ATM = auto()
