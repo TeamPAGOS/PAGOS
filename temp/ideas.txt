@@ -39,7 +39,7 @@ obvious to the user though!
        This would not cover all cases (e.g. if there is control flow in the objective function), but perhaps
        we can implement an error-catching system which tries fast, then tries without fast, and finally throws
        an error if both failed.
-- TODO NEXT Merge, write documentation and release. Rename newcore etc. to core etc.
+- TODO NEXT Write documentation and release
 - TODO NEXT NEXT: gui, perhaps from scratch
 
 - TODO BUG in GUI: abvacim does not behave as intended when a column of different values is imported instead of just one!

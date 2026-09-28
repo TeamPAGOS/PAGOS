@@ -7,9 +7,10 @@ from collections.abc import Callable
 from enum import Enum, auto
 from functools import reduce, wraps
 from inspect import signature
-from itertools import cycle
+from itertools import combinations, cycle
 from numbers import Number
 from operator import mul as opmul
+import re
 from typing import TypeAlias
 
 import numpy as np
@@ -569,13 +570,20 @@ class PAGOSQuantity:
             other_units_replacements = []
             if any([u in PAGOSDims for u in ccreg.get_dimensionality(self.units)]):
                 # match PAGOS-specific units across own units and other units
-                # expand out other into its factors
 
+                # expand out the PAGOS-specific units of other into its factors
+                # e.g. if other == <UnitsContainer({'cubic_centimeter_STP_Ar': 2, 'mole_Ar': -1})>,
+                #      _otherunits_factor_sequence becomes [<Unit('cubic_centimeter_STP_Ar')>, <Unit('cubic_centimeter_STP_Ar')>, <Unit('mole_STP_Ar')>]
                 _otherunits = list(other.copy().items())
                 _otherunits_factor_sequence = [
                     [
                         ureg._parse_units_as_container(pair[0])
                         for i in range(int(pair[1]))
+                    ]
+                    # this bit deals with negative powers
+                    + [
+                        ureg._parse_units_as_container(pair[0] + "^-1")
+                        for i in range(-int(pair[1]))
                     ]
                     # this bit deals with non-integer powers
                     + (
@@ -603,13 +611,20 @@ class PAGOSQuantity:
                     for __u in self.units.items()
                     if str(ccreg.get_dimensionality(__u[0])) in PAGOSDims
                 ]:
+                    # creates a Unit out of tuple of unit + dimensionality
+                    # e.g. _u == (mole_Ar, 2) -> u = <Unit('mole_Ar ** 2')>
                     u = ccreg.Unit(_u[0] + f"^{_u[1]}")
 
                     # extract the gas string on the unit
-                    gas_str = reduce(
+                    """gas_str = reduce(
                         lambda acc, pat: acc.replace(pat[0], ""),
                         PAGOSDimPatterns,
                         str(u.dimensionality).removesuffix("]"),
+                    )"""
+                    gas_str = reduce(
+                        lambda acc, pat: acc.replace(pat[0], ""),
+                        PAGOSDimPatterns,
+                        re.split(r"[\[\]]", str(u.dimensionality))[1],
                     )
 
                     # raise error if attempting to convert from one gas to another
@@ -628,83 +643,101 @@ class PAGOSQuantity:
                                 f"Tried to convert a quantity of one gas ({gas_str}) to another ({str(other)})."
                             )
 
-                    i, j, bincount = 0, 0, 1
                     l = len(_otherunits_factor_sequence)
-                    while j < l:
-                        max_i = sum([2 ** (l - k) for k in range(j + 1)])
-                        while i < max_i:
-                            binselect = [
-                                i
-                                for i, x in enumerate(list(bin(bincount)[2:]))
-                                if int(x) == 1
-                            ]
-                            # to_compare = product of selected single units
-                            to_compare = reduce(
+                    # len(_otherunits_factor_sequence)**2 possible combinations of factors
+
+                    # this horrible generator is explained below
+                    which_factors_to_compare_generator = (
+                        [
+                            x
+                            for x, digit in enumerate(
+                                list(
+                                    "".join("1" if j in ones else "0" for j in range(l))
+                                )
+                            )
+                            if digit == "1"
+                        ]
+                        for n in range(1, l + 1)
+                        for ones in combinations(range(l), n)
+                    )
+                    for i in range(l**2):
+                        # On each loop, the following array gets more complex, selecting more and more factors
+                        # i.e. if _otherunits_factor_sequence is 4 entries long, the loop produces
+                        # [0] -> [1] -> [2] -> [3] -> [0, 1] -> [0, 2] -> [0, 3] -> ... -> [1, 2, 3] -> [0, 1, 2, 3]
+                        # corresponding to
+                        # 1000   0100   0010   0001   1100      1010      1001             1110         1111
+                        indices_of_factors_to_compare = next(
+                            which_factors_to_compare_generator
+                        )
+
+                        to_compare = reduce(
+                            opmul,
+                            [
+                                _otherunits_factor_sequence[x]
+                                for x in indices_of_factors_to_compare
+                            ],
+                            ccreg.Unit(""),
+                        )
+
+                        # check for "_gas" or "_g" suffixes on to_compare's units
+                        # if they exist, we try to infer that the gas is the same as that provided
+                        # in self.
+                        try:
+                            to_compare_new = reduce(
                                 opmul,
-                                [_otherunits_factor_sequence[x] for x in binselect],
+                                (
+                                    ccreg.Unit(
+                                        x.replace("_gas", "_" + gas_str).replace(
+                                            "_g", "_" + gas_str
+                                        )
+                                        + f"^{to_compare._units[str(x)]}"
+                                    )
+                                    for x in to_compare._units
+                                ),
                                 ccreg.Unit(""),
                             )
+                        except:
+                            raise  # TODO deal with exceptions here
 
-                            # check for "_gas" or "_g" suffixes on to_compare's units
-                            # if they exist, we try to infer that the gas is the same as that provided
-                            # in self.
-                            try:
-                                to_compare_new = reduce(
-                                    opmul,
-                                    (
-                                        ccreg.Unit(
-                                            x.replace("_gas", "_" + gas_str).replace(
-                                                "_g", "_" + gas_str
+                        if to_compare_new.is_compatible_with(u, pc):
+                            # remove factors from the otherunit sequence
+                            # if the conversion is valid, eventually the whole sequence should be popped/
+                            # if something remains, a ValueError is raised (see below)
+                            _otherunits_factor_sequence = [
+                                _otherunits_factor_sequence[idx]
+                                for idx in range(l)
+                                if idx not in indices_of_factors_to_compare
+                            ]
+                            other_units_replacements.append(
+                                (to_compare, to_compare_new)
+                            )
+                            # if the dimensionalities are actually different, perform a transformation
+                            if to_compare_new.dimensionality != u.dimensionality:
+                                transformation, bare_transformation = (
+                                    PAGOSTransformations[
+                                        hash(
+                                            (
+                                                str(u.dimensionality),
+                                                str(to_compare_new.dimensionality),
                                             )
-                                            + f"^{to_compare._units[str(x)]}"
                                         )
-                                        for x in to_compare._units
-                                    ),
-                                    ccreg.Unit(""),
+                                    ][2:]
                                 )
-                            except:
-                                raise  # TODO deal with exceptions here
-
-                            if to_compare_new.is_compatible_with(u, pc):
-                                # pop the factor off of the otherunit sequence
-                                # if the conversion is valid, eventually the whole sequence should be popped/
-                                # if something remains, a ValueError is raised (see below)
-                                for popidx in binselect:
-                                    _otherunits_factor_sequence.pop(popidx)
-                                other_units_replacements.append(
-                                    (to_compare, to_compare_new)
+                                # store the transformation of a PAGOSUnit onto the transformation chain
+                                PAGOS_transformation_chain.append(transformation)
+                                bare_PAGOS_transformation_chain.append(
+                                    bare_transformation
                                 )
-                                # if the dimensionalities are actually different, perform a transformation
-                                if to_compare_new.dimensionality != u.dimensionality:
-                                    transformation, bare_transformation = (
-                                        PAGOSTransformations[
-                                            hash(
-                                                (
-                                                    str(u.dimensionality),
-                                                    str(to_compare_new.dimensionality),
-                                                )
-                                            )
-                                        ][2:]
-                                    )
-                                    # store the transformation of a PAGOSUnit onto the transformation chain
-                                    PAGOS_transformation_chain.append(transformation)
-                                    bare_PAGOS_transformation_chain.append(
-                                        bare_transformation
-                                    )
-
-                                break
-                            bincount += 2**i
-                            i += 1
-                        else:
-                            bincount += 1
-                            i = 0
-                            j += 1
-                            continue
-                        break
+                            break
                     else:
                         raise ValueError(
-                            "There is a mismatch between PAGOS units (subscripted with _g) on either side of the conversion."
+                            "There is a mismatch between gas-specific units on either side of the conversion."
                         )
+                if len(_otherunits_factor_sequence) != 0:
+                    raise ValueError(
+                        "There is a mismatch between gas-specific units on either side of the conversion."
+                    )
+
             # Save the BARE transformation chain into a cache.
             # This is so that the pure functional relations between PAGOS units are saved,
             # to be recalled when we are in fast calculations mode (don't want to be dealing

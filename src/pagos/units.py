@@ -13,9 +13,9 @@ PAGOSUnits = {}
 PAGOSDims = set()
 
 PAGOSDimPatterns = [
-    ["[mass_", "gram", "g"],
-    ["[amount_", "mole", "mol"],
-    ["[STPvolume_", "cubic_centimeter_STP", "cm3STP", "ccSTP"],
+    ["mass_", "gram", "g"],
+    ["amount_", "mole", "mol"],
+    ["STPvolume_", "cubic_centimeter_STP", "cm3STP", "ccSTP"],
 ]
 
 # These are generic function definitions that will be generatively called later
@@ -56,7 +56,7 @@ BarePAGOSTransformations = {}
 for pattern in PAGOSDimPatterns:
     for gas in gases_info:
         gdict = gases_info[gas]
-        dimension = pattern[0] + gdict["name"] + "]"
+        dimension = "[" + pattern[0] + gdict["name"] + "]"
         baseunit = pattern[1] + "_" + gdict["name"]
         aliases = [pattern[i] + "_" + gdict["name"] for i in range(2, len(pattern))]
         # add units to PAGOSUnits
@@ -66,10 +66,10 @@ for pattern in PAGOSDimPatterns:
         # add dimensions to PAGOSDims
         PAGOSDims.add(dimension)
         # add transformations to PAGOSTransformations
-        generic_dimension = pattern[0] + "gas]"
+        generic_dimension = "[" + pattern[0] + "gas]"
         for target_pattern in PAGOSDimPatterns:
             if target_pattern != pattern:
-                generic_target_dimension = target_pattern[0] + "gas]"
+                generic_target_dimension = "[" + target_pattern[0] + "gas]"
                 # load string for definition of transform function from [dimension] -> [targetdimension]
                 # do this for both regular and bare function definitions
                 _id = hash((generic_dimension, generic_target_dimension))
@@ -114,7 +114,7 @@ for pattern in PAGOSDimPatterns:
                 exec(transf_func_str, globals(), locals())
                 exec(bare_transf_func_str, globals(), locals())
                 # create association between functions and hash key in PAGOSTransformations
-                target_dimension = target_pattern[0] + gdict["name"] + "]"
+                target_dimension = "[" + target_pattern[0] + gdict["name"] + "]"
                 id = hash((dimension, target_dimension))
                 exec(
                     f"PAGOSTransformations[id] = ('{dimension}', '{target_dimension}', {transf_func_name}, {bare_transf_func_name})",
@@ -123,7 +123,7 @@ for pattern in PAGOSDimPatterns:
                 )
 
     # generic gas pattern
-    dimension = pattern[0] + "gas]"
+    dimension = "[" + pattern[0] + "gas]"
     baseunit = pattern[1] + "_gas"
     aliases = [pattern[i] + "_gas" for i in range(2, len(pattern))] + [
         pattern[i] + "_g" for i in range(1, len(pattern))
