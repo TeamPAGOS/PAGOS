@@ -7,7 +7,7 @@ repo_url: https://github.com/TeamPAGOS/PAGOS
 
 theme:
   name: material
-  logo: img/PAGOS_LOGO_GO.svg
+  logo: img/PAGOS_Logo_GO.svg
   favicon: img/PAGOS_Logo_GO.svg
   icon:
     annotation: material/information
