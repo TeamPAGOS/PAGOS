@@ -1,5 +1,5 @@
-![Image title](img/PAGOS_Logo-cropped.svg#only-light)
-![Image title](img/PAGOS_Logo_Bright2-cropped.svg#only-dark)
+![Image title](img/PAGOS_Logo_New.svg#only-light)
+![Image title](img/PAGOS_Logo_New_Bright.svg#only-dark)
 
 # Overview
 **P**ython **A**nalysis of **G**roundwater and **O**cean **S**amples (PAGOS) is a Python toolkit for creating and testing hydrological gas exchange models. Datasets from field campaigns containing data for a number of gas tracers can be used to optimise the parameters of gas exchange models, expressed as Python functions. These can be PAGOS' built-in models or user-defined.
