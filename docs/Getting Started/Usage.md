@@ -211,4 +211,46 @@ T        10.14  -inf   inf    0.1271    True    None          None
 p            1  -inf   inf         0   False    None          None
 ```
 
-#TODO NEXT: fit_dataframe 
+### Fitting models to `DataFrame`
+Normally, you will have more than just one sample to fit, usually in the form of a table. `TracerModel`s can read [pandas](https://pandas.pydata.org/) `DataFrame` objects and fit all the rows using the `fit_dataframe` method.
+Let's say we have the following data:
+
+```
+>>> import pandas as pd
+>>> measdata = pd.read_csv('path/to/data/table')
+>>> measdata.head()
+         He   He err       Ne   Ne err ...       Xe   Xe err      S     p
+0  3.67e-09 2.31e-10 1.41e-08 1.65e-09 ... 5.08e-10 9.97e-11  20.00  1.02
+1  2.93e-09 2.38e-11 1.16e-08 8.04e-11 ... 5.09e-10 5.65e-12   6.54  1.00
+2  3.59e-09 2.98e-11 1.42e-08 2.82e-10 ... 6.23e-10 1.22e-11   2.34  0.97
+3  2.28e-09 3.21e-11 9.51e-09 1.73e-10 ... 5.61e-10 5.43e-12  13.69  0.99
+4  2.78e-09 5.33e-11 1.12e-08 1.28e-10 ... 5.25e-10 2.87e-12  10.11  1.01
+```
+
+To fit all these samples (rows) with one command, we can use `fit_dataframe`, with much the same structure as `fit`:
+
+```py
+init_guesses = {"T":10, "A":0}
+noblegases = ['He', 'Ne', 'Ar', 'Kr', 'Xe']
+
+fitdf = uaModel.fit_dataframe(data=measdata,
+                              regressors_to_fit=init_guesses, 
+                              tracers=noblegases)
+```
+This produces the following output:
+```
+FIT WARNING: No columns found for the unit on He, Ne, Ar, Kr and Xe, assuming the default units of the function return (mol_g/kg).
+FIT WARNING: No columns found for the unit of S and p, assuming the default units in for the function (permille and atm).
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 20/20
+```
+The warnings explain that the user did not explicitly give unit information in the columns of the DataFrame, but PAGOS will attempt to infer them from the `TracerModel` being fitted. The result of the fit is itself a `DataFrame`:
+```
+>>> fitdf.head()
+           T     T err         A     A err
+0   13.00937  0.136169  0.000335  0.000002
+1  14.331123       0.0  0.000176       0.0
+2   8.758895       0.0  0.000297       0.0
+3   8.799489       0.0  0.000062       0.0
+4  12.621208       0.0  0.000149       0.0
+```
+In this case, the example data was generated exactly from the UA model, and the first sample's data was then artificially edited - this is why the error is extremely small for samples 1-4, but more realistic for sample 0. 
