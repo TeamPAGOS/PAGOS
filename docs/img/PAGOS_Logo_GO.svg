@@ -27,15 +27,15 @@
      inkscape:deskcolor="#d1d1d1"
      inkscape:document-units="mm"
      showgrid="false"
-     inkscape:zoom="1.0169437"
-     inkscape:cx="311.22667"
-     inkscape:cy="538.86956"
+     inkscape:zoom="1.4381756"
+     inkscape:cx="252.75078"
+     inkscape:cy="827.43722"
      inkscape:window-width="1920"
      inkscape:window-height="1012"
      inkscape:window-x="0"
      inkscape:window-y="0"
      inkscape:window-maximized="1"
-     inkscape:current-layer="layer1" />
+     inkscape:current-layer="g52809-8" />
   <defs
      id="defs2" />
   <g
@@ -56,7 +56,7 @@
          style="font-weight:bold;font-size:37.688px;font-family:'Atkinson Hyperlegible Next';-inkscape-font-specification:'Atkinson Hyperlegible Next Bold';fill:none;fill-opacity:0.477706;stroke:#000000;stroke-width:0.53416">
         <path
            d="m 91.469656,117.35678 c 0,7.87679 5.76626,13.75612 13.680744,13.75612 7.95217,0 13.71843,-5.87933 13.71843,-13.75612 0,-7.87679 -5.84164,-13.68075 -13.71843,-13.68075 -7.801414,0 -13.680744,5.80396 -13.680744,13.68075 z"
-           style="font-weight:500;font-family:'Jost*';-inkscape-font-specification:'Jost* Medium';display:inline;fill:none;stroke:#2b0000"
+           style="font-weight:500;font-family:'Jost*';-inkscape-font-specification:'Jost* Medium';display:inline;fill:none;stroke:#000000"
            id="path435-6"
            inkscape:label="O"
            sodipodi:nodetypes="sssss" />
@@ -70,7 +70,7 @@
            style="display:inline;fill:#6ca7ff;fill-opacity:1;stroke:none;stroke-width:0.0566624"
            d="m 118.49953,119.14522 c -0.43283,3.83098 -2.47729,7.26153 -5.56855,9.34391 -3.96528,2.67115 -9.49223,3.04386 -13.871062,0.9354 -1.78312,-0.8586 -3.30075,-2.07693 -4.49423,-3.60791 -3.92994,-5.04126 -3.71101,-12.7301 0.49786,-17.4853 2.93661,-3.31778 7.564562,-4.88681 12.318552,-4.1764 6.70343,1.00171 11.25876,6.42553 11.19498,13.32932 -0.005,0.58372 -0.0403,1.33115 -0.0776,1.66098 z m -3.88632,-3.71452 c -0.35818,-1.7576 -1.06099,-3.1278 -2.24081,-4.36867 -1.2965,-1.36357 -2.84121,-2.2145 -4.87283,-2.68426 -0.95297,-0.22036 -3.0067,-0.27397 -4.07423,-0.10637 -2.11083,0.33141 -3.800842,1.12692 -5.183312,2.43987 -3.139441,6.2829 15.638552,-2.28913 9.071692,15.73747 4.09154,-0.78958 6.9848,-3.86368 7.44835,-7.91389 0.0956,-0.83494 0.0285,-2.23401 -0.14886,-3.10415 z"
            id="path2123-7"
-           inkscape:export-filename="PAGOS_Logo_GO.svg"
+           inkscape:export-filename="PAGOS_Logo_GO.png"
            inkscape:export-xdpi="97.379875"
            inkscape:export-ydpi="97.379875"
            inkscape:label="Bubble"
