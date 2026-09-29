@@ -616,11 +616,6 @@ class PAGOSQuantity:
                     u = ccreg.Unit(_u[0] + f"^{_u[1]}")
 
                     # extract the gas string on the unit
-                    """gas_str = reduce(
-                        lambda acc, pat: acc.replace(pat[0], ""),
-                        PAGOSDimPatterns,
-                        str(u.dimensionality).removesuffix("]"),
-                    )"""
                     gas_str = reduce(
                         lambda acc, pat: acc.replace(pat[0], ""),
                         PAGOSDimPatterns,
@@ -696,8 +691,13 @@ class PAGOSQuantity:
                                 ),
                                 ccreg.Unit(""),
                             )
-                        except:
-                            raise  # TODO deal with exceptions here
+                        except pint.errors.UndefinedUnitError:
+                            # UndefinedUnitError will be thrown if we attempt a conversion like "g_gas" -> "mol_gas" - WHICH gas?!
+                            # TODO currently this will even fail when doing something like "g_gas" -> "kg_gas", even though this is not
+                            # gas-dependent - fix this!
+                            raise ValueError(
+                                "Attempted a conversion between two generically-suffixed units (with '_gas', '_g')."
+                            )
 
                         if to_compare_new.is_compatible_with(u, pc):
                             # remove factors from the otherunit sequence

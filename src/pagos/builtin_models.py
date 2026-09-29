@@ -7,8 +7,6 @@ from pagos.core import PAGOSQuantity, set_warn_nonmult, unit_aware
 from pagos.modelling import TracerModel
 from pagos.water import calc_kinvisc
 
-set_warn_nonmult(False)
-
 
 @unit_aware(
     {"gas": None, "T": "degC", "S": "permille", "p": "atm", "A": "mol/kg"}, "mol_gas/kg"
