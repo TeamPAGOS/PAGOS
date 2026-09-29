@@ -950,6 +950,10 @@ def set_mc(value: bool):
     MC_ENABLED = value
 
 
+def is_mc_enabled():
+    return MC_ENABLED
+
+
 FIRST_MC_PASS = True
 MC_LIST: list[float | Callable] = []
 MC_CYCLE: cycle

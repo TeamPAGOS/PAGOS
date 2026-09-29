@@ -1,25 +1,25 @@
-from numbers import Number
 import re
-import warnings
+from collections.abc import Callable, Iterable
+from functools import reduce
+from inspect import getfullargspec, signature
+from numbers import Number
+
+import numpy as np
+import pandas as pd
+from lmfit import Parameters, fit_report, minimize
+from tqdm import tqdm
 
 from pagos.core import (
-    MC_LIST,
     PAGOSQuantity,
+    begin_new_mc_cycle,
     end_mc_cycle,
+    end_of_first_mc_cycle_pass,
     is_first_mc_pass,
+    is_mc_enabled,
     pQ,
     set_mc,
     unit_aware,
-    _set_fast,
-    begin_new_mc_cycle,
-    end_of_first_mc_cycle_pass,
 )
-import numpy as np
-import pandas as pd
-from lmfit import fit_report, minimize, Parameters
-from tqdm import tqdm
-from collections.abc import Callable, Iterable
-from inspect import getfullargspec, signature
 
 rng = np.random.default_rng()
 
@@ -326,7 +326,7 @@ class TracerModel:
             tracer_obs_matrix,
             tracer_errs_matrix,
         ) = self.prepare_dataframe_for_fitting(
-            data, tracers, regressors_to_fit, do_warnings
+            data, tracers, regressors_to_fit, do_warnings, bool(nmc)
         )
 
         # the fixed regressors are the parameters which are not fitted, and are also not the tracer parameter (hence [1:])
@@ -457,7 +457,8 @@ class TracerModel:
         data: pd.DataFrame,
         tracers: list,
         regressors_to_fit: dict | list,
-        do_warnings=True,
+        do_warnings: bool = True,
+        mc_active: bool = False,
     ):
         """Mostly just parsing the dataframe's columns, kept separate from fit_dataframe for readability"""
 
@@ -476,6 +477,20 @@ class TracerModel:
         errs_foreach_fixed_regressor: dict[str, np.typing.NDArray[np.float64]] = {}
         units_foreach_fixed_regressor: dict[str, np.typing.NDArray[np.str_]] = {}
         headers = data.columns.to_list()
+
+        (
+            warn_no_tr_errs,
+            warn_many_tr_errs,
+            warn_no_tr_units,
+            warn_many_tr_units,
+            warn_no_fr,
+            warn_many_fr,
+            warn_no_fr_errs,
+            warn_many_fr_errs,
+            warn_no_fr_units,
+            warn_many_fr_units,
+        ) = [], [], [], [], [], [], [], [], [], []
+
         # this loop is in TRACER ORDER, which the tracer observation matrices must also obey!
         for i, tracername in enumerate(tracers):
             # find the occurrences of the tracer name
@@ -493,20 +508,15 @@ class TracerModel:
                 for index, item in enumerate(headers)
                 if re.search(tracerpattern, item) and re.search(errorpattern, item)
             ]
+
             if len(where_error) == 0:
                 tracer_err_index = None
                 if do_warnings:
-                    warnings.warn(
-                        f"No columns found for the error on {tracername}, setting all such errors to zero.",
-                        stacklevel=4,
-                    )
+                    warn_no_tr_errs.append(tracername)
             else:
                 tracer_err_index = where_error[0]
                 if len(where_error) > 1 and do_warnings:
-                    warnings.warn(
-                        f"Multiple columns found for the error on {tracername}, taking '{headers[tracer_err_index]}'.",
-                        stacklevel=4,
-                    )
+                    warn_many_tr_errs.append((tracername, headers[tracer_err_index]))
 
             # find the occurrences of a unit indicator
             unitpattern = r"(?:\b|_)(unit|units|dim|dims|dimension|dimensions|dim\.|dim\.s|Unit|Units|Dim|Dims|Dimension|Dimensions|Dim\.|Dim\.s)(?=\b|_)"
@@ -518,17 +528,11 @@ class TracerModel:
             if len(where_unit) == 0:
                 tracer_unit_index = None
                 if do_warnings:
-                    warnings.warn(
-                        f"No columns found for the unit of {tracername}, assuming the default units of the function return ({self.default_units_out}).",
-                        stacklevel=4,
-                    )
+                    warn_no_tr_units.append(tracername)
             else:
                 tracer_unit_index = where_unit[0]
                 if len(where_unit) > 1 and do_warnings:
-                    warnings.warn(
-                        f"Multiple columns found for the unit of {tracername}, taking '{headers[tracer_unit_index]}'.",
-                        stacklevel=4,
-                    )
+                    warn_many_tr_units.append((tracername, headers[tracer_unit_index]))
 
             # remove the error and unit indices from the tracer indices so we are (hopefully) left with only the index of the tracer amount
             where_tracername = np.setdiff1d(
@@ -539,10 +543,7 @@ class TracerModel:
             else:
                 tracername_index = where_tracername[0]
                 if len(where_tracername) > 1 and do_warnings:
-                    warnings.warn(
-                        f"Multiple columns found for the tracer {tracername}, taking '{headers[tracername_index]}'.",
-                        stacklevel=4,
-                    )
+                    warn_many_tr_errs.append((tracername, headers[tracername_index]))
 
             # fill out tracer observation matrices with observations, errors and units
             tracer_obs_matrix[i] = data[headers[tracername_index]].to_numpy()
@@ -567,16 +568,11 @@ class TracerModel:
             ]
 
             if len(where_parname) == 0:
-                raise KeyError(
-                    f"No column was found for the parameter {parname}, which should be set by observation."
-                )
+                warn_no_fr.append(parname)
             else:
                 parname_index = where_parname[0]
                 if len(where_parname) > 1 and do_warnings:
-                    warnings.warn(
-                        f"Multiple columns found for the parameter {parname}, taking '{headers[parname_index]}'.",
-                        stacklevel=4,
-                    )
+                    warn_many_fr.append((parname, headers[parname_index]))
 
             # find the occurrences of an error indicator
             errorpattern = r"(\s|^)(err|errs|error|errors|uncertainty|uncertainties|sigma|sigmas|err\.|err\.s|Err|Errs|Error|Errors|Uncertainty|Uncertainties|Sigma|Sigmas|Err\.|Err\.s)(\s|$)"
@@ -588,17 +584,11 @@ class TracerModel:
             if len(where_error) == 0:
                 par_err_index = None
                 if do_warnings:
-                    warnings.warn(
-                        f"No columns found for the error on {parname}, setting all such errors to zero.",
-                        stacklevel=4,
-                    )
+                    warn_no_fr_errs.append(parname)
             else:
                 par_err_index = where_error[0]
                 if len(where_error) > 1 and do_warnings:
-                    warnings.warn(
-                        f"Multiple columns found for the error on {parname}, taking '{headers[par_err_index]}'.",
-                        stacklevel=4,
-                    )
+                    warn_many_fr_errs.append((parname, headers[par_err_index]))
 
             # find the occurrences of a unit indicator
             unitpattern = r"(?:\b|_)(unit|units|dim|dims|dimension|dimensions|dim\.|dim\.s|Unit|Units|Dim|Dims|Dimension|Dimensions|Dim\.|Dim\.s)(?=\b|_)"
@@ -610,17 +600,11 @@ class TracerModel:
             if len(where_unit) == 0:
                 par_unit_index = None
                 if do_warnings:
-                    warnings.warn(
-                        f"No columns found for the unit of {parname}, assuming the default units in for the function ({self.default_units_in[parname]}).",
-                        stacklevel=4,
-                    )
+                    warn_no_fr_units.append((parname, self.default_units_in[parname]))
             else:
                 par_unit_index = where_unit[0]
                 if len(where_unit) > 1 and do_warnings:
-                    warnings.warn(
-                        f"Multiple columns found for the unit of {parname}, taking '{headers[par_unit_index]}'.",
-                        stacklevel=4,
-                    )
+                    warn_many_fr_units.append((parname, headers[par_unit_index]))
 
             # remove the error and unit indices from the parameter name indices so we are (hopefully) left with only the index of the parameter name
             where_parname = np.setdiff1d(
@@ -633,10 +617,7 @@ class TracerModel:
             else:
                 parname_index = where_parname[0]
                 if len(where_parname) > 1 and do_warnings:
-                    warnings.warn(
-                        f"Multiple columns found for the observed parameter {parname}, taking '{headers[parname]}'.",
-                        stacklevel=4,
-                    )
+                    warn_many_fr.append((parname, headers[parname_index]))
 
             # append the fixed regressor data, errors and units to the external dictionaries
             obs_foreach_fixed_regressor[parname] = data[
@@ -658,6 +639,29 @@ class TracerModel:
                 units_foreach_fixed_regressor[parname] = np.full(
                     len(data), self.default_units_in[parname], dtype=object
                 )
+
+        # print warnings
+        # fmt: off
+        def _gen_warnclause(x):
+            # only used for generating warning messages
+            # returns a string that looks like "a, b, c and d" for x = ['a', 'b', 'c', 'd']
+            if len(x) == 1:
+                return x[0]
+            else:
+                return (reduce(lambda result, current: result + ", " + current, x[:-1]) + " and " + x[-1])
+
+        if warn_no_tr_errs: print(f"FIT WARNING: No columns found for the error on {_gen_warnclause(warn_no_tr_errs)}, setting all such errors to zero.")
+        if warn_many_tr_errs: print(f"FIT WARNING: Multiple columns found for the error on {_gen_warnclause([w[0] for w in warn_many_tr_errs])}, taking {_gen_warnclause([w[1] for w in warn_many_tr_errs])}.")
+        if warn_no_tr_units: print(f"FIT WARNING: No columns found for the unit on {_gen_warnclause(warn_no_tr_units)}, assuming the default units of the function return ({self.default_units_out}).")
+        if warn_many_tr_units: print(f"FIT WARNING: Multiple columns found for the unit of {_gen_warnclause([w[0] for w in warn_many_tr_units])}, taking {_gen_warnclause([w[1] for w in warn_many_tr_units])}.")
+        if warn_no_fr: print(f"FIT WARNING: No column was found for the parameter {_gen_warnclause(warn_no_fr)}, which should be set by observation.")
+        if warn_many_fr: print(f"FIT WARNING: Multiple columns found for the parameter {_gen_warnclause([w[0] for w in warn_many_fr])}, taking {_gen_warnclause([w[1] for w in warn_many_fr])}.")
+        if warn_no_fr_units: print(f"FIT WARNING: No columns found for the unit of {_gen_warnclause([w[0] for w in warn_no_fr_units])}, assuming the default units in for the function ({_gen_warnclause([w[1] for w in warn_no_fr_units])}).")
+        if warn_many_fr_units: print(f"FIT WARNING: Multiple columns found for the unit of {_gen_warnclause([w[0] for w in warn_many_fr_units])}, taking {_gen_warnclause([w[1] for w in warn_many_fr_units])}.")
+        if mc_active:
+            if warn_no_fr_errs: print(f"MC WARNING: No columns found for the error on {_gen_warnclause(warn_no_fr_errs)}, setting all such errors to zero.")
+            if warn_many_fr_errs: print(f"MC WARNING: Multiple columns found for the error on {_gen_warnclause([w[0] for w in warn_many_fr_errs])}, taking {_gen_warnclause([w[1] for w in warn_many_fr_errs])}.")
+        # fmt: on
 
         # convert all tracer inputs to default_units_out (loop in TRACER ORDER)
         for i in range(n_tracers):
