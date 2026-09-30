@@ -103,7 +103,7 @@ assert Ar.molar_volume == molvol(Ar)
 
 ## Creating and fitting models
 ### Designing a model
-The real power of PAGOS is in its gas exchange modelling capabilities. PAGOS allows for simple user-definition of gas exchange models. Say we wanted to implement a simple unfractionated excess air (UA) model (that is, equilibrium concentration $C^\mathrm{eq}$ "topped up" with an excess air component):
+The real power of PAGOS is in its gas exchange modelling capabilities. PAGOS allows for easy user-definition of gas exchange models. Say we wanted to implement a simple unfractionated excess air (UA) model (that is, equilibrium concentration $C^\mathrm{eq}$ "topped up" with an excess air component):
 
 $$
 C_\mathrm{gas}^\mathrm{UA}(T, S, p, A) = C_\mathrm{gas}^\mathrm{eq}(T, S, p) + A\cdot z,
@@ -112,61 +112,23 @@ $$
 where $A$ is in the units of $C^\mathrm{eq}_\mathrm{gas}$ and $z$ is the atmospheric abundance of the gas. We could implement it very simply like this:
 ```py
 from pagos.gas import calc_Ceq, abn
-from pagos.modelling import TracerModel
+from pagos.modelling import TracerModel#
+
 def ua_func(gas, T, S, p, A):
     Ceq = calc_Ceq(gas, T, S, p) # -> mol_gas / kg
     z = abn(gas) # -> mol_gas / mol
     return Ceq + A * z
 ```
-Because `calc_Ceq` and `abn` have their own default output units, PAGOS will throw an error if the units of `A` are not compatible:
-```
->>> ua_func('Ar', 10, 0, 1, 1e-5)
-...
-pint.errors.DimensionalityError: Cannot convert from 'mole_Ar / mole' ([amount_Ar] / [substance]) to 'mole_Ar / kilogram' ([amount_Ar] / [mass])
-```
-A `DimensionalityError` was thrown here because the `A * z` expression evaluated to a quantity with units of mol_Ar/mol, but `Ceq` is in mol_Ar/kg. Rightfully, the user is refused this calculation.
 
-What we needed was `A` to have units compatible with mol/kg:
-```
->>> ua_func('Ar', 10, 0, 1, pQ(1e-5, 'mol/kg'))
-<PAGOSQuantity(1.74364437e-05, 'mole_Ar / kilogram')>
-```
-### Automatic unit handling
-In the above example, we were able to just use `10`, `0`, `1` for the first arguments `T`, `S`, `p`, because these are passed into `calc_Ceq`, which has `default_units_in`. We can also provide our own `default_units_in` for all arguments:
-```py
-from pagos.core import unit_aware
-
-@unit_aware(default_units_in={'gas':None, 'T':'degC', 'S':'permille', 'p':'atm', 'A':'mol/kg'}, units_out='mol_g/kg')
-def ua_func(gas, T, S, p, A):
-    Ceq = calc_Ceq(gas, T, S, p) # -> mol_gas / kg
-    z = abn(gas) # -> mol_gas / mol
-    return Ceq + A * z
-
-print(ua_func('Ar', 10, 0, 1, 1e-5))
-# -> 1.74364437e-05 mole_Ar / kilogram
-```
-The arguments to `ua_func` must all be accounted for (including `gas`, which of course has no units, so is designated `None`.) Note that the `units_out` argument has `_g` as a suffix, which is a _generic_ gas signifier (we may not just be interested in Ar, but any number of gases, and we don't want to write a separate function for each one.)
-
- With this, we can use our newly defined function as we do the built-ins from the `gas` or `water` modules.
-
-### `TracerModel` objects
-This is all well and good, but in the end we want to optimise our models. Such functionality is packaged in the `modelling` module and its `TracerModel` object.
+PAGOS provides a [`TracerModel`](../User%20Guide/Modelling.md/##tracermodel-objects) object to contain all the unit information and fitting methods that we require:
 
 ```py
 from pagos.modelling import TracerModel
-uaModel = TracerModel(ua_func)
-```
-
-When we crate a `TracerModel` in this way, the `default_units_in` and `units_out` are inherited from the wrapped `unit_aware` function. If we had not done this in preparation, we can handle it directly in the constructor:
-
-```py
-def ua_func(gas, T, S, p, A):
-    Ceq = calc_Ceq(gas, T, S, p) # -> mol_gas / kg
-    z = abn(gas) # -> mol_gas / mol
-    return Ceq + A * z
 
 uaModel = TracerModel(ua_func, default_units_in={'gas':None, 'T':'degC', 'S':'permille', 'p':'atm', 'A':'mol/kg'}, default_units_out='mol_g/kg')
 ```
+
+The first argument is the our model's function, the second are the units in that the `TracerModel` expects, and the third are the units to which the result should be converted. The `_g` suffix on the output units stands for "generic gas": the model will produce concentrations of a gas, but the gas can vary, and conversions will depend on which gas we are interested in!
 
 The function that the `TracerModel` was constructed with can be accessed with `run` and the argument structure of the supplied function:
 ```

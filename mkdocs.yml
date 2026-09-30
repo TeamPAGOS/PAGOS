@@ -7,7 +7,7 @@ repo_url: https://github.com/TeamPAGOS/PAGOS
 
 theme:
   name: material
-  logo: img/PAGOS_Logo_GO.svg
+  logo: img/PAGOS_Logo_New.svg
   favicon: img/PAGOS_Logo_GO.svg
   icon:
     annotation: material/information
@@ -50,6 +50,7 @@ markdown_extensions:
     - attr_list
     - md_in_html
     - admonition
+    - pymdownx.blocks.html
     - pymdownx.extra
     - pymdownx.details
     - pymdownx.snippets
@@ -85,8 +86,10 @@ nav:
     - Getting Started/Usage.md
   - User Guide:
     - User Guide/Quantities and Magnitudes.md
+    - User Guide/Non-Multiplicative Quantities.md
     - User Guide/Functions.md
     - User Guide/Modelling.md
+    - User Guide/Monte Carlo Fitting.md
   - Development:
     - Development/Contributing.md
 
