@@ -3,6 +3,7 @@ Core functions for the PAGOS package. The Quantity shorthand `pQ` is included he
 some internal functions/decorators and the framework for regular and fast unit processing.
 """
 
+import re
 from collections.abc import Callable
 from enum import Enum, auto
 from functools import reduce, wraps
@@ -10,7 +11,6 @@ from inspect import signature
 from itertools import combinations, cycle
 from numbers import Number
 from operator import mul as opmul
-import re
 from typing import TypeAlias
 
 import numpy as np
@@ -19,6 +19,7 @@ from pint.facets.nonmultiplicative.definitions import (
     OffsetConverter as _PintOffsetConverter,
 )
 
+from pagos.exceptions import ConversionError, DifferentGasesError, NoUnitsToConvertError
 from pagos.units import PAGOSDimPatterns, PAGOSDims, PAGOSTransformations, PAGOSUnits
 
 #    ┏━┓╻ ╻┏━┓┏┓╻╺┳╸╻╺┳╸╻ ╻         ┏━┓┏━╸┏━╸╻┏━┓╺┳╸┏━┓╻ ╻   ┏━┓╻ ╻┏━┓╺┳╸┏━╸┏┳┓
@@ -129,7 +130,7 @@ class CatchConvert(pint.UnitRegistry.Quantity):
                         def conv_func(x):
                             return converter.to_reference(x, False)
                     else:
-                        raise TypeError(
+                        raise ConversionError(
                             f"Conversion attempted from {self.units} to {other}. This is not supported!"
                         )
                 else:
@@ -625,7 +626,7 @@ class PAGOSQuantity:
                     # raise error if attempting to convert from one gas to another
                     if "gas" in ctx_kwargs:
                         if gas_str not in ["gas", "g"] and ctx_kwargs["gas"] != gas_str:
-                            raise ValueError(
+                            raise DifferentGasesError(
                                 f"Tried to convert a quantity of one gas ({gas_str}) to another ({ctx_kwargs['gas']})."
                             )
                     else:
@@ -634,7 +635,7 @@ class PAGOSQuantity:
                             and "_" + gas_str not in str(other)
                             and "_gas" not in str(other)
                         ):
-                            raise ValueError(
+                            raise DifferentGasesError(
                                 f"Tried to convert a quantity of one gas ({gas_str}) to another ({str(other)})."
                             )
 
@@ -695,7 +696,7 @@ class PAGOSQuantity:
                             # UndefinedUnitError will be thrown if we attempt a conversion like "g_gas" -> "mol_gas" - WHICH gas?!
                             # TODO currently this will even fail when doing something like "g_gas" -> "kg_gas", even though this is not
                             # gas-dependent - fix this!
-                            raise ValueError(
+                            raise ConversionError(
                                 "Attempted a conversion between two generically-suffixed units (with '_gas', '_g')."
                             )
 
@@ -730,11 +731,11 @@ class PAGOSQuantity:
                                 )
                             break
                     else:
-                        raise ValueError(
+                        raise ConversionError(
                             "There is a mismatch between gas-specific units on either side of the conversion."
                         )
                 if len(_otherunits_factor_sequence) != 0:
-                    raise ValueError(
+                    raise ConversionError(
                         "There is a mismatch between gas-specific units on either side of the conversion."
                     )
 
@@ -925,7 +926,15 @@ def unit_aware(default_units_in: dict | None, units_out: str | None):
                 for k in kwargs
             }
             result = _func(*pQ_args, **pQ_kwargs)
-            return result.to(units_out)
+            if units_out is None:
+                return result
+            else:
+                try:
+                    return result.to(units_out)
+                except AttributeError:
+                    raise NoUnitsToConvertError(
+                        f"The function {func.__name__} tried to return something that is not a PAGOSQuantity (likely a float), but a conversion was attempted (units_out='{units_out}')!"
+                    )
 
         # set default_units_in and units_out attributes to be accessed from the outside (from TracerModel)
         wrapper.default_units_in = default_units_in

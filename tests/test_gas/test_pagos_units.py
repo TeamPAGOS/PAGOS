@@ -4,6 +4,8 @@ from pagos.core import pQ, set_warn_nonmult
 
 import unittest
 
+from pagos.exceptions import ConversionError
+
 # battery of tests for PAGOS units and their combinations/conversions
 # PAGOS units are anything involving mol_gas, gram_gas or cubic_centimeter_gas
 
@@ -59,5 +61,5 @@ class TestConversions(unittest.TestCase):
         assert pQ(5, "mol_He").to("ccSTP_g") == x
 
         # check bad conversion does NOT work (generic gas -> specific)
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ConversionError):
             pQ(5, "mol_g").to("mol_He")
