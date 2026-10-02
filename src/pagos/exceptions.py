@@ -1,5 +1,7 @@
 """Exception classes in PAGOS."""
 
+from __future__ import annotations
+
 
 class NoUnitsToConvertError(Exception):
     """Exception raised when trying to call .to() on something without units."""

@@ -1,5 +1,8 @@
-from pagos.core import pQ, ureg
+from __future__ import annotations
+
 import json
+
+from pagos.core import pQ
 
 # gases json file
 with open("src/pagos/gases.json", "r") as gases_file:

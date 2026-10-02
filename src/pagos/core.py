@@ -3,6 +3,8 @@ Core functions for the PAGOS package. The Quantity shorthand `pQ` is included he
 some internal functions/decorators and the framework for regular and fast unit processing.
 """
 
+from __future__ import annotations
+
 import re
 from collections.abc import Callable
 from enum import Enum, auto
@@ -843,8 +845,10 @@ def unit_aware(default_units_in: dict | None, units_out: str | None):
     """
     i_am_unit_aware: None  # free variable which acts as a tag, so that we can tell from outside the function if it's unit aware already (by evaluating: 'i_am_unit_aware' in <function>.__code__.co_freevars)
 
-    if units_out is not None:
-        units_out = ureg._parse_units_as_container(units_out)
+    # TODO I don't think this is necessary, can delete?
+    """if units_out is not None:
+        # units_out = ureg._parse_units_as_container(units_out)
+    """
     # Nonmuliplicative units will cause ambiguity in additive calculations, which can especially be a problem
     # when the units have to be inferred (e.g. 5°C + 5K -> 5Δ°C + 5K, 5Δ°C - 267.15Δ°C, or 278.15K + 5K? The
     # nonmultiplicative handling system in fastpagosbinop can "decide", but not consistently).

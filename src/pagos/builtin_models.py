@@ -1,9 +1,11 @@
 """Builtin gas exchange models in PAGOS."""
 
+from __future__ import annotations
+
 import numpy as np
 
-from pagos.gas import Gas, abn, calc_Ceq, calc_Sc
 from pagos.core import PAGOSQuantity, set_warn_nonmult, unit_aware
+from pagos.gas import Gas, abn, calc_Ceq, calc_Sc
 from pagos.modelling import TracerModel
 from pagos.water import calc_kinvisc
 

@@ -2,6 +2,8 @@
 Functions for calculating the properties of water
 """
 
+from __future__ import annotations
+
 from pagos.constants import (
     DYCK_PESCHKE_95_COEFFS,
     GILL_82_COEFFS,
