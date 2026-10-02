@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import re
 from collections.abc import Callable, Iterable
+from copy import deepcopy
 from functools import reduce
 from inspect import getfullargspec, signature
 from numbers import Number
@@ -7,6 +10,7 @@ from numbers import Number
 import numpy as np
 import pandas as pd
 from lmfit import Parameters, fit_report, minimize
+from matplotlib import pyplot as plt
 from tqdm import tqdm
 
 from pagos.core import (
@@ -24,9 +28,13 @@ from pagos.core import (
 rng = np.random.default_rng()
 
 
-class FitDataFrameMCResult:
+class FitDataFrameResult:
     def __init__(
-        self, index: pd.Index, regressors_to_fit: list | dict, n_mc_draws: int
+        self,
+        index: pd.Index,
+        regressors_to_fit: list | dict,
+        n_mc_draws: int,
+        logslist: list[dict] | None = None,
     ):
         """Holds results of TracerModel.fit_dataframe, when a Monte Carlo procedure has been performed.
 
@@ -34,25 +42,48 @@ class FitDataFrameMCResult:
             index (Index): `Index` of each `DataFrame` corresponding to one MC draw
             regressors_to_fit (list | dict): Fit parameters
             n_mc_draws (int): Number of MC draws
+            logslist: List of logs for the MC draws
         """
+        self.regressors_to_fit = regressors_to_fit
 
-        self.mc_frames: list[pd.DataFrame] = [
-            pd.DataFrame(
-                index=index,
-                columns=(
-                    regressors_to_fit
-                    if isinstance(regressors_to_fit, list)
-                    else regressors_to_fit.keys()
-                ),
-                dtype=np.float64,
-            )
-            for k in range(n_mc_draws)
-        ]
+        # create empty results frames
+        if n_mc_draws:
+            self.came_from_mc_procedure = True
+            self.mc_frames: list[pd.DataFrame] = [
+                pd.DataFrame(
+                    index=index,
+                    columns=(
+                        regressors_to_fit
+                        if isinstance(regressors_to_fit, list)
+                        else regressors_to_fit.keys()
+                    ),
+                    dtype=np.float64,
+                )
+                for k in range(n_mc_draws)
+            ]
+        else:
+            self.came_from_mc_procedure = False
+            # create only one frame if MC procedure was not performed
+            self.mc_frames: list[pd.DataFrame] = [
+                pd.DataFrame(
+                    index=index,
+                    columns=(
+                        [
+                            name
+                            for regressor in regressors_to_fit
+                            for name in (regressor, f"{regressor} err")
+                        ]
+                    ),
+                    dtype=np.float64,
+                )
+            ]
+
+        self.logslist = logslist
 
     def set_results(self, result, j: int, k: int):
         self.mc_frames[k].iloc[j] = result
 
-    def get_result(self, param: str | tuple[str]):
+    def get_results(self, param: str | tuple[str] | None = None):
         """Get the results of a parameter or many parameters after an MC-fitting procedure.
 
         Args:
@@ -63,14 +94,46 @@ class FitDataFrameMCResult:
         """
 
         def _return(p):
-            return np.array(
-                [mc_frame[p].to_numpy() for mc_frame in self.mc_frames]
-            ).transpose()
+            if len(self.mc_frames) == 1:
+                return np.array([self.mc_frames[0][p].to_numpy()]).transpose().flatten()
+            else:
+                return np.array(
+                    [mc_frame[p].to_numpy() for mc_frame in self.mc_frames]
+                ).transpose()
 
-        if isinstance(param, str):
+        if param is None:
+            # return all fitted parameters if param argument is not given
+            return {p: _return(p) for p in self.regressors_to_fit}
+        elif isinstance(param, str):
             return _return(param)
         else:
             return {p: _return(p) for p in param}
+
+    def get_logs(self) -> list[dict] | None:
+        if self.logslist:
+            if len(self.logslist) == 1:
+                return self.logslist[0]
+            else:
+                return self.logslist
+        else:
+            print("INFO: No logging was performed for this fit")
+            return
+
+    def plot_results(self):
+        if self.came_from_mc_procedure:
+            results = self.get_results()
+            fig, ax = plt.subplots(
+                n_samples := len(list(results.values())[0]),  # noqa: RUF015
+                len(self.regressors_to_fit),
+            )
+            for i, p in enumerate(self.regressors_to_fit):
+                for j in range(n_samples):
+                    ax[j, i].hist(results[p][j])
+                ax[0, i].set_title(p)
+            fig.tight_layout()
+            plt.show()
+        else:
+            raise NotImplementedError()
 
 
 class TracerModel:
@@ -125,7 +188,14 @@ class TracerModel:
             except AttributeError:
                 self.default_units_in = None
 
-        self.default_units_out = default_units_out
+        if default_units_out is None:
+            try:
+                self.default_units_out = model_function.units_out
+            except AttributeError:
+                self.default_units_out = None
+        else:
+            self.default_units_out = default_units_out
+
         self.model_function = unit_aware(self.default_units_in, self.default_units_out)(
             model_function
         )
@@ -136,6 +206,7 @@ class TracerModel:
             tracers: list,
             obs_tr: np.ndarray,
             obs_tr_errs: np.ndarray,
+            logs: dict | None = None,
         ):
             """This is the objective function that will be minimised by
             lmfit.minimize. It is the residual of observed and modelled data.
@@ -145,6 +216,7 @@ class TracerModel:
                 tracers (list): the tracers that will be used (e.g. `['He', 'Ne', 'Ar']`)
                 obs_tr (np.ndarray): observed tracer values, in the order of the `tracers` list, stripped of units
                 obs_tr_errs (np.ndarray): observed tracer errors, in the order of the `tracers` list, stripped of units
+                logging (bool): whether or not to log results of the calculation
             """
 
             # unpack parameters
@@ -163,6 +235,13 @@ class TracerModel:
                 # we convert the stored list of MC factors into a cycle
                 # and activate fast calculations
                 end_of_first_mc_cycle_pass()
+
+            if logs:
+                for i, t in enumerate(tracers):
+                    logs[t].append(obs_tr[i])
+                for r in regr_dict:
+                    logs[r].append(regr_dict[r])
+                logs["chi2"].append(np.sum(norm_resid**2))
 
             # returns an array of residuals. minimize() will automatically square and sum the elements of the array for the LM algorithm
             return norm_resid
@@ -234,11 +313,13 @@ class TracerModel:
         tracers: list,
         obs_tr: np.ndarray,
         obs_tr_errs: np.ndarray | None,
-        regr_to_fit_bounds: dict | None = None,
+        logs: dict | None = None,
     ):
         # fit objective function to provided data
         fit_result = minimize(
-            self.objfunc, regr_params_object, args=(tracers, obs_tr, obs_tr_errs)
+            self.objfunc,
+            regr_params_object,
+            args=(tracers, obs_tr, obs_tr_errs, logs),
         )
         return fit_result
 
@@ -250,6 +331,7 @@ class TracerModel:
         obs_tr: np.ndarray,
         obs_tr_errs: np.ndarray | None,
         regr_to_fit_bounds: dict | None = None,
+        logs: dict | None = None,
         comes_from_fit_df: bool = False,
     ):
         if not comes_from_fit_df:
@@ -297,7 +379,7 @@ class TracerModel:
             tracers,
             obs_tr,
             obs_tr_errs,
-            regr_to_fit_bounds,
+            logs,
         )
 
         end_mc_cycle()
@@ -312,8 +394,9 @@ class TracerModel:
         regr_to_fit_bounds: dict | None = None,
         do_warnings: bool = True,
         tqdm_bar: bool = True,
+        logging: bool = False,
         nmc: int = 0,
-    ) -> pd.DataFrame | FitDataFrameMCResult:
+    ) -> FitDataFrameResult:
 
         n_samples = data.shape[0]
 
@@ -340,15 +423,40 @@ class TracerModel:
             for k in regressors_to_fit
         }
 
+        # set up logging object if desired
+        if logging:
+            log_template_for_one_sample = (
+                {t: [] for t in tracers}
+                | {fr: [] for fr in fixed_regressors}
+                | {rtf: [] for rtf in regressors_to_fit}
+                | {"chi2": []}
+            )
+
+            log_template_for_one_mc_frame = [
+                deepcopy(log_template_for_one_sample) for _ in range(n_samples)
+            ]
+
+            if nmc:
+                logslist = [deepcopy(log_template_for_one_mc_frame) for _ in range(nmc)]
+            else:
+                logslist = [deepcopy(log_template_for_one_mc_frame)]
+        else:
+            logslist = None
+
         # prepare mc variations around the values for the tracers and fixed regressors, if Monte Carlo should be performed
         if nmc:
             set_mc(True)
             # varying each (t x s) tracer-sample pairs, nmc times, to get a cube with (t x s x nmc) entries
-            tracer_obs_cubematrix = tracer_obs_matrix + rng.normal(
-                loc=np.zeros(tracer_obs_matrix.shape),
-                scale=tracer_errs_matrix,
-                size=(nmc, *tracer_obs_matrix.shape),
-            )
+            if tracer_errs_matrix is not None:
+                tracer_obs_cubematrix = np.tile(
+                    tracer_obs_matrix, (nmc, 1, 1)
+                ) + rng.normal(
+                    loc=np.zeros(tracer_obs_matrix.shape),
+                    scale=tracer_errs_matrix,
+                    size=(nmc, *tracer_obs_matrix.shape),
+                )
+            else:
+                tracer_obs_cubematrix = np.tile(tracer_obs_matrix, (nmc, 1, 1))
             # doing the same with the fixed regressors (but adhering to dictionary structure)
             fixed_regressor_cubedict = {
                 r: obs_foreach_fixed_regressor[r]
@@ -360,7 +468,9 @@ class TracerModel:
                 for r in fixed_regressors
             }
 
-            out_dfs = FitDataFrameMCResult(data.index, regressors_to_fit, nmc)
+            out_dfs = FitDataFrameResult(
+                data.index, regressors_to_fit, nmc, logslist=logslist
+            )
 
             # loading bar, increments on every mc variation of the input parameters
             if tqdm_bar:
@@ -374,7 +484,12 @@ class TracerModel:
 
             # perform fits for every row in every "slice" of the data cubes
             for k in _range_nmc:
-                for j in range(n_samples):
+                for j in tqdm(range(n_samples), leave=False):
+                    if logging:
+                        logs_kj = logslist[k][j]
+                    else:
+                        logs_kj = None
+
                     try:
                         fitresult_jk = self.fit(
                             fixed_regressors={
@@ -384,8 +499,10 @@ class TracerModel:
                             regressors_to_fit=regressors_to_fit,
                             tracers=tracers,
                             obs_tr=tracer_obs_cubematrix[k, :, j],
-                            obs_tr_errs=None,
+                            # normalise by the average of the tracer distributions
+                            obs_tr_errs=tracer_obs_matrix[:, j],
                             regr_to_fit_bounds=regr_to_fit_bounds,
+                            logs=logs_kj,
                             comes_from_fit_df=True,
                         )
                         params_out_jk = np.array(
@@ -415,11 +532,14 @@ class TracerModel:
                 f"Completed fitting DataFrame with {value_error_exceptions} ValueErrors and {overflow_error_exceptions} OverflowErrors ({success_rate:.1f}% success rate)"
             )
             return out_dfs
+
         # otherwise just fit the data once, if no MC procedure is requested
         else:
-            out_df = pd.DataFrame(
+            out_df = FitDataFrameResult(
                 index=data.index,
-                columns=[x for reg in regressors_to_fit for x in (reg, f"{reg} err")],
+                regressors_to_fit=regressors_to_fit,
+                n_mc_draws=0,
+                logslist=logslist,
             )
 
             # loading bar, increments on each sample
@@ -430,6 +550,15 @@ class TracerModel:
 
             # perform fit for every row in the dataframe
             for j in _range_nsamples:
+                if logging:
+                    logs_j = logslist[0][j]
+                else:
+                    logs_j = None
+
+                if tracer_errs_matrix is None:
+                    _obs_tr_errs = None
+                else:
+                    _obs_tr_errs = tracer_errs_matrix[:, j]
                 fitresult_j = self.fit(
                     fixed_regressors={
                         r: obs_foreach_fixed_regressor[r][j] for r in fixed_regressors
@@ -437,8 +566,9 @@ class TracerModel:
                     regressors_to_fit=regressors_to_fit,
                     tracers=tracers,
                     obs_tr=tracer_obs_matrix[:, j],
-                    obs_tr_errs=tracer_errs_matrix[:, j],
+                    obs_tr_errs=_obs_tr_errs,
                     regr_to_fit_bounds=regr_to_fit_bounds,
+                    logs=logs_j,
                     comes_from_fit_df=True,
                 )
                 params_out_j = np.array(
@@ -448,7 +578,7 @@ class TracerModel:
                     ]
                 ).flatten()
 
-                out_df.iloc[j] = params_out_j
+                out_df.set_results(params_out_j, j, 0)
 
             return out_df
 
@@ -550,13 +680,16 @@ class TracerModel:
             if tracer_err_index is not None:
                 tracer_errs_matrix[i] = data[headers[tracer_err_index]].to_numpy()
             else:
-                tracer_errs_matrix[i] = np.full(len(data), 0, dtype="float64")
+                # -1 will be interpreted later as "set to None"
+                tracer_errs_matrix[i] = np.full(len(data), -1, dtype="float64")
             if tracer_unit_index is not None:
                 tracer_units_matrix[i] = data[headers[tracer_unit_index]].to_numpy()
             else:
                 tracer_units_matrix[i] = np.full(
                     len(data), self.default_units_out, dtype=object
                 )
+        if np.any(tracer_errs_matrix < 0):
+            tracer_errs_matrix = None
 
         for parname in fixed_regressors:
             # find the occurrences of the parameter name
@@ -569,10 +702,6 @@ class TracerModel:
 
             if len(where_parname) == 0:
                 warn_no_fr.append(parname)
-            else:
-                parname_index = where_parname[0]
-                if len(where_parname) > 1 and do_warnings:
-                    warn_many_fr.append((parname, headers[parname_index]))
 
             # find the occurrences of an error indicator
             errorpattern = r"(\s|^)(err|errs|error|errors|uncertainty|uncertainties|sigma|sigmas|err\.|err\.s|Err|Errs|Error|Errors|Uncertainty|Uncertainties|Sigma|Sigmas|Err\.|Err\.s)(\s|$)"
@@ -784,8 +913,9 @@ if __name__ == "__main__":
     my_data = pd.read_csv("temp/tempdata.csv")
 
     fit_df_ua = ua_model.fit_dataframe(
-        my_data, ["He", "Ne", "Ar", "Kr", "Xe"], {"T": pQ(283.15, "K"), "A": 1e-5}
+        my_data,
+        ["He", "Ne", "Ar", "Kr", "Xe"],
+        {"T": pQ(283.15, "K"), "A": 1e-5},
     )
 
-    print(fit_df_ua)
-    print(my_data[["T", "A"]].compare(fit_df_ua[["T", "A"]]))
+    print(pd.DataFrame(fit_df_ua.get_results(("T", "A"))).compare(my_data[["T", "A"]]))
