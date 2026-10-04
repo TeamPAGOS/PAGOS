@@ -22,6 +22,13 @@ from pint.facets.nonmultiplicative.definitions import (
 )
 
 from pagos.exceptions import ConversionError, DifferentGasesError, NoUnitsToConvertError
+from pagos.numpy_operations import (
+    binary_no_unit_return,
+    binary_unit_return,
+    unary_change,
+    unary_no_change,
+    unary_no_unit_return,
+)
 from pagos.units import PAGOSDimPatterns, PAGOSDims, PAGOSTransformations, PAGOSUnits
 
 #    ┏━┓╻ ╻┏━┓┏┓╻╺┳╸╻╺┳╸╻ ╻         ┏━┓┏━╸┏━╸╻┏━┓╺┳╸┏━┓╻ ╻   ┏━┓╻ ╻┏━┓╺┳╸┏━╸┏┳┓
@@ -49,8 +56,32 @@ class OperationKind(Enum):
     MULTIPLY = auto()
     LDIVIDE = auto()
     RDIVIDE = auto()
-    EXPONENTIAL = auto()
+    POWER = auto()
     COMPARATIVE = auto()
+    EXPONENTIATE = auto()
+    LOGARITHM = auto()
+
+
+# maps names of numpy operations to operation kinds and whether or not the operation is binary
+numpy_operations_map = {
+    "add": (OperationKind.ADD, True),
+    "subtract": (OperationKind.SUBTRACT, True),
+    "multiply": (OperationKind.MULTIPLY, True),
+    "divide": (OperationKind.LDIVIDE, True),
+    "true_divide": (OperationKind.LDIVIDE, True),
+    "power": (OperationKind.POWER, True),
+    "greater": (OperationKind.COMPARATIVE, True),
+    "greater_equal": (OperationKind.COMPARATIVE, True),
+    "less": (OperationKind.COMPARATIVE, True),
+    "less_equal": (OperationKind.COMPARATIVE, True),
+    "not_equal": (OperationKind.COMPARATIVE, True),
+    "equal": (OperationKind.COMPARATIVE, True),
+    "exp": (OperationKind.EXPONENTIATE, False),
+    "exp2": (OperationKind.EXPONENTIATE, False),
+    "log": (OperationKind.LOGARITHM, False),
+    "log2": (OperationKind.LOGARITHM, False),
+    "log10": (OperationKind.LOGARITHM, False),
+}
 
 
 # some resources for warning messages when nonmultiplicative arithmetic is detected
@@ -227,9 +258,8 @@ class PAGOSQuantity:
                 # hash the operation - this will be used as a key for caching
                 id = hash((self.units, operand_units, operation_kind))
 
-                # if we are in fast mode, use the hash key to obtain an already cached conversion, apply to operand
-                # and return the value
-                if _are_calculations_fast():
+                # TODO TEMPORARY FOR PROFILING: SPLIT INTO FUNCTIONS SO WE CAN SEE HOW LONG WAS SPENT INSIDE EACH BRANCH
+                def perform_fast_calculation():
                     try:
                         # case for addition and subtraction
                         if operation_kind in {
@@ -256,7 +286,7 @@ class PAGOSQuantity:
                                 func(self.value, operand_value), combined_units
                             )
                         # case for exponentiation:
-                        elif operation_kind == OperationKind.EXPONENTIAL:
+                        elif operation_kind == OperationKind.POWER:
                             # transform any non-multiplicative units into delta-units
                             transformed_self_units = CatchConvert.exp_transforms[id]
                             # no conversion necessary as exponent must be dimensionless
@@ -278,8 +308,7 @@ class PAGOSQuantity:
                         )
                         raise
 
-                # if we are not in fast mode, store the conversion in a cache uder the hash key
-                else:
+                def perform_slow_calculation():
                     # create Pint Quantity objects out of the values and units
                     selfQ = ccreg.Quantity(self.value, self.units)
                     operandQ = ccreg.Quantity(operand_value, operand_units)
@@ -324,7 +353,7 @@ class PAGOSQuantity:
                         CatchConvert.mult_combis[id] = resultQ._units
                         ret = PAGOSQuantity(resultQ._magnitude, resultQ._units)
                     # case for exponentiation:
-                    elif operation_kind == OperationKind.EXPONENTIAL:
+                    elif operation_kind == OperationKind.POWER:
                         # need to store any transformations of non-multiplicative units to deltas
                         # e.g. degC^2 -> delta_degC^2
                         CatchConvert.exp_transforms[id] = selfQ._units
@@ -359,6 +388,15 @@ class PAGOSQuantity:
                         )
 
                     return ret
+
+                # if we are in fast mode, use the hash key to obtain an already cached conversion, apply to operand
+                # and return the value
+                if _are_calculations_fast():
+                    return perform_fast_calculation()
+
+                # if we are not in fast mode, store the conversion in a cache under the hash key
+                else:
+                    return perform_slow_calculation()
 
             return wrapper
 
@@ -403,17 +441,11 @@ class PAGOSQuantity:
         # because the latter, in right divide, corresponds to 2 s / 3 m -> ...m/s, which is wrong!
         return other / self
 
-    @fastpagosbinop(OperationKind.EXPONENTIAL)
+    @fastpagosbinop(OperationKind.POWER)
     def __pow__(self, other):
-        # exponentiation is identical and saves no information
-        # the reason we do this is because the unit transformation is dependent on the VALUE of the exponent
-        # whereas +, -, *, / etc. are only UNIT-dependent! If we cached every __pow__ call, then during a fit
-        # procedure or MC procedure, the value would change every time and the cache would basically never be
-        # hit!
-        # TODO allow for caching but warn user?
         return self**other
 
-    @fastpagosbinop(OperationKind.EXPONENTIAL)
+    @fastpagosbinop(OperationKind.POWER)
     def __rpow__(self, other):
         return other**self  # noqa # IF AN EXCEPTION IS THROWN HERE, NEED TO LOOK INTO HOW TO IMPLEMENT RPOW!
 
@@ -459,20 +491,19 @@ class PAGOSQuantity:
         return PAGOSQuantity(-self.value, self.units)
 
     # numpy operators
-    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        # TODO this will be quite slow - in future numpy functions should work as well as
-        # the normal arithmetic functions with caching!!!
-
-        # convert the input PagosQuantity objects into regular Pint Quantity objects
-        qs_in = tuple(ccreg.Quantity(inpq.value, inpq.units) for inpq in inputs)
-        # allow Pint to perform calculation on Pint Quantity objects
-        result = pint.facets.numpy.quantity.NumpyQuantity.__array_ufunc__(
-            self, ufunc, method, *qs_in, **kwargs
-        )
-        # cache system here?
-        ...
-        # return PAGOSQuantity result
-        return PAGOSQuantity(result._magnitude, result._units)
+    def __array_ufunc__(
+        self,
+        ufunc,
+        method,
+        *inputs: PAGOSQuantity | tuple[PAGOSQuantity],
+        **kwargs,
+    ):
+        try:
+            _opkind, _binary = numpy_operations_map[ufunc.__name__]
+        except KeyError:
+            _opkind = None
+            _binary = False
+        return ufunc_decorator(_opkind, _binary)(ufunc)(*inputs)
 
     def _ext_to(self, a_value, a_units, b_units, id=None, pcid=None, *contexts):
         """
@@ -767,6 +798,203 @@ class PAGOSQuantity:
             return PAGOSQuantity(resultQ._magnitude, resultQ._units)
 
 
+def ufunc_decorator(operation_kind: OperationKind, binary: bool):
+    def _ufunc_decorator(ufunc):
+        @wraps(ufunc)
+        def wrapper(
+            *inputs: PAGOSQuantity | tuple[PAGOSQuantity],
+            **kwargs,
+        ):
+            # TODO NEXT: deal with cases where operands are floats (can this happen if operand1 is a float? or only when operand2 is?)
+            operand1: PAGOSQuantity | Number
+
+            if binary:
+                operand2: PAGOSQuantity | Number
+                operand1, operand2 = inputs
+
+                if isinstance(operand1, PAGOSQuantity):
+                    value1 = operand1.value
+                    units1 = operand1.units
+                else:
+                    value1 = operand1
+                    units1 = None
+                if isinstance(operand2, PAGOSQuantity):
+                    value2 = operand2.value
+                    units2 = operand2.units
+                else:
+                    value2 = operand2
+                    units2 = None
+
+                id = hash((units1, units2, operation_kind))
+            else:
+                operand1 = inputs[0]
+
+                if isinstance(operand1, PAGOSQuantity):
+                    value1 = operand1.value
+                    units1 = operand1.units
+                else:
+                    value1 = operand1
+                    units1 = None
+
+                id = hash((units1, operation_kind))
+
+            def perform_unimplemented_calculation():
+                # convert the input PagosQuantity objects into regular Pint Quantity objects
+                qs_in = tuple(ccreg.Quantity(inpq.value, inpq.units) for inpq in inputs)
+                # allow Pint to perform calculation on Pint Quantity objects
+                result = pint.facets.numpy.quantity.NumpyQuantity.__array_ufunc__(
+                    qs_in[0], ufunc, "__call__", *qs_in, **kwargs
+                )
+                # cache system here?
+                ...
+                # return PAGOSQuantity result
+                return PAGOSQuantity(result._magnitude, result._units)
+
+            if _are_calculations_fast():
+                ### UNARY OPERATIONS ###
+                if operation_kind in {
+                    OperationKind.LOGARITHM,
+                    OperationKind.EXPONENTIATE,
+                }:
+                    # logarithms/exponentiation can only work on dimensionless quantitites
+                    # (except dB, but this should never come up in hydrology!)
+                    dimless_op1 = PAGOSQuantity._ext_to(
+                        ..., value1, units1, "dimensionless", id=id, pcid=id
+                    )
+                    return PAGOSQuantity(ufunc(dimless_op1.value), dimless_op1.units)
+
+                ### BINARY OPERATIONS ###
+                if operation_kind in {OperationKind.ADD, OperationKind.SUBTRACT}:
+                    converted_op2 = PAGOSQuantity._ext_to(
+                        ..., value2, ..., ..., id=id, pcid=id
+                    )
+
+                    return PAGOSQuantity(
+                        ufunc(value1, converted_op2.value), converted_op2.units
+                    )
+
+                elif operation_kind in {
+                    OperationKind.MULTIPLY,
+                    OperationKind.LDIVIDE,
+                    OperationKind.RDIVIDE,
+                }:
+                    combined_units = CatchConvert.mult_combis[id]
+                    return PAGOSQuantity(ufunc(value1, value2), combined_units)
+
+                elif operation_kind == OperationKind.POWER:
+                    # transform any non-multiplicative units into delta-units
+                    transformed_units_1 = CatchConvert.exp_transforms[id]
+                    # no conversion necessary as exponent must be dimensionless
+                    return PAGOSQuantity(
+                        ufunc(value1, value2), transformed_units_1**value2
+                    )
+
+                elif operation_kind == OperationKind.COMPARATIVE:
+                    converted_op2 = PAGOSQuantity._ext_to(
+                        ..., value2, units2, units1, id=id, pcid=id
+                    )
+                    return ufunc(value1, converted_op2.value)
+
+                else:
+                    return perform_unimplemented_calculation()
+
+            else:
+                # if there are non-multiplicative units (e.g. degC), we automatically replace these
+                # with their delta-equivalents (NOTE: here by subtracting zero, perhaps not the most
+                # efficient thing to do), and warning the user
+                warn_about_nm_units = False
+                # create Pint Quantity objects out of the values and units
+                q1 = ccreg.Quantity(value1, units1)
+                unchanged_q1 = q1
+                if unchanged_q1._get_non_multiplicative_units():
+                    warn_about_nm_units = True
+                    q1 = unchanged_q1 - ccreg.Quantity(0, q1._units)
+                if binary:
+                    q2 = ccreg.Quantity(value2, units2)
+                    unchanged_q2 = q2
+                    warn_about_nm_units = True
+                    q2 = unchanged_q2 - ccreg.Quantity(0, q2._units)
+
+                ### UNARY OPERATIONS ###
+                if operation_kind in {
+                    OperationKind.LOGARITHM,
+                    OperationKind.EXPONENTIATE,
+                }:
+                    # logarithms/exponentiation can only work on dimensionless quantitites
+                    # (except dB, but this should never come up in hydrology!)
+                    dimless_op1 = PAGOSQuantity(q1.magnitude, q1._units).to(
+                        "dimensionless", id=id, pcid=id
+                    )
+                    converted_q1 = ccreg.Quantity(dimless_op1.value, dimless_op1.units)
+                    q_result = ufunc(converted_q1)
+                    ret = PAGOSQuantity(q_result._magnitude, q_result._units)
+
+                ### BINARY OPERATIONS ###
+                elif operation_kind in {OperationKind.ADD, OperationKind.SUBTRACT}:
+                    # perform conversion of operand2
+                    # during PAGOSQuantity.to(), CatchConvert.to() is called and the operation is cached
+                    # NOTE: create new PAGOSQuantity from q2, instead of using operand2, as the delta-unit
+                    # replacement may have caused changes
+                    converted_op2 = PAGOSQuantity(q2.magnitude, q2._units).to(
+                        q1._units, id=id, pcid=id
+                    )
+                    converted_q2 = ccreg.Quantity(
+                        converted_op2.value, converted_op2.units
+                    )
+                    # result requires no conversion as q1 and converted_q2 are of the same units
+                    q_result = ufunc(q1, converted_q2)
+                    ret = PAGOSQuantity(q_result._magnitude, q_result._units)
+
+                elif operation_kind in {
+                    OperationKind.MULTIPLY,
+                    OperationKind.LDIVIDE,
+                    OperationKind.RDIVIDE,
+                }:
+                    # perform Pint multiplication/division, which does unit combination automatically
+                    q_result = ufunc(q1, q2)
+                    # store the unit combination
+                    CatchConvert.mult_combis[id] = q_result._units
+                    ret = PAGOSQuantity(q_result._magnitude, q_result._units)
+
+                elif operation_kind == OperationKind.POWER:
+                    # need to store any transformations of non-multiplicative units to deltas
+                    # e.g. degC^2 -> delta_degC^2
+                    CatchConvert.exp_transforms[id] = q1._units
+                    # no conversion necessary as exponent must be dimensionless
+                    q_result = ufunc(q1, q2)
+                    ret = PAGOSQuantity(q_result._magnitude, q_result._units)
+
+                elif operation_kind == OperationKind.COMPARATIVE:
+                    # perform conversion of operand
+                    # during PAGOSQuantity.to(), CatchConvert.to() is called and the operation is cached
+                    # (same done here as in ADDITIVE)
+                    converted_op2 = PAGOSQuantity(q2.magnitude, q2._units).to(
+                        q1._units, id=id, pcid=id
+                    )
+                    converted_q2 = ccreg.Quantity(
+                        converted_op2.value, converted_op2.units
+                    )
+                    resultbool = ufunc(q1, converted_q2)
+                    ret = resultbool
+
+                # TODO: ONGOING REPLACEMENT WITH CACHE SYSTEM
+                else:
+                    ret = perform_unimplemented_calculation()
+
+                # a bit confusing: warn_about_nm_units means "is there anything to warn about?" and warn_nonmult
+                # means "does the user want to be warned at all?"!
+                if warn_about_nm_units and warn_nonmult:
+                    print(
+                        f"\nWARNING: While running your function, arithmetic involving non-multiplicative units came up:\n\t{unchanged_q1:~P} {ufunc.__name__} {unchanged_q2:~P}.\nThis is technically ambiguous, and PAGOS will replace the offending units with their delta-counterparts:\n\t{q1:~P} {ufunc.__name__} {q2:~P} = {q_result:~P}.\nPlease check that this is the intended behaviour of your function!\nTo disable this warning, run: `set_warn_nonmult(False)` before your code.\n"
+                    )
+
+                return ret
+
+        return wrapper
+
+    return _ufunc_decorator
+
+
 # set up UnitRegistry class that will create Quantity objects from PAGOSQuantity type
 class PAGOSRegistry(pint.registry.GenericUnitRegistry[PAGOSQuantity, pint.Unit]):
     """
@@ -1000,7 +1228,7 @@ def begin_new_mc_cycle():
 def end_mc_cycle():
     """Should be called once minimize() has finished its business"""
     # Fast calculations will have been activated from the first call of the objective function. Here we deactivate.
-    _set_fast(False)
+    # _set_fast(False)
 
 
 def end_of_first_mc_cycle_pass():

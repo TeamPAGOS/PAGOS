@@ -15,11 +15,11 @@ from tqdm import tqdm
 
 from pagos.core import (
     PAGOSQuantity,
+    _set_fast,
     begin_new_mc_cycle,
     end_mc_cycle,
     end_of_first_mc_cycle_pass,
     is_first_mc_pass,
-    is_mc_enabled,
     pQ,
     set_mc,
     unit_aware,
@@ -522,6 +522,7 @@ class TracerModel:
                         overflow_error_exceptions += 1
 
             set_mc(False)
+            _set_fast(False)
             success_rate = (
                 100
                 - (value_error_exceptions + overflow_error_exceptions)
