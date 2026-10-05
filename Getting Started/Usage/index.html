@@ -1,0 +1,1287 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="PAGOS Documentation">
+      
+      
+      
+        <link rel="canonical" href="https://teampagos.github.io/pagos/Getting%20Started/Usage/">
+      
+      
+        <link rel="prev" href="../..">
+      
+      
+        <link rel="next" href="../../User%20Guide/Quantities%20and%20Magnitudes/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../img/PAGOS_Logo_GO.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Usage - PAGOS</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+  
+  
+  
+  
+  <style>:root{--md-annotation-icon:url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M13%209h-2V7h2m0%2010h-2v-6h2m-1-9A10%2010%200%200%200%202%2012a10%2010%200%200%200%2010%2010%2010%2010%200%200%200%2010-10A10%2010%200%200%200%2012%202%22/%3E%3C/svg%3E');}</style>
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="cyan">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#usage" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="PAGOS" class="md-header__button md-logo" aria-label="PAGOS" data-md-component="logo">
+      
+  <img src="../../img/PAGOS_Logo_New.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            PAGOS
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Usage
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="cyan"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="cyan"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/TeamPAGOS/PAGOS" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    PAGOS
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="PAGOS" class="md-nav__button md-logo" aria-label="PAGOS" data-md-component="logo">
+      
+  <img src="../../img/PAGOS_Logo_New.svg" alt="logo">
+
+    </a>
+    PAGOS
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/TeamPAGOS/PAGOS" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    PAGOS
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Usage
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#how-quantities-are-defined-in-pagos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How quantities are defined in PAGOS
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#water-property-calculations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Water property calculations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#gas-property-calculations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gas property calculations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#creating-and-fitting-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Creating and fitting models
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Creating and fitting models">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#designing-a-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Designing a model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fitting-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fitting models
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fitting-models-to-dataframe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fitting models to DataFrame
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../User%20Guide/Quantities%20and%20Magnitudes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quantities and Magnitudes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../User%20Guide/Non-Multiplicative%20Quantities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Non-Multiplicative Quantities
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../User%20Guide/Functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../User%20Guide/Modelling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Modelling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../User%20Guide/Monte%20Carlo%20Fitting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monte Carlo Fitting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Development/Contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#how-quantities-are-defined-in-pagos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How quantities are defined in PAGOS
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#water-property-calculations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Water property calculations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#gas-property-calculations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gas property calculations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#creating-and-fitting-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Creating and fitting models
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Creating and fitting models">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#designing-a-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Designing a model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fitting-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fitting models
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fitting-models-to-dataframe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fitting models to DataFrame
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+  
+
+
+  <nav class="md-path" aria-label="Navigation" >
+    <ol class="md-path__list">
+      
+        
+  
+  
+    <li class="md-path__item">
+      <a href="../.." class="md-path__link">
+        
+  <span class="md-ellipsis">
+    Home
+  </span>
+
+      </a>
+    </li>
+  
+
+      
+      
+        
+  
+  
+    
+    
+      <li class="md-path__item">
+        <a href="./" class="md-path__link">
+          
+  <span class="md-ellipsis">
+    Getting Started
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ol>
+  </nav>
+
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="usage">Usage</h1>
+<p>This is a relatively abridged version of the information you can find in <code>example scripts</code>.</p>
+<h2 id="how-quantities-are-defined-in-pagos">How quantities are defined in PAGOS</h2>
+<p>This package is designed with a number of "numerical safeguards". Quantities used in PAGOS may contain units, and uncertainties. Functions in PAGOS are designed for use with <code>Quantity</code> objects from <a href="https://pint.readthedocs.io/en/stable/">Pint</a>, but can also be used with regular Python datatypes. The following code produces such a quantity representing the speed 11.2 m/s.
+<div class="language-py highlight"><pre><span></span><code><span id="__span-0-1"><span class="kn">from</span><span class="w"> </span><span class="nn">pagos</span><span class="w"> </span><span class="kn">import</span> <span class="n">pQ</span>
+</span><span id="__span-0-2"><span class="n">mySpeed</span> <span class="o">=</span> <span class="n">pQ</span><span class="p">(</span><span class="mf">11.2</span><span class="p">,</span> <span class="s1">'m/s'</span><span class="p">)</span>
+</span><span id="__span-0-3"><span class="nb">print</span><span class="p">(</span><span class="n">mySpeed</span><span class="p">)</span>
+</span><span id="__span-0-4"><span class="c1"># -&gt; 11.2000 meter / second</span>
+</span></code></pre></div>
+<code>pQ</code> is a shortcut to create a <code>PAGOSQuantity</code> object, which stores value and unit data, just as Pint <code>Quantity</code>s, but with optimisations for PAGOS.</p>
+<h2 id="water-property-calculations">Water property calculations</h2>
+<p>The properties of seawater and various gases can be calculated with the <code>water</code> and <code>gas</code> modules. For example, calculating the density of water at a given temperature and salinity:
+<div class="language-py highlight"><pre><span></span><code><span id="__span-1-1"><span class="kn">from</span><span class="w"> </span><span class="nn">pagos</span><span class="w"> </span><span class="kn">import</span> <span class="n">water</span> <span class="k">as</span> <span class="n">pwater</span>
+</span><span id="__span-1-2"><span class="kn">from</span><span class="w"> </span><span class="nn">pagos</span><span class="w"> </span><span class="kn">import</span> <span class="n">pQ</span>
+</span><span id="__span-1-3">
+</span><span id="__span-1-4"><span class="n">myTemp1</span> <span class="o">=</span> <span class="n">pQ</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="s1">'degC'</span><span class="p">)</span>
+</span><span id="__span-1-5"><span class="n">mySal1</span> <span class="o">=</span> <span class="n">pQ</span><span class="p">(</span><span class="mi">30</span><span class="p">,</span> <span class="s1">'permille'</span><span class="p">)</span>
+</span><span id="__span-1-6">
+</span><span id="__span-1-7"><span class="n">myDensity1</span> <span class="o">=</span> <span class="n">pwater</span><span class="o">.</span><span class="n">calc_dens</span><span class="p">(</span><span class="n">myTemp1</span><span class="p">,</span> <span class="n">mySal1</span><span class="p">)</span>
+</span><span id="__span-1-8"><span class="n">myDensity2</span> <span class="o">=</span> <span class="n">pwater</span><span class="o">.</span><span class="n">calc_dens</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">30</span><span class="p">)</span> <span class="c1"># &lt;- default units of degC and permille assumed</span>
+</span><span id="__span-1-9">
+</span><span id="__span-1-10"><span class="nb">print</span><span class="p">(</span><span class="n">myDensity1</span><span class="p">)</span>
+</span><span id="__span-1-11"><span class="nb">print</span><span class="p">(</span><span class="n">myDensity2</span><span class="p">)</span>
+</span><span id="__span-1-12"><span class="c1"># -&gt; 1023.05112 kilogram / meter ** 3</span>
+</span><span id="__span-1-13"><span class="c1"># -&gt; 1023.05112 kilogram / meter ** 3</span>
+</span></code></pre></div>
+We can see that the water property function have default, assumed units for any given float arguments. You can see these by accessing the <code>default_units_in</code> and <code>units_out</code> methods:</p>
+<p><div class="language-py highlight"><pre><span></span><code><span id="__span-2-1"><span class="nb">print</span><span class="p">(</span><span class="n">pwater</span><span class="o">.</span><span class="n">calc_dens</span><span class="o">.</span><span class="n">default_units_in</span><span class="p">)</span>
+</span><span id="__span-2-2"><span class="c1"># -&gt; {'T': 'degC', 'S': 'permille'}</span>
+</span><span id="__span-2-3"><span class="nb">print</span><span class="p">(</span><span class="n">pwater</span><span class="o">.</span><span class="n">calc_dens</span><span class="o">.</span><span class="n">units_in</span><span class="p">)</span>
+</span></code></pre></div>
+or in the docstrings of the respective functions: 
+<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1">console:
+</span><span id="__span-3-2">
+</span><span id="__span-3-3">&gt;&gt;&gt; help(pwater.calc_dens)
+</span><span id="__span-3-4">Help on function calc_dens in module pagos.water:
+</span><span id="__span-3-5">
+</span><span id="__span-3-6">calc_dens(T: float | PAGOSQuantity, S: float | PAGOSQuantity) -&gt; PAGOSQuantity
+</span><span id="__span-3-7">    Calculate density of seawater at a given temperature and salinity, according to Gill 1982.
+</span><span id="__span-3-8">
+</span><span id="__span-3-9">    ## Units
+</span><span id="__span-3-10">        **default units in** — `T`:°C, `S`:‰
+</span><span id="__span-3-11">        **default units out** — kg/m³
+</span><span id="__span-3-12">
+</span><span id="__span-3-13">    ...
+</span></code></pre></div></p>
+<p>PAGOS will also automatically convert units of a different kind:</p>
+<div class="language-py highlight"><pre><span></span><code><span id="__span-4-1"><span class="n">myTemp2</span> <span class="o">=</span> <span class="n">pQ</span><span class="p">(</span><span class="mf">283.15</span><span class="p">,</span> <span class="s1">'K'</span><span class="p">)</span>
+</span><span id="__span-4-2"><span class="n">mySal2</span> <span class="o">=</span> <span class="n">pQ</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="s1">'percent'</span><span class="p">)</span>
+</span><span id="__span-4-3">
+</span><span id="__span-4-4"><span class="n">myDensity3</span> <span class="o">=</span> <span class="n">pwater</span><span class="o">.</span><span class="n">calc_dens</span><span class="p">(</span><span class="n">myTemp2</span><span class="p">,</span> <span class="n">mySal2</span><span class="p">)</span>
+</span><span id="__span-4-5">
+</span><span id="__span-4-6"><span class="nb">print</span><span class="p">(</span><span class="n">myDensity3</span><span class="p">)</span>
+</span><span id="__span-4-7"><span class="c1"># -&gt; 1023.05112 kilogram / meter ** 3</span>
+</span></code></pre></div>
+<p>Other properties available to be calculated for water are vapour pressure over the water and kinematic viscosity of the water, given temperature and salinity:
+<div class="language-py highlight"><pre><span></span><code><span id="__span-5-1"><span class="n">myVapourPres</span> <span class="o">=</span> <span class="n">pwater</span><span class="o">.</span><span class="n">calc_vappres</span><span class="p">(</span><span class="n">myTemp1</span><span class="p">)</span>
+</span><span id="__span-5-2"><span class="n">myKinVisc</span> <span class="o">=</span> <span class="n">pwater</span><span class="o">.</span><span class="n">calc_kinvisc</span><span class="p">(</span><span class="n">myTemp1</span><span class="p">,</span> <span class="n">mySal1</span><span class="p">)</span>
+</span><span id="__span-5-3"><span class="nb">print</span><span class="p">(</span><span class="n">myVapourPres</span><span class="p">)</span>
+</span><span id="__span-5-4"><span class="nb">print</span><span class="p">(</span><span class="n">myKinVisc</span><span class="p">)</span>
+</span><span id="__span-5-5"><span class="c1"># -&gt; 12.2723706 millibar</span>
+</span><span id="__span-5-6"><span class="c1"># -&gt; 1.35162181e-06 meter ** 2 / second</span>
+</span></code></pre></div></p>
+<h2 id="gas-property-calculations">Gas property calculations</h2>
+<p>Much like the bulk water properties, properties of gases dissolved in water can also be calculated. These are dependent on the species of gas we are interested in:
+<div class="language-py highlight"><pre><span></span><code><span id="__span-6-1"><span class="kn">from</span><span class="w"> </span><span class="nn">pagos.gas</span><span class="w"> </span><span class="kn">import</span> <span class="n">Ar</span><span class="p">,</span> <span class="n">SF6</span>
+</span><span id="__span-6-2">
+</span><span id="__span-6-3"><span class="c1"># Schmidt number of Ar at T = 10 degC, S = 20 permille</span>
+</span><span id="__span-6-4"><span class="nb">print</span><span class="p">(</span><span class="n">Ar</span><span class="o">.</span><span class="n">calc_Sc</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">))</span>
+</span><span id="__span-6-5"><span class="c1"># -&gt;</span>
+</span><span id="__span-6-6"><span class="c1"># Same calculation for SF6</span>
+</span><span id="__span-6-7"><span class="nb">print</span><span class="p">(</span><span class="n">SF6</span><span class="o">.</span><span class="n">calc_Sc</span><span class="p">(</span><span class="n">pQ</span><span class="p">(</span><span class="mf">283.15</span><span class="p">,</span> <span class="s1">'K'</span><span class="p">),</span> <span class="mi">20</span><span class="p">))</span>
+</span></code></pre></div>
+In the above example, <code>Ar</code> and <code>SF6</code> are built-in instances of the <code>Gas</code> object. <code>Gas</code> exposes methods, such as <code>calc_Sc</code>, associated with gas-dependent calculations. Like the functions from <code>water</code>, these methods have default units in and out, which can be similarly accessed (see <a href="#water-property-calculations">previous section</a>).</p>
+<p>The methods and properties of <code>Gas</code> can be accessed from outside:
+<div class="language-py highlight"><pre><span></span><code><span id="__span-7-1"><span class="kn">from</span><span class="w"> </span><span class="nn">pagos.gas</span><span class="w"> </span><span class="kn">import</span> <span class="n">Ar</span><span class="p">,</span> <span class="n">calc_Sc</span><span class="p">,</span> <span class="n">calc_Ceq</span><span class="p">,</span> <span class="n">abn</span><span class="p">,</span> <span class="n">molvol</span>
+</span><span id="__span-7-2"><span class="c1"># Schmidt number (method)</span>
+</span><span id="__span-7-3"><span class="k">assert</span> <span class="n">Ar</span><span class="o">.</span><span class="n">calc_Sc</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">)</span> <span class="o">==</span> <span class="n">calc_Sc</span><span class="p">(</span><span class="n">Ar</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">)</span>
+</span><span id="__span-7-4"><span class="c1"># Equilibrium concentration (method)</span>
+</span><span id="__span-7-5"><span class="c1"># Note: name of gas as string works in external function</span>
+</span><span id="__span-7-6"><span class="k">assert</span> <span class="n">Ar</span><span class="o">.</span><span class="n">calc_Ceq</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="o">==</span> <span class="n">calc_Ceq</span><span class="p">(</span><span class="s1">'Ar'</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+</span><span id="__span-7-7"><span class="c1"># Atmospheric abundance (property)</span>
+</span><span id="__span-7-8"><span class="k">assert</span> <span class="n">Ar</span><span class="o">.</span><span class="n">abundance</span> <span class="o">==</span> <span class="n">abn</span><span class="p">(</span><span class="n">Ar</span><span class="p">)</span>
+</span><span id="__span-7-9"><span class="c1"># Molar volume (property)</span>
+</span><span id="__span-7-10"><span class="k">assert</span> <span class="n">Ar</span><span class="o">.</span><span class="n">molar_volume</span> <span class="o">==</span> <span class="n">molvol</span><span class="p">(</span><span class="n">Ar</span><span class="p">)</span>
+</span></code></pre></div></p>
+<h2 id="creating-and-fitting-models">Creating and fitting models</h2>
+<h3 id="designing-a-model">Designing a model</h3>
+<p>The real power of PAGOS is in its gas exchange modelling capabilities. PAGOS allows for easy user-definition of gas exchange models. Say we wanted to implement a simple unfractionated excess air (UA) model (that is, equilibrium concentration <span class="arithmatex">\(C^\mathrm{eq}\)</span> "topped up" with an excess air component):</p>
+<div class="arithmatex">\[
+C_\mathrm{gas}^\mathrm{UA}(T, S, p, A) = C_\mathrm{gas}^\mathrm{eq}(T, S, p) + A\cdot z,
+\]</div>
+<p>where <span class="arithmatex">\(A\)</span> is in the units of <span class="arithmatex">\(C^\mathrm{eq}_\mathrm{gas}\)</span> and <span class="arithmatex">\(z\)</span> is the atmospheric abundance of the gas. We could implement it very simply like this:
+<div class="language-py highlight"><pre><span></span><code><span id="__span-8-1"><span class="kn">from</span><span class="w"> </span><span class="nn">pagos.gas</span><span class="w"> </span><span class="kn">import</span> <span class="n">calc_Ceq</span><span class="p">,</span> <span class="n">abn</span>
+</span><span id="__span-8-2"><span class="kn">from</span><span class="w"> </span><span class="nn">pagos.modelling</span><span class="w"> </span><span class="kn">import</span> <span class="n">TracerModel</span><span class="c1">#</span>
+</span><span id="__span-8-3">
+</span><span id="__span-8-4"><span class="k">def</span><span class="w"> </span><span class="nf">ua_func</span><span class="p">(</span><span class="n">gas</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">S</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">A</span><span class="p">):</span>
+</span><span id="__span-8-5">    <span class="n">Ceq</span> <span class="o">=</span> <span class="n">calc_Ceq</span><span class="p">(</span><span class="n">gas</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">S</span><span class="p">,</span> <span class="n">p</span><span class="p">)</span> <span class="c1"># -&gt; mol_gas / kg</span>
+</span><span id="__span-8-6">    <span class="n">z</span> <span class="o">=</span> <span class="n">abn</span><span class="p">(</span><span class="n">gas</span><span class="p">)</span> <span class="c1"># -&gt; mol_gas / mol</span>
+</span><span id="__span-8-7">    <span class="k">return</span> <span class="n">Ceq</span> <span class="o">+</span> <span class="n">A</span> <span class="o">*</span> <span class="n">z</span>
+</span></code></pre></div></p>
+<p>PAGOS provides a <a href="../../User%20Guide/Modelling/##tracermodel-objects"><code>TracerModel</code></a> object to contain all the unit information and fitting methods that we require:</p>
+<div class="language-py highlight"><pre><span></span><code><span id="__span-9-1"><span class="kn">from</span><span class="w"> </span><span class="nn">pagos.modelling</span><span class="w"> </span><span class="kn">import</span> <span class="n">TracerModel</span>
+</span><span id="__span-9-2">
+</span><span id="__span-9-3"><span class="n">uaModel</span> <span class="o">=</span> <span class="n">TracerModel</span><span class="p">(</span><span class="n">ua_func</span><span class="p">,</span> <span class="n">default_units_in</span><span class="o">=</span><span class="p">{</span><span class="s1">'gas'</span><span class="p">:</span><span class="kc">None</span><span class="p">,</span> <span class="s1">'T'</span><span class="p">:</span><span class="s1">'degC'</span><span class="p">,</span> <span class="s1">'S'</span><span class="p">:</span><span class="s1">'permille'</span><span class="p">,</span> <span class="s1">'p'</span><span class="p">:</span><span class="s1">'atm'</span><span class="p">,</span> <span class="s1">'A'</span><span class="p">:</span><span class="s1">'mol/kg'</span><span class="p">},</span> <span class="n">default_units_out</span><span class="o">=</span><span class="s1">'mol_g/kg'</span><span class="p">)</span>
+</span></code></pre></div>
+<p>The first argument is the our model's function, the second are the units in that the <code>TracerModel</code> expects, and the third are the units to which the result should be converted. The <code>_g</code> suffix on the output units stands for "generic gas": the model will produce concentrations of a gas, but the gas can vary, and conversions will depend on which gas we are interested in!</p>
+<p>The function that the <code>TracerModel</code> was constructed with can be accessed with <code>run</code> and the argument structure of the supplied function:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-10-1">&gt;&gt;&gt; uaModel.run('Ar', 10, 0, 1, 1e-5)
+</span><span id="__span-10-2">&lt;PAGOSQuantity(1.74364437e-05, 'mole_Ar / kilogram')&gt;
+</span></code></pre></div></p>
+<h3 id="fitting-models">Fitting models</h3>
+<p>To fit the created <code>TracerModel</code>, we need to supply it with data. For now, let us imagine we have one sample in which we measured the following noble gas concentrations, salinity and atmospheric pressure:</p>
+<p>$$
+\begin{aligned}
+\mathrm{He} &amp;= (2.93\, \pm\, 0.02) \times10^{-9}\, \mathrm{mol/kg}\
+\mathrm{Ne} &amp;= (1.16\, \pm\, 0.01) \times10^{-8}\, \mathrm{mol/kg}\
+\mathrm{Ar} &amp;= (1.67\, \pm\, 0.01) \times10^{-5}\, \mathrm{mol/kg}\
+\mathrm{Kr} &amp;= (3.68\, \pm\, 0.02) \times10^{-9}\, \mathrm{mol/kg}\
+\mathrm{Xe} &amp;= (5.08\, \pm\, 0.06) \times10^{-10}\, \mathrm{mol/kg}\
+S &amp;= 23.4\, \mathrm{g/kg}\
+p &amp;= 1.00\, \mathrm{atm}
+\end{aligned}
+$$
+We can use the <code>fit</code> method of <code>TracerModel</code> to find the set of remaining model parameters (in this case <code>A</code> and <code>T</code>) which best reproduce our measurements:
+<div class="language-py highlight"><pre><span></span><code><span id="__span-11-1"><span class="n">fixed</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"S"</span><span class="p">:</span><span class="mi">23</span><span class="p">,</span> <span class="s2">"p"</span><span class="p">:</span><span class="mi">1</span><span class="p">}</span>
+</span><span id="__span-11-2"><span class="n">init_guesses</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"T"</span><span class="p">:</span><span class="mi">10</span><span class="p">,</span> <span class="s2">"A"</span><span class="p">:</span><span class="mi">0</span><span class="p">}</span>
+</span><span id="__span-11-3"><span class="n">noblegases</span> <span class="o">=</span> <span class="p">[</span><span class="s1">'He'</span><span class="p">,</span> <span class="s1">'Ne'</span><span class="p">,</span> <span class="s1">'Ar'</span><span class="p">,</span> <span class="s1">'Kr'</span><span class="p">,</span> <span class="s1">'Xe'</span><span class="p">]</span>
+</span><span id="__span-11-4"><span class="n">obs_NGs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">2.93e-9</span><span class="p">,</span> <span class="mf">1.16e-8</span><span class="p">,</span> <span class="mf">1.67e-5</span><span class="p">,</span> <span class="mf">3.68e-9</span><span class="p">,</span> <span class="mf">5.08e-10</span><span class="p">])</span>
+</span><span id="__span-11-5"><span class="n">err_NGs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">2e-11</span><span class="p">,</span> <span class="mf">1e-10</span><span class="p">,</span> <span class="mf">1e-7</span><span class="p">,</span> <span class="mf">2e-11</span><span class="p">,</span> <span class="mf">6e-12</span><span class="p">])</span>
+</span><span id="__span-11-6">
+</span><span id="__span-11-7"><span class="n">fit</span> <span class="o">=</span> <span class="n">uaModel</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">fixed_regressors</span><span class="o">=</span><span class="n">fixed</span><span class="p">,</span>
+</span><span id="__span-11-8">                  <span class="n">regressors_to_fit</span><span class="o">=</span><span class="n">init_guesses</span><span class="p">,</span> 
+</span><span id="__span-11-9">                  <span class="n">tracers</span><span class="o">=</span><span class="n">noblegases</span><span class="p">,</span>
+</span><span id="__span-11-10">                  <span class="n">obs_tr</span><span class="o">=</span><span class="n">obs_NGs</span><span class="p">,</span> 
+</span><span id="__span-11-11">                  <span class="n">obs_tr_errs</span><span class="o">=</span><span class="n">err_NGs</span><span class="p">)</span>
+</span></code></pre></div>
+The result is a <code>MinimizerResult</code> object from <a href="https://lmfit.github.io/lmfit-py/">LMFIT</a>. The fitted values can be accessed via the <code>params</code> attribute, and can be nicely displayed thus:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-12-1">&gt;&gt;&gt; fit.params.pretty_print()
+</span><span id="__span-12-2">Name     Value   Min   Max    Stderr    Vary    Expr    Brute_Step
+</span><span id="__span-12-3">A    0.0002049  -inf   inf 2.425e-06    True    None          None
+</span><span id="__span-12-4">S           23  -inf   inf         0   False    None          None
+</span><span id="__span-12-5">T        10.14  -inf   inf    0.1271    True    None          None
+</span><span id="__span-12-6">p            1  -inf   inf         0   False    None          None
+</span></code></pre></div></p>
+<h3 id="fitting-models-to-dataframe">Fitting models to <code>DataFrame</code></h3>
+<p>Normally, you will have more than just one sample to fit, usually in the form of a table. <code>TracerModel</code>s can read <a href="https://pandas.pydata.org/">pandas</a> <code>DataFrame</code> objects and fit all the rows using the <code>fit_dataframe</code> method.
+Let's say we have the following data:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-13-1">&gt;&gt;&gt; import pandas as pd
+</span><span id="__span-13-2">&gt;&gt;&gt; measdata = pd.read_csv('path/to/data/table')
+</span><span id="__span-13-3">&gt;&gt;&gt; measdata.head()
+</span><span id="__span-13-4">         He   He err       Ne   Ne err ...       Xe   Xe err      S     p
+</span><span id="__span-13-5">0  3.67e-09 2.31e-10 1.41e-08 1.65e-09 ... 5.08e-10 9.97e-11  20.00  1.02
+</span><span id="__span-13-6">1  2.93e-09 2.38e-11 1.16e-08 8.04e-11 ... 5.09e-10 5.65e-12   6.54  1.00
+</span><span id="__span-13-7">2  3.59e-09 2.98e-11 1.42e-08 2.82e-10 ... 6.23e-10 1.22e-11   2.34  0.97
+</span><span id="__span-13-8">3  2.28e-09 3.21e-11 9.51e-09 1.73e-10 ... 5.61e-10 5.43e-12  13.69  0.99
+</span><span id="__span-13-9">4  2.78e-09 5.33e-11 1.12e-08 1.28e-10 ... 5.25e-10 2.87e-12  10.11  1.01
+</span></code></pre></div>
+<p>To fit all these samples (rows) with one command, we can use <code>fit_dataframe</code>, with much the same structure as <code>fit</code>:</p>
+<p><div class="language-py highlight"><pre><span></span><code><span id="__span-14-1"><span class="n">init_guesses</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"T"</span><span class="p">:</span><span class="mi">10</span><span class="p">,</span> <span class="s2">"A"</span><span class="p">:</span><span class="mi">0</span><span class="p">}</span>
+</span><span id="__span-14-2"><span class="n">noblegases</span> <span class="o">=</span> <span class="p">[</span><span class="s1">'He'</span><span class="p">,</span> <span class="s1">'Ne'</span><span class="p">,</span> <span class="s1">'Ar'</span><span class="p">,</span> <span class="s1">'Kr'</span><span class="p">,</span> <span class="s1">'Xe'</span><span class="p">]</span>
+</span><span id="__span-14-3">
+</span><span id="__span-14-4"><span class="n">fitdf</span> <span class="o">=</span> <span class="n">uaModel</span><span class="o">.</span><span class="n">fit_dataframe</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">measdata</span><span class="p">,</span>
+</span><span id="__span-14-5">                              <span class="n">regressors_to_fit</span><span class="o">=</span><span class="n">init_guesses</span><span class="p">,</span> 
+</span><span id="__span-14-6">                              <span class="n">tracers</span><span class="o">=</span><span class="n">noblegases</span><span class="p">)</span>
+</span></code></pre></div>
+This produces the following output:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-15-1">FIT WARNING: No columns found for the unit on He, Ne, Ar, Kr and Xe, assuming the default units of the function return (mol_g/kg).
+</span><span id="__span-15-2">FIT WARNING: No columns found for the unit of S and p, assuming the default units in for the function (permille and atm).
+</span><span id="__span-15-3">100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 20/20
+</span></code></pre></div>
+The warnings explain that the user did not explicitly give unit information in the columns of the DataFrame, but PAGOS will attempt to infer them from the <code>TracerModel</code> being fitted. The result of the fit is itself a <code>DataFrame</code>:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-16-1">&gt;&gt;&gt; fitdf.head()
+</span><span id="__span-16-2">           T     T err         A     A err
+</span><span id="__span-16-3">0   13.00937  0.136169  0.000335  0.000002
+</span><span id="__span-16-4">1  14.331123       0.0  0.000176       0.0
+</span><span id="__span-16-5">2   8.758895       0.0  0.000297       0.0
+</span><span id="__span-16-6">3   8.799489       0.0  0.000062       0.0
+</span><span id="__span-16-7">4  12.621208       0.0  0.000149       0.0
+</span></code></pre></div>
+In this case, the example data was generated exactly from the UA model, and the first sample's data was then artificially edited - this is why the error is extremely small for samples 1-4, but more realistic for sample 0. </p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../.." class="md-footer__link md-footer__link--prev" aria-label="Previous: Home">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Home
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../../User%20Guide/Quantities%20and%20Magnitudes/" class="md-footer__link md-footer__link--next" aria-label="Next: Quantities and Magnitudes">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Quantities and Magnitudes
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2024&mdash;2025 Stanley Scott and Chiara Hubner
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.tooltips", "content.code.annotate", "content.code.copy", "navigation.instant", "navigation.instant.progress", "navigation.sections", "navigation.path", "navigation.indexes", "navigation.footer", "toc.follow", "search.suggest", "search.share"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>
