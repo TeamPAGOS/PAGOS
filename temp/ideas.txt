@@ -39,7 +39,9 @@ obvious to the user though!
        This would not cover all cases (e.g. if there is control flow in the objective function), but perhaps
        we can implement an error-catching system which tries fast, then tries without fast, and finally throws
        an error if both failed.
-- TODO NEXT Write documentation and release
-- TODO NEXT NEXT: gui, perhaps from scratch
+- TODO NEXT: Seems like implementing numpy function catching has some effect. The real benefit would be if we can vectorise
+             calculations... see if this can be done!
+- TODO NEXT NEXT: Write documentation and release
+- TODO NEXT NEXT NEXT: gui, perhaps from scratch
 
 - TODO BUG in GUI: abvacim does not behave as intended when a column of different values is imported instead of just one!

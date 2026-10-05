@@ -168,3 +168,7 @@ def test_abs():
     q1 = pQ(-9.81, "m/s^2")
     assert abs(q1) == pQ(9.81, "m/s^2")
     _set_fast(False)
+
+
+if __name__ == "__main__":
+    test_add()
