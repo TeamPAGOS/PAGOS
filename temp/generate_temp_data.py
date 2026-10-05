@@ -12,7 +12,7 @@ realT = rng.normal(loc=15, scale=2, size=n_samples)
 realS = rng.uniform(low=0, high=3, size=n_samples)
 realp = rng.normal(loc=1010, scale=5, size=n_samples) / 1013.25
 realA = rng.uniform(low=0, high=1e-2, size=n_samples)
-realF = rng.uniform(low=0, high=0.6, size=n_samples)
+realF = rng.uniform(low=0, high=0.1, size=n_samples)
 
 measHe = np.array(
     [
@@ -85,6 +85,11 @@ meas_data_df = pd.DataFrame(
         "p err": errp,
         "S units": unitsS,
         "p units": unitsp,
+        "real T": realT,
+        "real A": realA,
+        "real F": realF,
+        "real p": realp,
+        "real S": realS,
     }
 )
 
