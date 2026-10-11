@@ -1,7 +1,7 @@
 import ast
 import inspect
 from collections.abc import Callable
-from numbers import Number
+from numbers import Number, Real
 from textwrap import dedent
 
 import pint
@@ -9,6 +9,21 @@ from pint.util import UnitsContainer
 from visast import visualise
 
 ureg = pint.UnitRegistry()
+
+
+class PAGOSQuantity:
+    def __init__(self, value, units):
+        self.value = value
+        if isinstance(units, str):
+            self.units = ureg._parse_units_as_container(units)
+        elif isinstance(units, pint.util.UnitsContainer):
+            self.units = units
+        else:
+            raise NotImplementedError("Type of units passed in is not implemented")
+
+
+def pQ(value, units):
+    return PAGOSQuantity(value, units)
 
 
 def unit_aware(default_units_in: dict | None, units_out: str | None):
@@ -29,8 +44,8 @@ def unit_aware(default_units_in: dict | None, units_out: str | None):
         # Find the instances of when the function makes an assignment
         # from an external scope. These have to be artificially run
         # here so that the units associated with them can be recorded.
-        _extern_assign_visitor = ExternalAssignmentVisitor()
-        _extern_assign_visitor.visit(_ast)
+        _extern_assign_visitor = ExternalAssignmentVisitor(func)
+        _ast = ast.fix_missing_locations(_extern_assign_visitor.visit(_ast))
 
         # Now these external assignments are unit-laden, we send a visitor
         # around the AST again, setting these units on any loading nodes
@@ -40,21 +55,21 @@ def unit_aware(default_units_in: dict | None, units_out: str | None):
         _unit_conv_transformer = UnitConversionTransformer(
             input_arguments_units, _extern_assign_visitor.ext_assigns, output_units
         )
+        c = 0
         while True:
             # visualise.graph(_ast)
+            print(c)
             _unit_conv_transformer.changelock = set()
             _unit_conv_transformer.did_anything_change = False
             _ast = ast.fix_missing_locations(_unit_conv_transformer.visit(_ast))
             if not _unit_conv_transformer.did_anything_change:
                 break
+            c += 1
 
         exec(ast.unparse(_ast), globals())
-
-        # the above exec statement defines a function __unit_aware_function
-        # this is what will actually be returned
-        __unit_aware_function.default_units_in = default_units_in  # noqa: F821
-        __unit_aware_function.units_out = units_out  # noqa: F821
         __unit_aware_function.ast = _ast  # noqa: F821
+        __unit_aware_function.__globals__.update(func.__globals__)  # noqa: F821
+
         return __unit_aware_function  # noqa: F821
 
     return _unit_aware
@@ -63,8 +78,9 @@ def unit_aware(default_units_in: dict | None, units_out: str | None):
 UNASSIGNED = object()
 
 
-class ExternalAssignmentVisitor(ast.NodeVisitor):
-    def __init__(self):
+class ExternalAssignmentVisitor(ast.NodeTransformer):
+    def __init__(self, func: Callable):
+        self.func = func
         self.ext_assigns = {}
         super().__init__()
 
@@ -74,13 +90,14 @@ class ExternalAssignmentVisitor(ast.NodeVisitor):
     def generic_visit(self, node):
         if isinstance(node, ast.Constant):
             node.units = ureg.parse_units_as_container("dimensionless")
-        else:
+        # we might have applied units via visit_Assign. Otherwise, assign UNASSIGNED sentinel
+        elif not hasattr(node, "units"):
             node.units = UNASSIGNED
         return super().generic_visit(node)
 
     def visit_Module(self, node: ast.Module):
         self._module = node
-        self.generic_visit(node)
+        return self.generic_visit(node)
 
     def visit_Assign(self, node: ast.Assign):
         try:
@@ -91,36 +108,84 @@ class ExternalAssignmentVisitor(ast.NodeVisitor):
             )
 
             # execute the Assign statement. This allows us to find any constants
-            _original_globals = set(globals())
-            _globals = globals().copy()
+            _globals_from_func = self.func.__globals__
+            _original_globals = set(_globals_from_func)
             # this executes the assign statement, and the assigned variables are placed in self._globals
-            exec(ast.unparse(assign_tree), _globals)
-            newly_assigned_globals_set = set(_globals) - _original_globals
+            exec(ast.unparse(assign_tree), _globals_from_func)
+            newly_assigned_globals_set = set(_globals_from_func) - _original_globals
+            # these are the variables that are assigned from external scope
             assigned_quantities = {
-                name: _globals[name] for name in newly_assigned_globals_set
+                name: _globals_from_func[name] for name in newly_assigned_globals_set
             }
+
             # store unit information of local variables
-            for target in node.targets:
+            target0 = node.targets[0]
+            RHS_units_list = []
+            # deal with unpacked assignment
+            if isinstance(target0, (ast.Tuple, ast.List)):
+                # changes a, b, c = some_collection
+                # to a, b, c = [_v.value if isinstance(_v, PAGOSQuantity) else _v for _v in some_collection]
+                comprehension_tree = (
+                    ast.parse(
+                        "[_v.value if isinstance(_v, PAGOSQuantity) else _v for _v in "
+                        + ast.unparse(node.value)
+                        + "]",
+                    )
+                    .body[0]
+                    .value
+                )
+                node.value = comprehension_tree
+
+                # get units of externally assigned local variables
+                for elt in target0.elts:
+                    if elt.id in assigned_quantities:
+                        elt.units = assigned_quantities[elt.id].units
+
+                        self.ext_assigns[elt.id] = elt.units
+                    RHS_units_list.append(elt.units)
+
+            # otherwise just a single assignment
+            else:
+                # changes var = thing
+                # to var = thing.value if isinstance(thing, PAGOSQuantity) else thing
+                value_access_tree = (
+                    ast.parse(
+                        ast.unparse(node.value)
+                        + ".value if isinstance("
+                        + ast.unparse(node.value)
+                        + ", PAGOSQuantity) else "
+                        + ast.unparse(node.value)
+                    )
+                    .body[0]
+                    .value
+                )
+                node.value = value_access_tree
+
+                if not hasattr(assigned_quantities[target0.id], "units"):
+                    # None is assigned to variables that do not have units.
+                    # This is NOT the same as having 'dimensionless' as a unit.
+                    target0.units = None
+                else:
+                    target0.units = assigned_quantities[target0.id].units
+                self.ext_assigns[target0.id] = target0.units
+                RHS_units_list.append(target0.units)
+
+            node.value.units = RHS_units_list
+
+            # deals with any simultaneous assignment (a = b = c etc.)
+            for target in node.targets[1:]:
                 if isinstance(target, (ast.Tuple, ast.List)):
-                    for elt in target.elts:
-                        if elt.id in assigned_quantities:
-                            elt.units = assigned_quantities[elt.id].units
-                            self.ext_assigns[elt.id] = elt.units
-                elif isinstance(target, ast.Name) and target.id in assigned_quantities:
-                    if not hasattr(assigned_quantities[target.id], "units"):
-                        # None is assigned to variables that do not have units.
-                        # This is NOT the same as having 'dimensionless' as a unit.
-                        target.units = None
-                    else:
-                        target.units = assigned_quantities[target.id].units
-                    self.ext_assigns[target.id] = target.units
+                    for i in range(len(target.elts)):
+                        target.elts[i] = target0.elts[i].units
+                else:
+                    target.units = target0.units
 
         except NameError:
             # NameError thrown when we are in an Assign statement involving function arguments rather than local variables
             # These are unimportant as their unit information is stored in the function decorator anyway
             pass
 
-        self.generic_visit(node)
+        return self.generic_visit(node)
 
 
 def generate_conv_node(
@@ -213,22 +278,33 @@ class UnitConversionTransformer(ast.NodeTransformer):
         # We keep track of whether or not we are down-tree of an Assigment node.
         # This is so that any reassignments (e.g. x = x.to('kg')) do not propagate
         # unit changes inside the reassignment itself
+        _targets = []
         for t in node.targets:
-            self.assigning.append(t.id)
+            if isinstance(t, (ast.List, ast.Tuple)):
+                for elt in t.elts:
+                    _targets.append(elt)
+                    self.assigning.append(elt.id)
+            else:
+                _targets.append(t)
+                self.assigning.append(t.id)
 
-        for i in range(len(node.targets)):
-            t = node.targets[i]
-            if t.units != node.value.units:
-                node.targets[i].units = node.value.units
+        for i in range(len(_targets)):
+            t = _targets[i]
+            if isinstance(node.value.units, list):
+                u = node.value.units[i]
+            else:
+                u = node.value.units
+            if t.units != u:
+                _targets[i].units = u
                 self.local_variables[t.id] = t.units
                 self.something_changed()
                 self.changelock.add(t.id)
-            elif node.value.units is UNASSIGNED:
+            elif u is UNASSIGNED:
                 self.something_changed()
                 self.changelock.add(t.id)
 
         to_return = self.generic_visit(node)
-        for i in range(len(node.targets)):
+        for i in range(len(_targets)):
             self.assigning.pop()
         return to_return
 
@@ -244,9 +320,9 @@ class UnitConversionTransformer(ast.NodeTransformer):
         original_units = node.units
 
         # operation conversions that require a and b to have units:
-        ua = node.left.units
-        ub = node.right.units
-        if not ua is UNASSIGNED and not ub is UNASSIGNED:
+        ua: UnitsContainer = node.left.units
+        ub: UnitsContainer = node.right.units
+        if ua is not UNASSIGNED and ub is not UNASSIGNED:
             if isinstance(node.op, (ast.Add, ast.Sub)):
                 # a +- b:    b to [a] -> [a]
                 cfactor = ureg._get_conversion_factor(ub, ua)
@@ -266,12 +342,31 @@ class UnitConversionTransformer(ast.NodeTransformer):
                 ret_node.units = ua / ub
 
             # Pow does not need both inputs to have units, only the left-hand input
-            if isinstance(node.op, ast.Pow):
+            elif isinstance(node.op, ast.Pow):
                 # a ^ b:    -> [a] ^ b
-                ua = node.left.units
-                b = node.right.value
 
-                ret_node.units = ua**b
+                # b MUST be dimensionless
+                if ureg.Unit(ub).dimensionless:
+                    if ureg.Unit(ua).dimensionless:
+                        # convert to true dimensionless (e.g. from % or permille)
+                        cfactor = ureg._get_conversion_factor(ua, UnitsContainer({}))
+                        raise_error_if_invalid(cfactor)
+                        transplanted_node = generate_conv_node(
+                            node.left, cfactor, UnitsContainer({}), ua
+                        )
+                        ret_node = transplanted_node
+                    else:
+                        # If a is not dimensionless, b must be constant (otherwise the resultant unit could change depending on b)
+                        # This means we should be able to evaluate the RHS as an expression involving only constants
+                        try:
+                            expfactor = eval(ast.unparse(node.right))
+                            ret_node.units = ua**expfactor
+                        except:
+                            raise NameError(
+                                "Non-constant exponent of non-dimensionless base detected in function"
+                            )
+                else:
+                    raise NameError("Non-dimensionless exponent detected in function")
 
         # if a change occurs, we want the traversal loop to happen at least once more
         if original_units != ret_node.units:
@@ -404,3 +499,6 @@ if __name__ == "__main__":
     print(myfunc4)
     visualise.graph(myfunc4.ast)
     print(myfunc4(1, 2, 3))
+
+
+a, b, c = d = (1, 2, 3)
