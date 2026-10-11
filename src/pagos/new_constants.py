@@ -18,3 +18,5 @@ GILL_82_COEFFS = {
     "c2": pQ(-0.0000016546, "kg/m^3/permille^(3/2)/K^2"),
     "d0": pQ(0.00048314, "kg/m^3/permille^2"),
 }
+
+DYCK_PESCHKE_95_COEFFS = {"p0": pQ(6.1078, "mbar"), "c": pQ(239.7, "delta_degC")}

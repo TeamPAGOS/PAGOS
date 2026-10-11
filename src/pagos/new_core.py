@@ -40,6 +40,7 @@ def unit_aware(default_units_in: dict | None, units_out: str | None):
         # get AST of func (dedent used so that functions defined inside other
         # functions do not have invalid whitespace at the beginning)
         _ast = ast.parse(dedent(inspect.getsource(func)))
+        visualise.graph(_ast)
 
         # Find the instances of when the function makes an assignment
         # from an external scope. These have to be artificially run
@@ -354,7 +355,8 @@ class UnitConversionTransformer(ast.NodeTransformer):
                         transplanted_node = generate_conv_node(
                             node.left, cfactor, UnitsContainer({}), ua
                         )
-                        ret_node = transplanted_node
+                        ret_node.left = transplanted_node
+                        ret_node.units = UnitsContainer({})
                     else:
                         # If a is not dimensionless, b must be constant (otherwise the resultant unit could change depending on b)
                         # This means we should be able to evaluate the RHS as an expression involving only constants
