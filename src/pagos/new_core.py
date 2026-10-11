@@ -60,10 +60,23 @@ def unit_aware(default_units_in: dict | None, units_out: str | None):
     return _unit_aware
 
 
+UNASSIGNED = object()
+
+
 class ExternalAssignmentVisitor(ast.NodeVisitor):
     def __init__(self):
         self.ext_assigns = {}
         super().__init__()
+
+    # This initialises units on the nodes.
+    # Literal nodes will be assigned "dimensionless", while other nodes
+    # will be given a sentinel value.
+    def generic_visit(self, node):
+        if isinstance(node, ast.Constant):
+            node.units = ureg.parse_units_as_container("dimensionless")
+        else:
+            node.units = UNASSIGNED
+        return super().generic_visit(node)
 
     def visit_Module(self, node: ast.Module):
         self._module = node
@@ -139,9 +152,22 @@ class UnitConversionTransformer(ast.NodeTransformer):
         external_assigns: dict[str, UnitsContainer],
         output_units: UnitsContainer,
     ):
+        # If this is True, at least one more pass of visit() will be performed on the whole tree.
         self.did_anything_change = False
+
+        # If variables are re-assigned, they are put here. This ensures unit transformations are
+        # not prematurely performed BEFORE re-assignment.
         self.changelock = set()
+
+        # When we visit an Assign node in the tree, the relevant variables are placed here. This
+        # prevents unit transformations INSIDE re-assignment statements - they should only happen
+        # after the re-assignment has been performed.
+        self.assigning = []
+
+        # Dictionary of local variables to the function and their units.
         self.local_variables = input_argument_units | external_assigns
+
+        # Output units of the function.
         self.output_units = output_units
         super().__init__()
 
@@ -157,7 +183,7 @@ class UnitConversionTransformer(ast.NodeTransformer):
         if node.id in self.local_variables:
             # This finds Load nodes corresponding to previous Store nodes which
             # stored unit information
-            if not hasattr(node, "units"):
+            if node.units is UNASSIGNED:
                 try:
                     node.units = self.local_variables[node.id]
                     self.something_changed()
@@ -168,32 +194,43 @@ class UnitConversionTransformer(ast.NodeTransformer):
                     except KeyError:
                         pass
             # This overwrites nodes that already have units but are assigned a
-            # new value with Load. I'm not even sure this will ever be possible,
-            # but I will print a debug message if it does get entered.
+            # new value with Load.
             else:
-                old_units = node.units
-                node.units = self.local_variables[node.id]
-                if node.units != old_units:
-                    self.something_changed()
+                # Will not work inside a re-assignment statement (e.g. x = x.to('kg')),
+                # because only from outside this statement should the new units be applied.
+                if node.id not in self.assigning:
+                    old_units = node.units
+                    node.units = self.local_variables[node.id]
+                    if node.units != old_units:
+                        self.something_changed()
 
         return self.generic_visit(node)
 
     def visit_Assign(self, node: ast.Assign):
         # This is for internal variable assignment, where the variable is
         # entirely confined to local scope
-        if hasattr(node.value, "units"):
-            for i in range(len(node.targets)):
-                t = node.targets[i]
-                if not hasattr(t, "units") or t.units != node.value.units:
-                    node.targets[i].units = node.value.units
-                    self.local_variables[t.id] = t.units
-                    self.something_changed()
-                    self.changelock.add(t.id)
-        else:
-            for t in node.targets:
+
+        # We keep track of whether or not we are down-tree of an Assigment node.
+        # This is so that any reassignments (e.g. x = x.to('kg')) do not propagate
+        # unit changes inside the reassignment itself
+        for t in node.targets:
+            self.assigning.append(t.id)
+
+        for i in range(len(node.targets)):
+            t = node.targets[i]
+            if t.units != node.value.units:
+                node.targets[i].units = node.value.units
+                self.local_variables[t.id] = t.units
+                self.something_changed()
+                self.changelock.add(t.id)
+            elif node.value.units is UNASSIGNED:
+                self.something_changed()
                 self.changelock.add(t.id)
 
-        return self.generic_visit(node)
+        to_return = self.generic_visit(node)
+        for i in range(len(node.targets)):
+            self.assigning.pop()
+        return to_return
 
     def visit_BinOp(self, node: ast.BinOp):
         # This will perform all necessary conversions at any binary operation nodes.
@@ -204,11 +241,13 @@ class UnitConversionTransformer(ast.NodeTransformer):
 
         ret_node = node
 
+        original_units = node.units
+
         # operation conversions that require a and b to have units:
-        try:
-            ua = node.left.units
-            ub = node.right.units
-            if isinstance(node.op, (ast.Add, ast.Sub)) and not hasattr(node, "units"):
+        ua = node.left.units
+        ub = node.right.units
+        if not ua is UNASSIGNED and not ub is UNASSIGNED:
+            if isinstance(node.op, (ast.Add, ast.Sub)):
                 # a +- b:    b to [a] -> [a]
                 cfactor = ureg._get_conversion_factor(ub, ua)
                 raise_error_if_invalid(cfactor)
@@ -217,37 +256,26 @@ class UnitConversionTransformer(ast.NodeTransformer):
 
                 ret_node = ast.BinOp(node.left, node.op, transplanted_node)
                 ret_node.units = ua
-                self.something_changed()
 
-            elif isinstance(node.op, ast.Mult) and not hasattr(node, "units"):
+            elif isinstance(node.op, ast.Mult):
                 # a * b:    -> [a] * [b]
                 ret_node.units = ua * ub
-                self.something_changed()
 
-            elif isinstance(node.op, (ast.Div, ast.FloorDiv)) and not hasattr(
-                node, "units"
-            ):
+            elif isinstance(node.op, (ast.Div, ast.FloorDiv)):
                 # a / b:    -> [a] / [b]
                 ret_node.units = ua / ub
-                self.something_changed()
 
-        except AttributeError:
-            # AttributeError if units are not found on both nodes
-            pass
-
-        # Pow does not need both inputs to have units, only the left-hand input
-        if isinstance(node.op, ast.Pow) and not hasattr(node, "units"):
-            # a ^ b:    -> [a] ^ b
-            try:
+            # Pow does not need both inputs to have units, only the left-hand input
+            if isinstance(node.op, ast.Pow):
+                # a ^ b:    -> [a] ^ b
                 ua = node.left.units
                 b = node.right.value
 
                 ret_node.units = ua**b
-                self.something_changed()
 
-            except AttributeError:
-                # AttributeError if units are not found on the left-hand side
-                pass
+        # if a change occurs, we want the traversal loop to happen at least once more
+        if original_units != ret_node.units:
+            self.something_changed()
 
         # This blocks conversion if variable has been re-assigned on this pass,
         # giving the variables one more cycle to be updated before conversion
@@ -261,36 +289,25 @@ class UnitConversionTransformer(ast.NodeTransformer):
     def visit_Compare(self, node: ast.Compare):
 
         ret_node = node
+        ua = node.left.units
+        for i in range(len(ret_node.ops)):
+            op = ret_node.ops[i]
+            com = ret_node.comparators[i]
+            ub = com.units
+            if (
+                isinstance(op, (ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE))
+                and ua != ub
+                and ua is not UNASSIGNED
+                and ub is not UNASSIGNED
+            ):
+                # a $ b:    b to [a] -> [a]
+                # where $ ∈ {==, !=, <, <=, >, >=}
+                cfactor = ureg._get_conversion_factor(ub, ua)
+                raise_error_if_invalid(cfactor)
 
-        try:
-            ua = node.left.units
-
-            for i in range(len(ret_node.ops)):
-                op = ret_node.ops[i]
-                com = ret_node.comparators[i]
-                try:
-                    ub = com.units
-                    if (
-                        isinstance(
-                            op, (ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE)
-                        )
-                        and ub != ua
-                    ):
-                        # a $ b:    b to [a] -> [a]
-                        # where $ ∈ {==, !=, <, <=, >, >=}
-                        cfactor = ureg._get_conversion_factor(ub, ua)
-                        raise_error_if_invalid(cfactor)
-
-                        transplanted_node = generate_conv_node(com, cfactor, ua, ub)
-                        ret_node.comparators[i] = transplanted_node
-                        self.something_changed()
-
-                except AttributeError:
-                    # AttributeError if units are not found on the right-hand nodes
-                    pass
-        except AttributeError:
-            # AttributeError if units are not found on the left-hand node
-            pass
+                transplanted_node = generate_conv_node(com, cfactor, ua, ub)
+                ret_node.comparators[i] = transplanted_node
+                self.something_changed()
 
         # This blocks conversion if variable has been re-assigned on this pass,
         # giving the variables one more cycle to be updated before conversion
@@ -307,18 +324,16 @@ class UnitConversionTransformer(ast.NodeTransformer):
     def visit_Return(self, node: ast.Return):
         # this performs conversion according to units_out
         ret_node = node
+        ur = node.value.units
+        uo = self.output_units
+        if ur != uo and ur is not UNASSIGNED:
+            cfactor = ureg._get_conversion_factor(ur, uo)
+            raise_error_if_invalid(cfactor)
 
-        if hasattr(node.value, "units"):
-            ur = node.value.units
-            uo = self.output_units
-            if ur != uo:
-                cfactor = ureg._get_conversion_factor(ur, uo)
-                raise_error_if_invalid(cfactor)
+            transplanted_node = generate_conv_node(node.value, cfactor, uo, ur)
 
-                transplanted_node = generate_conv_node(node.value, cfactor, uo, ur)
-
-                ret_node = ast.Return(transplanted_node)
-                self.something_changed()
+            ret_node = ast.Return(transplanted_node)
+            self.something_changed()
 
         # This blocks conversion if variable has been re-assigned on this pass,
         # giving the variables one more cycle to be updated before conversion
@@ -334,22 +349,17 @@ class UnitConversionTransformer(ast.NodeTransformer):
             return
         # this finds instances of to()
         elif isinstance(node.func, ast.Attribute) and node.func.attr == "to":
-            try:
-                ui = node.func.value.units
-                uo = ureg.parse_units_as_container(node.args[0].value)
-                if not hasattr(node, "units"):
-                    # i.to(o):     i to [o] -> [o]
-                    cfactor = ureg._get_conversion_factor(ui, uo)
-                    raise_error_if_invalid(cfactor)
+            ui = node.func.value.units
+            uo = ureg.parse_units_as_container(node.args[0].value)
+            if node.units is UNASSIGNED and ui is not UNASSIGNED:
+                # i.to(o):     i to [o] -> [o]
+                cfactor = ureg._get_conversion_factor(ui, uo)
+                raise_error_if_invalid(cfactor)
 
-                    transplanted_node = generate_conv_node(
-                        node.func.value, cfactor, uo, ui
-                    )
-                    ret_node = transplanted_node
-                    ret_node.units = uo
-                    self.something_changed()
-            except AttributeError:
-                pass
+                transplanted_node = generate_conv_node(node.func.value, cfactor, uo, ui)
+                ret_node = transplanted_node
+                ret_node.units = uo
+                self.something_changed()
         return self.generic_visit(ret_node)
 
 
@@ -358,7 +368,9 @@ if __name__ == "__main__":
     @unit_aware({"a": "kg", "b": "g"}, "kg")
     def myfunc(a, b):
         b = b.to("kg")
-        return a + b
+        a = a.to("g")
+        c = 2 * a - b
+        return a + b + c
 
     @unit_aware({"a": "m", "b": "s^-1"}, "km/hr")
     def myfunc2(a, b):
