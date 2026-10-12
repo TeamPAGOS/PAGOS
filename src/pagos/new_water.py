@@ -56,4 +56,6 @@ if __name__ == "__main__":
 
     print(new_calc_vappres(40))
 
-    # WORKS! TODO NEXT: @unit_aware functions that call other @unit_aware functions
+    # WORKS! DONE: @unit_aware functions that call other @unit_aware functions
+    # TODO NEXT: looks like this is more or less done. Let's now see if this works with the gas functions that call these functions
+    #            maybe we have to set up some simpler functions first, as the conversion step with gas context is hard...

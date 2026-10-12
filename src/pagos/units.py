@@ -134,13 +134,3 @@ for pattern in PAGOSDimPatterns:
         add, (" = " + a for a in aliases), f"{baseunit} = {dimension}"
     )
     PAGOSDims.add(dimension)
-
-"""for p in PAGOSUnits:
-    print(PAGOSUnits[p])
-
-for d in PAGOSDims:
-    print(d)
-
-for k in PAGOSTransformations:
-    print(PAGOSTransformations[k])
-"""

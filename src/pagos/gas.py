@@ -1,4 +1,5 @@
 from __future__ import annotations
+import ast
 
 import numpy as np
 
@@ -417,3 +418,16 @@ def calc_Ceq(
         return gas.calc_Ceq(T, S, p, ab)
     except AttributeError:
         return gases_dict[gas].calc_Ceq(T, S, p, ab)
+
+
+if __name__ == "__main__":
+    from visast import generate, visualise
+
+    astcode = """
+def add(a, b, c, d):
+    e = d * (a + (b * c) * 10)
+    return e
+    """
+    #### AST TESTING ####
+    _ast = generate.fromString(astcode)
+    visualise.graph(_ast)

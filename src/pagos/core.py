@@ -5,6 +5,8 @@ some internal functions/decorators and the framework for regular and fast unit p
 
 from __future__ import annotations
 
+import ast
+import inspect
 import re
 from collections.abc import Callable
 from enum import Enum, auto
@@ -13,6 +15,7 @@ from inspect import signature
 from itertools import combinations, cycle
 from numbers import Number
 from operator import mul as opmul
+from textwrap import dedent
 from typing import TypeAlias
 
 import numpy as np
@@ -427,6 +430,7 @@ class PAGOSQuantity:
             converted_pint_repr = pint_representation.to(inst.units)
             value = converted_pint_repr.magnitude
         inst.value = value
+
         return inst
 
     # arithmetic operators
@@ -897,16 +901,96 @@ def pQ(value, units, gas=None):
     return PAGOSQuantity(value, units, gas)
 
 
+# Registry of all unit_aware functions in the program
+# Dict of lists, with entries following this structure:
+#   str : [ dict(input args : input units),
+#           dict(function locals : local units),
+#           output units string,
+#           AST for function,
+#           function's __globals__ dictionary]
+REGISTERED_UNIT_AWARE_FUNCTIONS: dict[
+    str,
+    list[
+        dict[str, pint.util.UnitsContainer]
+        | pint.util.UnitsContainer
+        | ast.AST
+        | None
+        | dict
+    ],
+] = {}
+
+
+def unit_aware(default_units_in: dict | None, units_out: str | None):
+    # To avoid the user having to write ".to()" in all calculations involving temperature, unit_aware will
+    # FORCE any nonmultiplicative units to their entry at default_units_in. The user will be appropriately warned.
+    if default_units_in is not None:
+        nonmult_units = {
+            k: default_units_in[k]
+            if ccreg.Quantity(0, default_units_in[k])._get_non_multiplicative_units()
+            else None
+            for k in default_units_in
+        }
+    else:
+        nonmult_units = {}
+
+    def _unit_aware(func: Callable):
+        function_parameters = list(signature(func).parameters.keys())
+        if any(v for v in nonmult_units.values()) and _warn_nonmult_in_unit_aware:
+            print(
+                f"WARNING: the function {func.__name__} has nonmultiplicative units. These will ALWAYS be converted as follows:"
+            )
+            for k in nonmult_units:  # noqa: PLC0206
+                if nonmult_units[k] is not None:
+                    print(k, "->", nonmult_units[k])
+
+        input_arguments_units = {
+            k: None if u is None else ureg.parse_units_as_container(u)
+            for k, u in default_units_in.items()
+        }
+        output_units = units_out
+
+        # get AST of func (dedent used so that functions defined inside other
+        # functions do not have invalid whitespace at the beginning)
+        _ast = ast.parse(dedent(inspect.getsource(func)))
+
+        # Find the instances of when the function makes an assignment
+        # from an external scope. These have to be artificially run
+        # here so that the units associated with them can be recorded.
+        _extern_assign_visitor = ExternalAssignmentVisitor()
+        _extern_assign_visitor.visit(_ast)
+
+        # Now these external assignments are unit-laden, we send a visitor
+        # around the AST again, setting these units on any loading nodes
+        # that access them.
+        # Surgery is performed on nodes where unit conversions would occur.
+        # Repeat until there are no more conversions.
+        _unit_conv_transformer = UnitConversionTransformer(
+            func, _extern_assign_visitor.ext_assigns
+        )
+        while True:
+            _unit_conv_transformer.did_anything_change = False
+            _ast = ast.fix_missing_locations(_unit_conv_transformer.visit(_ast))
+            if not _unit_conv_transformer.did_anything_change:
+                break
+
+        exec(ast.unparse(_ast), globals())
+
+        # the above exec statement defines a function __unit_aware_function
+        # this is what will actually be returned
+        __unit_aware_function.default_units_in = default_units_in  # noqa: F821
+        __unit_aware_function.units_out = units_out  # noqa: F821
+        return __unit_aware_function  # noqa: F821
+
+    return _unit_aware
+
+
+'''
 def unit_aware(default_units_in: dict | None, units_out: str | None):
     """
     Decorator which makes a function unit aware, by setting default units in and units out. The default units are applied to float inputs and the resulting calculation is converted to the units out.
     """
     i_am_unit_aware: None  # free variable which acts as a tag, so that we can tell from outside the function if it's unit aware already (by evaluating: 'i_am_unit_aware' in <function>.__code__.co_freevars)
 
-    # TODO I don't think this is necessary, can delete?
-    """if units_out is not None:
-        # units_out = ureg._parse_units_as_container(units_out)
-    """
     # Nonmuliplicative units will cause ambiguity in additive calculations, which can especially be a problem
     # when the units have to be inferred (e.g. 5°C + 5K -> 5Δ°C + 5K, 5Δ°C - 267.15Δ°C, or 278.15K + 5K? The
     # nonmultiplicative handling system in fast_pagos_operation can "decide", but not consistently).
@@ -924,6 +1008,27 @@ def unit_aware(default_units_in: dict | None, units_out: str | None):
         nonmult_units = {}
 
     def _unit_aware(func: Callable):
+
+        function_parameters = list(signature(func).parameters.keys())
+        if any(v for v in nonmult_units.values()) and _warn_nonmult_in_unit_aware:
+            print(
+                f"WARNING: the function {func.__name__} has nonmultiplicative units. These will ALWAYS be converted as follows:"
+            )
+            for k in nonmult_units:  # noqa: PLC0206
+                if nonmult_units[k] is not None:
+                    print(k, "->", nonmult_units[k])
+
+        # Register function as unit aware
+        REGISTERED_UNIT_AWARE_FUNCTIONS[func.__name__] = [
+            {
+                k: None if u is None else ccreg.parse_units_as_container(u)
+                for k, u in default_units_in.items()
+            },
+            {},
+            units_out,
+            ...,
+            func.__globals__,
+        ]
 
         function_parameters = list(signature(func).parameters.keys())
         if any(v for v in nonmult_units.values()) and _warn_nonmult_in_unit_aware:
@@ -952,6 +1057,11 @@ def unit_aware(default_units_in: dict | None, units_out: str | None):
             # nor units_out were None, we will just pass func.__wrapped__ to @wraps (i.e. the inner, non-unit-aware function), overwriting the inner default_units_in and units_out
         else:
             _func = func
+
+        # add AST to registry (dedent used so that functions defined inside other functions do not have invalid whitespace at the beginning)
+        REGISTERED_UNIT_AWARE_FUNCTIONS[func.__name__][3] = ast.parse(
+            dedent(inspect.getsource(func))
+        )
 
         @wraps(_func)
         def wrapper(*args, **kwargs) -> PAGOSQuantity:
@@ -1003,7 +1113,174 @@ def unit_aware(default_units_in: dict | None, units_out: str | None):
         wrapper.units_out = units_out
         return wrapper
 
-    return _unit_aware
+    return _unit_aware'''
+
+
+class ExternalAssignmentVisitor(ast.NodeVisitor):
+    def __init__(self):
+        self.ext_assigns = {}
+        super().__init__()
+
+    def visit_Module(self, node: ast.Module):
+        self._module = node
+        self.generic_visit(node)
+
+    def visit_Assign(self, node: ast.Assign):
+        try:
+            # We want to run the Assign statement, so that we can access what units are associated with the assignments
+            body_with_only_assign_statement = [node]
+            assign_tree = ast.Module(
+                body_with_only_assign_statement, self._module.type_ignores
+            )
+
+            # execute the Assign statement. This allows us to find any constants
+            _original_globals = set(globals())
+            _globals = globals().copy()
+            # this executes the assign statement, and the assigned variables are placed in self._globals
+            exec(ast.unparse(assign_tree), _globals)
+            newly_assigned_globals_set = set(_globals) - _original_globals
+            assigned_quantities = {
+                name: _globals[name] for name in newly_assigned_globals_set
+            }
+            # store unit information of local variables
+            for target in node.targets:
+                if isinstance(target, (ast.Tuple, ast.List)):
+                    for elt in target.elts:
+                        if elt.id in assigned_quantities:
+                            elt.units = assigned_quantities[elt.id].units
+                            self.ext_assigns[elt.id] = elt.units
+                elif isinstance(target, ast.Name) and target.id in assigned_quantities:
+                    if not hasattr(assigned_quantities[target.id], units):
+                        # None is assigned to variables that do not have units.
+                        # This is NOT the same as having 'dimensionless' as a unit.
+                        target.units = None
+                    else:
+                        target.units = assigned_quantities[target.id].units
+                    self.ext_assigns[target.id] = target.units
+
+        except NameError:
+            # NameError thrown when we are in an Assign statement involving function arguments rather than local variables
+            # These are unimportant as their unit information is stored in the function decorator anyway
+            pass
+
+        self.generic_visit(node)
+
+
+def generate_conv_node(node_in: ast.AST, op: ast.AST, factor: ast.Constant):
+    conversion_node = ast.BinOp(left=node_in, op=op, right=ast.Constant(factor))
+    conversion_node.units = node_in.left.units
+    return conversion_node
+
+
+class UnitConversionTransformer(ast.NodeTransformer):
+    def __init__(self, func, external_assigns: dict[str : pint.util.UnitsContainer]):
+        self.did_anything_change = False
+        self.ext_assigns = external_assigns
+        super().__init__()
+
+    def something_changed(self):
+        self.did_anything_change = True
+
+    def visit_FunctionDef(self, node: ast.FunctionDef):
+        # Changes name of function to that which we will access later
+        node.name = "__unit_aware_function"
+        return self.generic_visit(node)
+
+    def visit_Name(self, node: ast.Name):
+        if node.id in self.ext_assigns:
+            # This finds Load nodes corresponding to previous Store nodes which
+            # stored unit information
+            if not hasattr(node, "units"):
+                node.units = self.ext_assigns[node.id]
+                self.something_changed()
+            # This overwrites nodes that already have units but are assigned a
+            # new value with Load. I'm not even sure this will ever be possible,
+            # but I will print a debug message if it does get entered.
+            else:
+                print("DEBUG WARNING: ENTERED BAD AREA OF AST SURGERY")
+                old_units = node.units
+                node.units = self.ext_assigns[node.id]
+                if node.units != old_units:
+                    self.something_changed()
+
+        return self.generic_visit(node)
+
+    def visit_BinOp(self, node: ast.BinOp):
+        # This will perform all necessary conversions at any binary operation nodes.
+        # How to read comments:
+        #   a, b      : operands
+        #   [...]     : units of ...
+        #   -> [...]  : return in units of ...
+
+        ret_node = node
+
+        if isinstance(node.op, ast.Add) and not hasattr(node, "units"):
+            # a + b:    b to [a] -> [a]
+            try:
+                ua = node.left.units
+                ub = node.right.units
+                cfactor = ccreg._get_conversion_factor(ub, ua)
+
+                transplanted_node = generate_conv_node(
+                    node.right, ast.Mult(), ast._ConstantValue(cfactor)
+                )
+
+                ret_node = ast.BinOp(node.left, node.op, transplanted_node)
+                ret_node.units = ua
+                self.something_changed()
+            except AttributeError:
+                # AttributeError if units are not found on both nodes
+                pass
+
+        if isinstance(node.op, ast.Mult):
+            print(node.left, "*", node.right)
+            if not hasattr(node, "units"):
+                # a * b:    -> [a] * [b]
+                try:
+                    ua = node.left.units
+                    ub = node.right.units
+
+                    ret_node.units = ua * ub
+                    self.something_changed()
+
+                except AttributeError:
+                    # AttributeError if units are not found on both nodes
+                    pass
+
+        if isinstance(node.op, ast.Pow):
+            print(node.left, "^", node.right)
+            if not hasattr(node, "units"):
+                # a ^ b:    -> [a] ^ b
+                try:
+                    ua = node.left.units
+                    b = node.right.value
+
+                    node.units = ua**b
+                    self.something_changed()
+
+                except AttributeError:
+                    # AttributeError if units are not found on both nodes
+                    pass
+
+        return self.generic_visit(ret_node)
+
+    def visit_Assign(self, node: ast.Assign):
+        # This is for internal variable assignment, where the variable is
+        # entirely confined to local scope
+        if hasattr(node.value, "units"):
+            for t in node.targets:
+                if not hasattr(t, "units"):
+                    t.units = node.value.units
+                    self.local_variables[t.id] = t.units
+                    self.something_changed()
+
+        return self.generic_visit(node)
+
+    def visit_Call(self, node: ast.Call):
+        # this removes the decorator
+        if isinstance(node.func, ast.Name) and node.func.id == "unit_aware":
+            return
+        return self.generic_visit(node)
 
 
 #    ┏┳┓┏━┓┏┓╻╺┳╸┏━╸   ┏━╸┏━┓┏━┓╻  ┏━┓   ┏━┓╻ ╻┏━┓╺┳╸┏━╸┏┳┓

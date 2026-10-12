@@ -26,16 +26,40 @@ def pQ(value, units):
     return PAGOSQuantity(value, units)
 
 
+# Register of unit aware functions
+REGISTERED_UNIT_AWARE_FUNCTIONS: dict[str, tuple[dict | None, str | None]] = {}
+
+
+def register_unit_aware_function(
+    func_name: str, in_args_units: dict | None, out_units: str | None
+) -> None:
+    REGISTERED_UNIT_AWARE_FUNCTIONS[func_name] = (in_args_units, out_units)
+
+
+def is_function_unit_aware(func_name: str) -> bool:
+    return func_name in REGISTERED_UNIT_AWARE_FUNCTIONS
+
+
+def get_unit_aware_function_info(func_name: str) -> tuple[dict | None, str | None]:
+    return REGISTERED_UNIT_AWARE_FUNCTIONS[func_name]
+
+
 def unit_aware(default_units_in: dict | None, units_out: str | None):
     def _unit_aware(func: Callable):
 
-        input_arguments_units = {
-            k: None if u is None else ureg.parse_units_as_container(u)
-            for k, u in default_units_in.items()
-        }
+        if default_units_in is None:
+            input_arguments_units = None
+        else:
+            input_arguments_units = {
+                k: None if u is None else ureg.parse_units_as_container(u)
+                for k, u in default_units_in.items()
+            }
         output_units = (
             None if units_out is None else ureg.parse_units_as_container(units_out)
         )
+
+        # add function's details to register of unit aware functions
+        register_unit_aware_function(func.__name__, input_arguments_units, output_units)
 
         # get AST of func (dedent used so that functions defined inside other
         # functions do not have invalid whitespace at the beginning)
@@ -189,23 +213,6 @@ class ExternalAssignmentVisitor(ast.NodeTransformer):
         return self.generic_visit(node)
 
 
-def generate_conv_node(
-    node_in: ast.AST,
-    factor: Number,
-    original_to: UnitsContainer,
-    original_from: UnitsContainer,
-):
-    if factor == 1:
-        return node_in
-    factor_node = ast.Constant(factor)
-    factor_node.units = original_to / original_from
-
-    conversion_node = ast.BinOp(left=node_in, op=ast.Mult(), right=factor_node)
-    conversion_node.units = original_to
-
-    return conversion_node
-
-
 def raise_error_if_invalid(obj):
     if isinstance(obj, pint.DimensionalityError):
         raise obj
@@ -236,6 +243,27 @@ class UnitConversionTransformer(ast.NodeTransformer):
         # Output units of the function.
         self.output_units = output_units
         super().__init__()
+
+    def convert_node_units(self, node: ast.AST, to_units: UnitsContainer) -> ast.AST:
+
+        if node.units is UNASSIGNED or to_units is UNASSIGNED:
+            return node
+
+        cfactor = ureg._get_conversion_factor(node.units, to_units)
+
+        if isinstance(cfactor, pint.DimensionalityError):
+            raise cfactor
+
+        if cfactor == 1:
+            return node
+
+        factor_node = ast.Constant(cfactor)
+        factor_node.units = to_units / node.units
+
+        conversion_node = ast.BinOp(left=node, op=ast.Mult(), right=factor_node)
+        conversion_node.units = to_units
+
+        return conversion_node
 
     def something_changed(self):
         self.did_anything_change = True
@@ -326,12 +354,8 @@ class UnitConversionTransformer(ast.NodeTransformer):
         if ua is not UNASSIGNED and ub is not UNASSIGNED:
             if isinstance(node.op, (ast.Add, ast.Sub)):
                 # a +- b:    b to [a] -> [a]
-                cfactor = ureg._get_conversion_factor(ub, ua)
-                raise_error_if_invalid(cfactor)
-
-                transplanted_node = generate_conv_node(node.right, cfactor, ua, ub)
-
-                ret_node = ast.BinOp(node.left, node.op, transplanted_node)
+                conv_right_node = self.convert_node_units(node.right, ua)
+                ret_node = ast.BinOp(node.left, node.op, conv_right_node)
                 ret_node.units = ua
 
             elif isinstance(node.op, ast.Mult):
@@ -350,12 +374,10 @@ class UnitConversionTransformer(ast.NodeTransformer):
                 if ureg.Unit(ub).dimensionless:
                     if ureg.Unit(ua).dimensionless:
                         # convert to true dimensionless (e.g. from % or permille)
-                        cfactor = ureg._get_conversion_factor(ua, UnitsContainer({}))
-                        raise_error_if_invalid(cfactor)
-                        transplanted_node = generate_conv_node(
-                            node.left, cfactor, UnitsContainer({}), ua
+                        new_left_node = self.convert_node_units(
+                            node.left, UnitsContainer({})
                         )
-                        ret_node.left = transplanted_node
+                        ret_node.left = new_left_node
                         ret_node.units = UnitsContainer({})
                     else:
                         # If a is not dimensionless, b must be constant (otherwise the resultant unit could change depending on b)
@@ -399,11 +421,10 @@ class UnitConversionTransformer(ast.NodeTransformer):
             ):
                 # a $ b:    b to [a] -> [a]
                 # where $ ∈ {==, !=, <, <=, >, >=}
-                cfactor = ureg._get_conversion_factor(ub, ua)
-                raise_error_if_invalid(cfactor)
-
-                transplanted_node = generate_conv_node(com, cfactor, ua, ub)
-                ret_node.comparators[i] = transplanted_node
+                new_comparator_node = self.convert_node_units(
+                    ret_node.comparators[i], ua
+                )
+                ret_node.comparators[i] = new_comparator_node
                 self.something_changed()
 
         # This blocks conversion if variable has been re-assigned on this pass,
@@ -426,10 +447,8 @@ class UnitConversionTransformer(ast.NodeTransformer):
         if ur != uo and ur is not UNASSIGNED:
             cfactor = ureg._get_conversion_factor(ur, uo)
             raise_error_if_invalid(cfactor)
-
-            transplanted_node = generate_conv_node(node.value, cfactor, uo, ur)
-
-            ret_node = ast.Return(transplanted_node)
+            new_value_node = self.convert_node_units(node.value, uo)
+            ret_node = ast.Return(new_value_node)
             self.something_changed()
 
         # This blocks conversion if variable has been re-assigned on this pass,
@@ -453,10 +472,28 @@ class UnitConversionTransformer(ast.NodeTransformer):
                 cfactor = ureg._get_conversion_factor(ui, uo)
                 raise_error_if_invalid(cfactor)
 
-                transplanted_node = generate_conv_node(node.func.value, cfactor, uo, ui)
-                ret_node = transplanted_node
-                ret_node.units = uo
+                new_ret_node = self.convert_node_units(node.func.value, uo)
+                ret_node = new_ret_node
                 self.something_changed()
+        # this finds other unit-aware functions
+        elif isinstance(node.func, ast.Name) and is_function_unit_aware(node.func.id):
+            in_args_units, out_units = get_unit_aware_function_info(node.func.id)
+            for i, argnode in enumerate(ret_node.args):
+                if in_args_units is not None:
+                    # NOTE: I think this is always in order... NEED TO CHECK!
+                    u_should = list(in_args_units.values())[i]
+                    u_is = argnode.units
+
+                    if u_should != u_is:
+                        ret_node.args[i] = argnode = self.convert_node_units(
+                            argnode, u_should
+                        )
+                        self.something_changed()
+                else:
+                    argnode.units = None
+
+            ret_node.units = out_units
+
         return self.generic_visit(ret_node)
 
 
@@ -486,21 +523,22 @@ if __name__ == "__main__":
         else:
             return a**2
 
-    print(myfunc)
-    visualise.graph(myfunc.ast)
-    print(myfunc(1, 2))
+    @unit_aware({"a": "km", "b": "s^-1", "d": "m/s"}, "km/hr")
+    def my_compound_func(a, b, d):
+
+        c = myfunc2(a, b)
+        print(c)
+        e = d + c
+        return e + d
 
     print(myfunc2)
     visualise.graph(myfunc2.ast)
+
+    print(my_compound_func)
+    visualise.graph(my_compound_func.ast)
+
+    print(myfunc(1, 2))
     print(myfunc2(1, 2))
-
-    print(myfunc3)
-    visualise.graph(myfunc3.ast)
     print(myfunc3(1, 2, 3))
-
-    print(myfunc4)
-    visualise.graph(myfunc4.ast)
     print(myfunc4(1, 2, 3))
-
-
-a, b, c = d = (1, 2, 3)
+    print(my_compound_func(0.001, 2, 3))

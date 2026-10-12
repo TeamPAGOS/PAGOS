@@ -45,7 +45,7 @@ def ua(
     return calc_Ceq(gas, T, S, p) + A * abn(gas)
 
 
-ua_model = TracerModel(ua)
+# ua_model = TracerModel(ua)
 
 
 @unit_aware(
@@ -107,7 +107,7 @@ def pr(
     )
 
 
-pr_model = TracerModel(pr)
+# pr_model = TracerModel(pr)
 
 
 @unit_aware(
@@ -168,7 +168,7 @@ def pd(
     )
 
 
-pd_model = TracerModel(pd)
+# pd_model = TracerModel(pd)
 
 
 @unit_aware(
@@ -217,7 +217,7 @@ def od(
     return calc_Ceq(gas, T, S, p) * POD + A * abn(gas)
 
 
-od_model = TracerModel(od)
+# od_model = TracerModel(od)
 
 
 @unit_aware(
@@ -268,4 +268,4 @@ def ce(
     return ceq + (1 - F) * A * z / (1 + F * A * z / ceq)
 
 
-ce_model = TracerModel(ce)
+# ce_model = TracerModel(ce)
