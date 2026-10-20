@@ -31,7 +31,7 @@ def new_calc_dens(T: float, S: float) -> float:
 
     a0, a1, a2, a3, a4, a5, b0, b1, b2, b3, b4, c0, c1, c2, d0 = GILL_82_COEFFS.values()
     rho0 = a0 + a1 * T + a2 * T**2 + a3 * T**3 + a4 * T**4 + a5 * T**5
-    print(S**2)
+    DYCK_PESCHKE_95_COEFFS["c"]
     rho = (
         rho0
         + S * (b0 + b1 * T + b2 * T**2 + b3 * T**3 + b4 * T**4)
@@ -56,6 +56,4 @@ if __name__ == "__main__":
 
     print(new_calc_vappres(40))
 
-    # WORKS! DONE: @unit_aware functions that call other @unit_aware functions
-    # TODO NEXT: looks like this is more or less done. Let's now see if this works with the gas functions that call these functions
-    #            maybe we have to set up some simpler functions first, as the conversion step with gas context is hard...
+    # TODO NEXT: check subscript assignment

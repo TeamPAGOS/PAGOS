@@ -13,3 +13,5 @@ Provides
 
 __version__ = "1.0.0"
 __author__ = "Stanley Scott and Chiara-Marlen Hubner"
+
+from . import visast_util

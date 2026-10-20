@@ -1,0 +1,17 @@
+@unit_aware: degC, permille, atm -> mol_g/kg
+calc_Ceq(gas, T, S, p) {
+
+          @unit_aware: degC, permille -> mol_g/kg
+  Cstar = calc_Cstar(gas, T, S) {
+
+  }  -> mol_g/kg
+
+        @unit_aware: degC -> mbar
+  e_w = calc_vappres(T) {
+
+  } -> mbar
+
+  pref = (p - e_w) / (1 atm - e_w)
+
+  return Cstar * pref
+} -> mol_g/kg
