@@ -56,3 +56,11 @@ def test_AST_with_nested_unit_aware_functions():
         return e + d
 
     assert my_compound_func(0.001, 2, 3) == 28.8
+
+
+if __name__ == "__main__":
+    test_AST_with_to_inside_function()
+    test_AST_with_simple_multiplication()
+    test_AST_with_simple_comparison()
+    test_AST_with_conditional()
+    test_AST_with_nested_unit_aware_functions()

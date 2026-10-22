@@ -72,7 +72,7 @@ def unit_aware(default_units_in: dict | None, units_out: str | None, debug=False
         # from an external scope. These have to be artificially run
         # here so that the units associated with them can be recorded.
         # Also assigns units to function argument-related nodes.
-        _init_load_visitor = InitialLoadVisitor()
+        _init_load_visitor = InitialLoadVisitor(func)
         _ast = ast.fix_missing_locations(_init_load_visitor.visit(_ast))
 
         # Now that the function arguments and external assignments are unit-laden,
@@ -85,7 +85,9 @@ def unit_aware(default_units_in: dict | None, units_out: str | None, debug=False
         # that access them.
         # Surgery is performed on nodes where unit conversions would occur.
         # Repeat until there are no more conversions.
-        _unit_assignment_visitor = UnitAssignmentVisitor(func, debug=debug)
+        _unit_assignment_visitor = UnitAssignmentVisitor(
+            func, locals=_init_load_visitor.local_variables, debug=debug
+        )
         c = 0
         while True:
             # visualise.graph(_ast)
@@ -147,7 +149,9 @@ class InitialLoadVisitor(ast.NodeTransformer):
     ```
     """
 
-    def __init__(self):
+    def __init__(self, func: Callable):
+        self.func = func
+        self.local_variables = {}
         super().__init__()
 
     def visit(self, node):
@@ -155,9 +159,20 @@ class InitialLoadVisitor(ast.NodeTransformer):
         node.units = UNASSIGNED
         return super().visit(node)
 
+    def visit_Name(self, node: ast.Name):
+        """if (
+            isinstance(node.ctx, ast.Load)
+            and node.id not in self.func.__globals__
+            and node.id not in get_unit_aware_function_info(self.func.__name__)[0]
+        ):
+            print("local found:", node.id)
+            self.local_variables[node.id] = UNASSIGNED"""
+
+        return self.generic_visit(node)
+
 
 class UnitAssignmentVisitor(ast.NodeTransformer):
-    def __init__(self, func: Callable, debug: bool):
+    def __init__(self, func: Callable, locals: dict, debug: bool):
         self.func = func
 
         # boolean which triggers a new visitation cycle if set to true
@@ -181,7 +196,8 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
 
         # A dictionary of purely local variables (those which only exist inside function scope)
         # and their units
-        self.local_variables = {}
+        self.local_variables = locals
+        print(self.local_variables)
 
         super().__init__()
 
@@ -214,7 +230,21 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
 
         return conversion_node
 
+    def generic_visit(self, node):
+        return super().generic_visit(node)
+
     def visit(self, node):
+
+        if hasattr(node, "change_on_next_cycle"):
+            _transplant = node.change_on_next_cycle
+            del node.change_on_next_cycle
+            node = _transplant
+            node.frozen = True
+
+        # if a node has been "frozen", it and its children can no longer be changed
+        if hasattr(node, "frozen") and node.frozen:
+            return node
+
         # assign parents to each node
         for child in ast.iter_child_nodes(node):
             child.parent = node
@@ -250,24 +280,81 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
                 )
         return self.generic_visit(node)
 
+    def walk_up_ast_until_valid_units_found(self, _considered_node: ast.AST):
+        while not isinstance(_considered_node, ast.FunctionDef):
+            try:
+                _evaluated = eval(ast.unparse(_considered_node), self.func.__globals__)
+
+                # delete change_on_next_cycle attribute, in case it is there
+                # this is to prevent infinite recursion
+                if hasattr(_considered_node, "change_on_next_cycle"):
+                    del _considered_node.change_on_next_cycle
+
+                try:
+                    _evaluated_units = _evaluated.units
+
+                    Load_with_units = ast.Load()
+                    Load_with_units.units = UNASSIGNED
+
+                    _magnitude_node = ast.Attribute(
+                        value=_considered_node,
+                        attr="value",
+                        ctx=Load_with_units,
+                    )
+
+                # It is also okay if we get a list or tuple of objects with units. This case is dealt with here
+                except AttributeError:
+                    _evaluated_units = [_ev.units for _ev in _evaluated]
+
+                    DummyNameStore_with_units = ast.Name(id="x", ctx=ast.Store())
+                    DummyNameStore_with_units.units = UNASSIGNED
+                    DummyNameStore_with_units.ctx.units = UNASSIGNED
+                    DummyNameLoad_with_units = ast.Name(id="x", ctx=ast.Load())
+                    DummyNameLoad_with_units.units = UNASSIGNED
+                    DummyNameLoad_with_units.ctx.units = UNASSIGNED
+
+                    DummyAttribute_with_units = ast.Attribute(
+                        value=DummyNameLoad_with_units, attr="value", ctx=ast.Load()
+                    )
+                    DummyAttribute_with_units.units = UNASSIGNED
+                    DummyAttribute_with_units.ctx.units = UNASSIGNED
+
+                    _magnitude_node = ast.ListComp(
+                        elt=DummyAttribute_with_units,
+                        generators=[
+                            ast.comprehension(
+                                target=DummyNameStore_with_units,
+                                iter=_considered_node,
+                                is_async=0,
+                            )
+                        ],
+                    )
+                    _magnitude_node.generators[0].units = UNASSIGNED
+            except:
+                _considered_node = _considered_node.parent
+            else:
+                # This area is reached when the while statement evaluates to True, so when we find a valid unit assignment.
+                # We then set the topmost reached node's units to those which we found.
+                _magnitude_node.units = _evaluated_units
+                _magnitude_node.parent = _considered_node.parent
+                _considered_node.change_on_next_cycle = _magnitude_node
+                self.something_changed()
+                break
+        else:
+            # this area is reached if we get all the way to the original function definition node without having found any valid
+            # unit assignment. If this happens, we give up and let the node's units remain UNASSIGNED
+            pass
+
     def visit_Name(self, node: ast.Name):
         if node.id not in self.changelock:
             if isinstance(node.ctx, ast.Load):
                 # 1.a: nonlocal variables loaded to the function
                 if node.id in self.func.__globals__:
-                    # Restructure the tree to just be this load statement
-                    # Module -> FunctionDef -> ... -> Name -> Load
-                    # becomes
-                    # Module -> Name -> Load
-                    # and execute it, dumping the resultant globals dict into partialtree_globs
-                    partialtree_globs = execute_partial_tree(
-                        node, self._module, self.func.__globals__
-                    )
-                    loaded_var = partialtree_globs[node.id]
-
-                    # Having now loaded the variable, we extract its units (if any) and
-                    # apply them to the node (unchanged will leave UNASSIGNED there)
-                    node.units = getattr(loaded_var, "units", node.units)
+                    # If a loaded variable is non-local to the function, we need to account for the fact that it may have units.
+                    # However, it may not have units itself, but its ATTRIBUTES may do. To generally solve this, whenever we encounter
+                    # an external load statement, we keep evaluating larger sub-trees of the AST, from the Load node up, until a sub-
+                    # tree returns units, or until we reach the top of the AST.
+                    self.walk_up_ast_until_valid_units_found(node)
 
                 # 1.b: arguments to the function
                 elif (
@@ -318,25 +405,7 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
             # if this happens we have to keep going up the tree, compiling what's below it
             # and seeing if a valid unit assignment occurs. This is because the slice of a
             # subscript could be dynamically decided further upwards in the tree.
-
-            _considered_node = node
-            while not isinstance(_considered_node, ast.FunctionDef):
-                try:
-                    partialtree_globs = execute_partial_tree(
-                        _considered_node, self._module, self.func.__globals__
-                    )
-                except:
-                    _considered_node = _considered_node.parent
-                else:
-                    break
-            else:
-                raise RuntimeError(
-                    f"No part of {self.func.__name__}'s AST could be parsed to get the units on {node.value}."
-                )
-            # While loop should be broken if a compatible execution was found.
-            # If this is successful, we set the unit on the Name node representing the loaded variable
-            loaded_var = partialtree_globs[node.value.id]
-            node.units = getattr(loaded_var, "units", node.units)
+            self.walk_up_ast_until_valid_units_found(node)
 
         # The subscripted variable could also be an argument into the function, which would be given units
         elif node.value.id in get_unit_aware_function_info(self.func.__name__)[0]:
@@ -355,25 +424,7 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
         # created elsewhere in the function. This means we need to do the same kind
         # of parsing as we did in visit_Subscript: keep parsing the function further
         # and further up the tree until a successful compilation occurs
-        _considered_node = node
-        while not isinstance(_considered_node, ast.FunctionDef):
-            try:
-                partialtree_globs = execute_partial_tree(
-                    _considered_node, self._module, self.func.__globals__
-                )
-            except:
-                _considered_node = _considered_node.parent
-            else:
-                break
-        else:
-            raise RuntimeError(
-                f"No part of {self.func.__name__}'s AST could be parsed to get the units on {node.value}.{node.attr}."
-            )
-        # While loop should be broken if a compatible execution was found.
-        # If this is successful, we set the unit on the Name node representing the loaded variable
-        loaded_var = partialtree_globs[node.value.id]
-        node.units = getattr(loaded_var, "units", node.units)
-
+        self.walk_up_ast_until_valid_units_found(node)
         return self.generic_visit(node)
 
     def visit_Assign(self, node: ast.Assign):
@@ -412,19 +463,6 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
                 self.changelock.add(t.id)
             elif u is UNASSIGNED:
                 pass
-
-        """# applying these units is a little tricky due to possible mixtures of unpacked iterables and single variables
-        # this applies them
-        _target_counter = 0
-        for i in range(len(node.targets)):
-            if isinstance(t, (ast.List, ast.Tuple)):
-                for j in range(len(node.targets[i].elts)):
-                    node.targets[i].elts[j].units = _targets[_target_counter].units
-                    _target_counter += 1
-            # otherwise we deal with a single element assignment
-            else:
-                node.targets[i].units = _targets[_target_counter].units
-                _target_counter += 1"""
 
         # Finally, we need to put the units on the Assign node
         node.units = node.value.units
@@ -468,24 +506,36 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
                 new_node = self.convert_node_units(variable_to_convert_node, to_units)
                 node = new_node
 
-            # otherwise it may be something that returns units anyway, like a getter of unit-laden constants
-            else:
-                # NOTE: do we need to include the locals here?
-                result_of_function = eval(
-                    ast.unparse(node), self.func.__globals__, self.local_variables
-                )
-                # the result of the function might be unpackable, so we account for that case here
-                try:
-                    node.units = result_of_function.units
-                except AttributeError:
-                    node.units = [r.units for r in result_of_function]
-
         return self.generic_visit(node)
 
     def visit_Constant(self, node: ast.Constant):
         # assign "dimensionless" to all constants
         if isinstance(node.value, Number):
             node.units = ureg.parse_units_as_container("dimensionless")
+        return self.generic_visit(node)
+
+    def visit_Tuple(self, node: ast.Tuple):
+        eltunits = []
+        for elt in node.elts:
+            eltunits.append(elt.units)
+        if len(eltunits) == 0:
+            node.units = UNASSIGNED
+        elif all(eu == eltunits[0] for eu in eltunits):
+            node.units = eltunits[0]
+        else:
+            node.units = eltunits
+        return self.generic_visit(node)
+
+    def visit_List(self, node: ast.List):
+        eltunits = []
+        for elt in node.elts:
+            eltunits.append(elt.units)
+        if len(eltunits) == 0:
+            node.units = UNASSIGNED
+        elif all(eu == eltunits[0] for eu in eltunits):
+            node.units = eltunits[0]
+        else:
+            node.units = eltunits
         return self.generic_visit(node)
 
     def visit_BinOp(self, node: ast.BinOp):

@@ -16,7 +16,6 @@ def old_calc_dens(T: float, S: float) -> float:
         v.value for v in GILL_82_COEFFS.values()
     ]
     rho0 = a0 + a1 * T + a2 * T**2 + a3 * T**3 + a4 * T**4 + a5 * T**5
-    print(S**2)
     rho = (
         rho0
         + S * (b0 + b1 * T + b2 * T**2 + b3 * T**3 + b4 * T**4)
@@ -31,7 +30,7 @@ def new_calc_dens(T: float, S: float) -> float:
 
     a0, a1, a2, a3, a4, a5, b0, b1, b2, b3, b4, c0, c1, c2, d0 = GILL_82_COEFFS.values()
     rho0 = a0 + a1 * T + a2 * T**2 + a3 * T**3 + a4 * T**4 + a5 * T**5
-    DYCK_PESCHKE_95_COEFFS["c"]
+
     rho = (
         rho0
         + S * (b0 + b1 * T + b2 * T**2 + b3 * T**3 + b4 * T**4)
@@ -51,9 +50,12 @@ def new_calc_vappres(T: float) -> float:
 if __name__ == "__main__":
     visualise.graph(new_calc_dens.ast)
     visualise.graph(new_calc_vappres.ast)
+    print(new_calc_vappres(40))
+
     print(new_calc_dens(30, 10))
     print(old_calc_dens(30, 10))
 
     print(new_calc_vappres(40))
 
-    # TODO NEXT: check subscript assignment
+    # This looks like it works! TODO NEXT: testing files and extension to gas.py
+    # Also TODO NEXT: write proper docstrings/comments around walk_up_ast_until_units_found
