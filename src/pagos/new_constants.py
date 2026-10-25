@@ -20,3 +20,14 @@ GILL_82_COEFFS = {
 }
 
 DYCK_PESCHKE_95_COEFFS = {"p0": pQ(6.1078, "mbar"), "c": pQ(239.7, "delta_degC")}
+
+SHARQAWY_10_COEFFS = {
+    "m0": pQ(4.2844e-5, "kg/m/s"),
+    "m1": pQ(1, "kg/m/s"),
+    "m2": pQ(0.157, "delta_degC^-2"),
+    "m3": pQ(64.993, "delta_degC"),
+    "a1": pQ(0.01998, "delta_degC^-1"),
+    "a2": pQ(9.52e-5, "delta_degC^-2"),
+    "b1": pQ(0.07561, "delta_degC^-1"),
+    "b2": pQ(4.724e-4, "delta_degC^-2"),
+}

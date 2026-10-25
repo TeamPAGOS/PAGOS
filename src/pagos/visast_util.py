@@ -4,6 +4,9 @@ import matplotlib.pyplot as plt
 import networkx as nx
 from visast.visualise import __plotGraph
 from pint.util import UnitsContainer
+from pint import UnitRegistry
+
+_ureg = UnitRegistry()
 
 
 def graph(aST: ast) -> None:
@@ -28,7 +31,7 @@ def graph(aST: ast) -> None:
 
         if hasattr(node, "units"):
             if isinstance(node.units, (str, UnitsContainer)):
-                nodeLabel += f"\n{node.units!s}"
+                nodeLabel += f"\n{_ureg.Unit(node.units):~P}"
             elif isinstance(node.units, list):
                 nodeLabel += "\n..."
             else:

@@ -159,17 +159,6 @@ class InitialLoadVisitor(ast.NodeTransformer):
         node.units = UNASSIGNED
         return super().visit(node)
 
-    def visit_Name(self, node: ast.Name):
-        """if (
-            isinstance(node.ctx, ast.Load)
-            and node.id not in self.func.__globals__
-            and node.id not in get_unit_aware_function_info(self.func.__name__)[0]
-        ):
-            print("local found:", node.id)
-            self.local_variables[node.id] = UNASSIGNED"""
-
-        return self.generic_visit(node)
-
 
 class UnitAssignmentVisitor(ast.NodeTransformer):
     def __init__(self, func: Callable, locals: dict, debug: bool):
@@ -197,7 +186,6 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
         # A dictionary of purely local variables (those which only exist inside function scope)
         # and their units
         self.local_variables = locals
-        print(self.local_variables)
 
         super().__init__()
 
@@ -281,8 +269,20 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
         return self.generic_visit(node)
 
     def walk_up_ast_until_valid_units_found(self, _considered_node: ast.AST):
+        """Utility function that walks upwards inside an AST from a starting node, and checks to see if
+        the evaluation of the sub-tree from there downwards results in a quantity that has units, or a list
+        of unit-laden quantities. If it does not, the next node upwards is considered, until one is found
+        or we get to the top of the AST. If units are found, they are stored on the found node and a
+        conversion is performed at the next visitation cycle.
+
+        Args:
+            _considered_node (ast.AST): starting node
+        """
+        # FunctionDef is going to be the top of the AST in PAGOS's decorated functions, so we stop there
+        # if we get to it.
         while not isinstance(_considered_node, ast.FunctionDef):
             try:
+                # attempt evaluation
                 _evaluated = eval(ast.unparse(_considered_node), self.func.__globals__)
 
                 # delete change_on_next_cycle attribute, in case it is there
@@ -290,6 +290,7 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
                 if hasattr(_considered_node, "change_on_next_cycle"):
                     del _considered_node.change_on_next_cycle
 
+                # Check if the result of the evaluation is a quantity with units
                 try:
                     _evaluated_units = _evaluated.units
 
@@ -337,6 +338,8 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
                 # We then set the topmost reached node's units to those which we found.
                 _magnitude_node.units = _evaluated_units
                 _magnitude_node.parent = _considered_node.parent
+                # change_on_next_cycle means that when the node is reached at the NEXT visitation cycle, the node
+                # tree is changed to get the units that we found here.
                 _considered_node.change_on_next_cycle = _magnitude_node
                 self.something_changed()
                 break
