@@ -101,8 +101,6 @@ def unit_aware(default_units_in: dict | None, units_out: str | None, debug=False
                 break
             c += 1
 
-            # visualise.graph(_ast)
-
         exec(ast.unparse(_ast), globals())
         exec(f"{func.__name__}.ast = _ast", globals(), locals())
         exec(
@@ -492,11 +490,13 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
         if (
             isinstance(to_return.value.units, list)
             and any(
-                node.targets[i].units != to_return.value.units[i]
+                _targets[i].units != to_return.value.units[i]
                 for i in range(len(node.targets))
             )
-            or any(
-                node.targets[i].units != to_return.value.units
+        ) or (
+            not isinstance(to_return.value.units, list)
+            and any(
+                _targets[i].units != to_return.value.units
                 for i in range(len(node.targets))
             )
         ):
