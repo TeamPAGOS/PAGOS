@@ -17,23 +17,21 @@ from pagos.new_constants import (
 from pagos.new_core import unit_aware
 
 
-def old_calc_dens(T: float, S: float) -> float:
-
-    a0, a1, a2, a3, a4, a5, b0, b1, b2, b3, b4, c0, c1, c2, d0 = [
-        v.value for v in GILL_82_COEFFS.values()
-    ]
-    rho0 = a0 + a1 * T + a2 * T**2 + a3 * T**3 + a4 * T**4 + a5 * T**5
-    rho = (
-        rho0
-        + S * (b0 + b1 * T + b2 * T**2 + b3 * T**3 + b4 * T**4)
-        + (S ** (3 / 2)) * (c0 + c1 * T + c2 * T**2)
-        + d0 * S**2
-    )
-    return rho
-
-
 @unit_aware({"T": "degC", "S": "permille"}, "kg/m^3")
 def new_calc_dens(T: float, S: float) -> float:
+    """Calculate density of seawater at a given temperature and salinity, according to Gill 1982.
+
+    ## Units
+        **default units in** — `T`:°C, `S`:‰
+        **default units out** — kg/m³
+
+    Args:
+        T (float): Temperature
+        S (float): Salinity
+
+    Returns:
+        float: Calculated density
+    """
 
     a0, a1, a2, a3, a4, a5, b0, b1, b2, b3, b4, c0, c1, c2, d0 = GILL_82_COEFFS.values()
     rho0 = a0 + a1 * T + a2 * T**2 + a3 * T**3 + a4 * T**4 + a5 * T**5
@@ -49,6 +47,18 @@ def new_calc_dens(T: float, S: float) -> float:
 
 @unit_aware({"T": "degC"}, "mbar")
 def new_calc_vappres(T: float) -> float:
+    """Calculate water vapour pressure over seawater at given temperature, according to Dyck and Peschke 1995.
+
+    ## Units
+        **default units in** — `T`:°C
+        **default units out** — mbar
+
+    Args:
+        T (float): Temperature
+
+    Returns:
+        float: Calculated water vapour pressure
+    """
     p0, c = DYCK_PESCHKE_95_COEFFS["p0"], DYCK_PESCHKE_95_COEFFS["c"]
     pv = p0 * 10 ** ((7.567 * T) / (T + c))
     return pv
@@ -150,32 +160,13 @@ def new_calc_vappres_Tderiv(T: float) -> float:
         **default units out** — mbar/K
 
     Args:
-        T (float | PAGOSQuantity): Temperature
+        T (float): Temperature
 
     Returns:
-        PAGOSQuantity: Calculated de/dT
+        float: Calculated de/dT
     """
 
     p0, c = DYCK_PESCHKE_95_COEFFS["p0"], DYCK_PESCHKE_95_COEFFS["c"]
     pv = p0 * 10 ** ((7.567 * T) / (T + c))
     dpv_dT = 17.423661398685947 * pv * c / (T + c) ** 2
     return dpv_dT
-
-
-if __name__ == "__main__":
-    # visualise.graph(ast.parse(inspect.getsource(old_calc_dens)))
-    # visualise.graph(new_calc_dens.ast)
-    # visualise.graph(new_calc_vappres.ast)
-    print(new_calc_vappres(40))
-
-    print(new_calc_dens(30, 10))
-    print(old_calc_dens(30, 10))
-
-    print(new_calc_vappres(40))
-
-    print(new_calc_kinvisc(20, 20))
-    print(new_calc_dens_Tderiv(30, 10))
-    print(new_calc_dens_Sderiv(30, 10))
-    print(new_calc_vappres_Tderiv(40))
-
-    # This looks like it works! TODO NEXT: testing files and extension to gas.py
