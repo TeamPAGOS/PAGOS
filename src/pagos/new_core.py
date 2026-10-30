@@ -1,4 +1,5 @@
 import ast
+import copy
 import inspect
 from collections.abc import Callable
 from numbers import Number, Real
@@ -90,13 +91,16 @@ def unit_aware(default_units_in: dict | None, units_out: str | None, debug=False
         )
         c = 0
         while True:
+            if debug:
+                print("cycle", c)
             # visualise.graph(_ast)
-            _unit_assignment_visitor.changelock = set()
+            _unit_assignment_visitor.convertlock = set()
             _unit_assignment_visitor.did_anything_change = False
             _ast = ast.fix_missing_locations(_unit_assignment_visitor.visit(_ast))
             if not _unit_assignment_visitor.did_anything_change:
                 break
             c += 1
+
             # visualise.graph(_ast)
 
         exec(ast.unparse(_ast), globals())
@@ -176,7 +180,7 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
         # was already an argument to the function), so we need to wait 1 more cycle before
         # prematurely converting units (other references to v will need the newly acquired units
         # from the internal assignment, not those from the function argument's units!).
-        self.changelock = set()
+        self.convertlock = set()
 
         # When we visit an Assign node in the tree, the relevant variables are placed here. This
         # prevents unit transformations INSIDE re-assignment statements - they should only happen
@@ -189,8 +193,14 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
 
         super().__init__()
 
-    def something_changed(self):
+    def something_changed(self, display=None):
         self.did_anything_change = True
+
+        if display is not None:
+            _considered_node = display
+            while hasattr(_considered_node, "parent"):
+                _considered_node = _considered_node.parent
+            visualise.graph(_considered_node)
 
     def convert_node_units(self, node: ast.AST, to_units: UnitsContainer) -> ast.AST:
         # this takes in a node and returns a node that has been converted to the target units
@@ -215,6 +225,11 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
         conversion_node = ast.BinOp(left=node, op=operator_node, right=factor_node)
 
         conversion_node.units = to_units
+
+        conversion_node.parent = node.parent
+        factor_node.parent = conversion_node
+        node.parent = conversion_node
+        operator_node.parent = conversion_node
 
         return conversion_node
 
@@ -242,9 +257,12 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
         if (
             not hasattr(to_return, "units")
             or to_return.units != old_units
-            or self.changelock
+            or self.convertlock
         ):
-            self.something_changed()
+            if self.debug:
+                self.something_changed(node)
+            else:
+                self.something_changed()
 
         return to_return
 
@@ -264,7 +282,7 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
                     ast.parse(f"print('INSIDE FUNCTION {self.func.__name__}')").body[0],
                 )
                 node.body[0] = ast.fix_missing_locations(
-                    InitialLoadVisitor().visit(node.body[0])
+                    InitialLoadVisitor(self.func).visit(node.body[0])
                 )
         return self.generic_visit(node)
 
@@ -349,41 +367,40 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
             pass
 
     def visit_Name(self, node: ast.Name):
-        if node.id not in self.changelock:
-            if isinstance(node.ctx, ast.Load):
-                # 1.a: nonlocal variables loaded to the function
-                if node.id in self.func.__globals__:
-                    # If a loaded variable is non-local to the function, we need to account for the fact that it may have units.
-                    # However, it may not have units itself, but its ATTRIBUTES may do. To generally solve this, whenever we encounter
-                    # an external load statement, we keep evaluating larger sub-trees of the AST, from the Load node up, until a sub-
-                    # tree returns units, or until we reach the top of the AST.
-                    self.walk_up_ast_until_valid_units_found(node)
+        if isinstance(node.ctx, ast.Load):
+            # 1.a: nonlocal variables loaded to the function
+            if node.id in self.func.__globals__:
+                # If a loaded variable is non-local to the function, we need to account for the fact that it may have units.
+                # However, it may not have units itself, but its ATTRIBUTES may do. To generally solve this, whenever we encounter
+                # an external load statement, we keep evaluating larger sub-trees of the AST, from the Load node up, until a sub-
+                # tree returns units, or until we reach the top of the AST.
+                self.walk_up_ast_until_valid_units_found(node)
 
-                # 1.b: arguments to the function
-                elif (
-                    is_function_unit_aware(self.func.__name__)
-                    and node.id in get_unit_aware_function_info(self.func.__name__)[0]
-                ):
-                    node.units = get_unit_aware_function_info(self.func.__name__)[0][
-                        node.id
-                    ]
+            # 1.b: arguments to the function
+            elif (
+                is_function_unit_aware(self.func.__name__)
+                and node.id in get_unit_aware_function_info(self.func.__name__)[0]
+            ):
+                node.units = get_unit_aware_function_info(self.func.__name__)[0][
+                    node.id
+                ]
 
-                # 1.c: a variable that only exists in local scope
-                if node.id in self.local_variables:
-                    # This finds Load nodes corresponding to previous Store nodes which
-                    # stored unit information
-                    if node.units is UNASSIGNED:
-                        try:
-                            node.units = self.local_variables[node.id]
-                        except KeyError:
-                            pass
-                    # This overwrites nodes that already have units but are assigned a
-                    # new value with Load.
-                    else:
-                        # Will not work inside a re-assignment statement (e.g. x = x.to('kg')),
-                        # because only from outside this statement should the new units be applied.
-                        if node.id not in self.assigning:
-                            node.units = self.local_variables[node.id]
+            # 1.c: a variable that only exists in local scope
+            if node.id in self.local_variables:
+                # This finds Load nodes corresponding to previous Store nodes which
+                # stored unit information
+                if node.units is UNASSIGNED:
+                    try:
+                        node.units = self.local_variables[node.id]
+                    except KeyError:
+                        pass
+                # This overwrites nodes that already have units but are assigned a
+                # new value with Load.
+                else:
+                    # Will not work inside a re-assignment statement (e.g. x = x.to('kg')),
+                    # because only from outside this statement should the new units be applied.
+                    if node.id not in self.assigning:
+                        node.units = self.local_variables[node.id]
 
         return self.generic_visit(node)
 
@@ -463,14 +480,29 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
                 self.local_variables[t.id] = t.units
                 # lock changes for any NEW assignment, so that we have one more cycle for local variables to access
                 # the newly changed units
-                self.changelock.add(t.id)
-            elif u is UNASSIGNED:
-                pass
+                self.convertlock.add(t.id)
 
         # Finally, we need to put the units on the Assign node
         node.units = node.value.units
 
         to_return = self.generic_visit(node)
+
+        # if a change happens downstream of the assignment, AFTER we have considered the Assign node itself,
+        # we must lock changes for a potential new assignment that could happen later
+        if (
+            isinstance(to_return.value.units, list)
+            and any(
+                node.targets[i].units != to_return.value.units[i]
+                for i in range(len(node.targets))
+            )
+            or any(
+                node.targets[i].units != to_return.value.units
+                for i in range(len(node.targets))
+            )
+        ):
+            for t in _targets:
+                self.convertlock.add(t.id)
+
         for i in range(len(_targets)):
             self.assigning.pop()
         return to_return
@@ -500,13 +532,22 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
                 for i, u in enumerate(units_to_func_as_list):
                     node.args[i] = self.convert_node_units(node.args[i], u)
 
-            # otherwise it might be the to() function which also has assigned units
-            elif isinstance(node.func, ast.Name) and node.func.id == "to":
-                variable_to_convert_node = node.args[0]
-                to_units = node.args[1].value
+            # otherwise it might be the .to() method which also has assigned units
+            elif (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr == "to"
+                and node.func.value.units is not UNASSIGNED
+            ):
+                variable_to_convert_node = node.func.value
+                # Lock changes for one cycle in case an existing variable has been overwritten
+                if isinstance(variable_to_convert_node, ast.Name):
+                    self.convertlock.add(variable_to_convert_node.id)
+
+                to_units = node.args[0].value
                 if isinstance(to_units, str):
                     to_units = ureg.parse_units_as_container(to_units)
                 new_node = self.convert_node_units(variable_to_convert_node, to_units)
+
                 node = new_node
 
         return self.generic_visit(node)
@@ -544,11 +585,11 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
     def visit_BinOp(self, node: ast.BinOp):
         # This will perform all necessary conversions at any binary operation nodes.
         # How to read comments:
-        #   a, b      : operands
+        #   a, b      : operandsconversion_node
         #   [...]     : units of ...
         #   -> [...]  : return in units of ...
 
-        ret_node = node
+        ret_node = copy.copy(node)
 
         # operation conversions that require a and b to have units:
         ua: UnitsContainer = node.left.units
@@ -594,18 +635,16 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
                 else:
                     raise NameError("Non-dimensionless exponent detected in function")
 
-        # This blocks conversion if variable has been re-assigned on this pass,
-        # giving the variables one more cycle to be updated before conversion
-        if isinstance(node.right, ast.Name) and node.right.id in self.changelock:
+        if isinstance(node.right, ast.Name) and node.right.id in self.convertlock:
             return self.generic_visit(node)
-        if isinstance(node.left, ast.Name) and node.left.id in self.changelock:
+        if isinstance(node.left, ast.Name) and node.left.id in self.convertlock:
             return self.generic_visit(node)
 
         return self.generic_visit(ret_node)
 
     def visit_Compare(self, node: ast.Compare):
 
-        ret_node = node
+        ret_node = copy.copy(node)
         ua = node.left.units
         for i in range(len(ret_node.ops)):
             op = ret_node.ops[i]
@@ -627,10 +666,10 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
 
         # This blocks conversion if variable has been re-assigned on this pass,
         # giving the variables one more cycle to be updated before conversion
-        if isinstance(node.left, ast.Name) and node.left.id in self.changelock:
+        if isinstance(node.left, ast.Name) and node.left.id in self.convertlock:
             return self.generic_visit(node)
         if any(
-            isinstance(com, ast.Name) and com.id in self.changelock
+            isinstance(com, ast.Name) and com.id in self.convertlock
             for com in node.comparators
         ):
             return self.generic_visit(node)
@@ -639,7 +678,7 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
 
     def visit_Return(self, node: ast.Return):
         # this performs conversion according to units_out
-        ret_node = node
+        ret_node = copy.copy(node)
         ur = node.value.units
         uo = get_unit_aware_function_info(self.func.__name__)[1]
         if ur != uo and ur is not UNASSIGNED:
@@ -651,7 +690,7 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
 
         # This blocks conversion if variable has been re-assigned on this pass,
         # giving the variables one more cycle to be updated before conversion
-        if isinstance(node.value, ast.Name) and node.value.id in self.changelock:
+        if isinstance(node.value, ast.Name) and node.value.id in self.convertlock:
             return self.generic_visit(node)
 
         return self.generic_visit(ret_node)

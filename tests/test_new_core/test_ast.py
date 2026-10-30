@@ -1,13 +1,15 @@
 """Unit tests for the AST manipulation performed in unit_aware."""
 
 from pagos.new_core import unit_aware
+from pagos.visast_util import visualise
+from ast import parse
 
 
 def test_AST_with_to_inside_function():
     @unit_aware({"a": "kg", "b": "g"}, "kg")
     def myfunc1(a, b):
-        b = to(b, "kg")
-        a = to(a, "g")
+        b = b.to("kg")
+        a = a.to("g")
         c = 2 * a - b
         return a + b + c
 
