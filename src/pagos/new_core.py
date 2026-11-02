@@ -426,6 +426,8 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
         # Subscript -> Name with UNASSIGNED (if iterable is anything else)
         #           -> Constant
         #           -> Load
+
+        # TODO NEXT FIXME: This fails when chained subscripts are used (a[b][c]...)
         elif node.value.id in self.func.__globals__:
             # if this happens we have to keep going up the tree, compiling what's below it
             # and seeing if a valid unit assignment occurs. This is because the slice of a

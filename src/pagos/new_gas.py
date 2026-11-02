@@ -4,7 +4,6 @@ import ast
 
 import numpy as np
 
-from pagos.core import PAGOSQuantity, mc_possible, pQ, unit_aware
 from pagos.new_constants import (
     ABUNDANCES,
     CFC_WARNERWEISS_85_COEFFS,
@@ -21,7 +20,8 @@ from pagos.new_constants import (
     WANNINKHOF_92_SALTFACTOR_COEFFS,
     ArNeN2_HAMMEEMERSON_04_COEFFS,
 )
-from pagos.water import calc_kinvisc, calc_vappres
+from pagos.new_core import PAGOSQuantity, pQ, unit_aware
+from pagos.new_water import new_calc_kinvisc, new_calc_vappres
 
 PREDEFINED_GASES = ["He", "Ne", "Ar", "Kr", "Xe", "N2", "CFC11", "CFC12", "SF6"]
 
@@ -32,7 +32,7 @@ BIOLOGICALGASES = ["N2"]
 
 
 class Gas:
-    def __init__(self, name, *kwargs):
+    def __init__(self, name, **kwargs):
         self.msg = ""
         self._initialise_from_name(name)
         print(self.msg, end="")
@@ -77,7 +77,7 @@ class Gas:
             self.calc_Sc = NotImplementedError(
                 f"calc_Sc is not defined for {self.name}"
             )
-        self.calc_Sc = mc_possible(0.0)(self.calc_Sc)
+
         # initialise C* calculation
         # NOTE some of the cases (e.g. noble gases) have an ab argument that does nothing!
         if self.name in NOBLEGASES:
@@ -98,7 +98,6 @@ class Gas:
             self.calc_Cstar = NotImplementedError(
                 f"calc_Cstar is not defined for {self.name}"
             )
-        self.calc_Cstar = mc_possible(0.0)(self.calc_Cstar)
 
         # initialise Ceq calculation
         if self.name in NOBLEGASES + STABLETRANSIENTGASES + ["N2"]:
@@ -143,7 +142,7 @@ class Gas:
         # Saltwater correction used by R. Hamme in her Matlab script (https://oceangaseslab.uvic.ca/download.html)
         D = D0 * (1 - 0.049 * S / EYRING_36_HAMME_SALT_CORRECTION)  # PSS78 as Salinity
         # Kinematic viscosity calculation
-        nu_sw = calc_kinvisc(T, S)
+        nu_sw = new_calc_kinvisc(T, S)
         Sc = nu_sw / D
         return Sc
 
@@ -162,7 +161,7 @@ class Gas:
             + A1 * T_N
             + S * (B0 + B1 * T_N + B2 * T_N**2)
             + S**2 * C0
-        ) * pQ(1, "mol_g/kg", self.name)
+        ) * pQ(1, f"mol_{self.name}/kg")
         return Cstar
 
     @unit_aware({"self": None, "T": "degC", "S": "permille", "ab": None}, "mol_g/kg")
@@ -186,7 +185,7 @@ class Gas:
                 + S * (b1 + b2 * T_N + b3 * T_N**2)
             )
             * ab
-        ) * pQ(1, "mol_g/kg", self.name)
+        ) * pQ(1, f"mol_{self.name}/kg")
         return Cstar
 
     @unit_aware({"self": None, "T": "degC", "S": "permille", "ab": None}, "mol_g/kg")
@@ -203,7 +202,7 @@ class Gas:
         Cstar = (
             np.exp(a1 + a2 / T_N + a3 * np.log(T_N) + S * (b1 + b2 * T_N + b3 * T_N**2))
             * ab
-        ) * pQ(1, "mol_g/kg", self.name)
+        ) * pQ(1, f"mol_{self.name}/kg")
         return Cstar
 
     @unit_aware({"self": None, "T": "degC", "S": "permille"}, "mol_g/kg")
@@ -223,7 +222,7 @@ class Gas:
                 + A3 * T_s**3
                 + S * (B0 + B1 * T_s + B2 * T_s**2)
             )
-        ) * pQ(1e-6, "mol_g/kg", self.name)
+        ) * pQ(1e-6, f"mol_{self.name}/kg")
         return Cstar
 
     @unit_aware(
@@ -237,7 +236,7 @@ class Gas:
         ab="default",
     ) -> float:
         # vapour pressure over the water, calculated according to Dyck and Peschke 1995 (atm)
-        e_w = calc_vappres(T).to("atm")
+        e_w = new_calc_vappres(T).to("atm")
         # calculation of C*, the gas solubility/water-side concentration expressed in units of mol/kg
         Cstar = self.calc_Cstar(T, S, ab)
         # factor to account for pressure
@@ -248,187 +247,3 @@ class Gas:
     def set_default_units(self, func, target_base):
         func.default_units_in = target_base.default_units_in
         func.units_out = target_base.units_out
-
-
-"""
-Creation of Gas objects
-"""
-He = Gas("He")
-Ne = Gas("Ne")
-Ar = Gas("Ar")
-Kr = Gas("Kr")
-Xe = Gas("Xe")
-N2 = Gas("N2")
-CFC11 = Gas("CFC11")
-CFC12 = Gas("CFC12")
-SF6 = Gas("SF6")
-
-gases_dict = {
-    "He": He,
-    "Ne": Ne,
-    "Ar": Ar,
-    "Kr": Kr,
-    "Xe": Xe,
-    "N2": N2,
-    "CFC12": CFC12,
-    "CFC11": CFC11,
-    "SF6": SF6,
-}
-
-"""
-Functional wrappers around Gas object methods
-"""
-
-# ++++++ Getters ++++++
-
-
-def abn(gas: Gas | str) -> PAGOSQuantity:
-    """Abundance of `gas`.
-
-    ## Units
-        **default units out** — mol_gas / mol
-
-    Args:
-        gas (Gas | str): Gas for which to get abundance
-
-    Returns:
-        PAGOSQuantity: Abundance of `gas`
-    """
-    try:
-        return gas.abundance
-    except AttributeError:
-        return gases_dict[gas].abundance
-
-
-def molvol(gas: Gas | str) -> PAGOSQuantity:
-    """Molar volume of `gas`.
-
-    ## Units
-        **default units out** — ccSTP_gas / mol_gas
-
-    Args:
-        gas (Gas | str): Gas for which to get molar volume
-
-    Returns:
-        PAGOSQuantity: Molar volume of `gas`
-    """
-    try:
-        return gas.molar_volume
-    except AttributeError:
-        return gases_dict[gas].molar_volume
-
-
-def molmass(gas: Gas | str) -> PAGOSQuantity:
-    """Molar mass of `gas`.\\
-
-    ## Units
-        **default units out** — g_gas / mol_gas
-
-    Args:
-        gas (Gas | str): Gas for which to get molar mass
-
-    Returns:
-        PAGOSQuantity: Molar mass of `gas`.
-    """
-    try:
-        return gas.molar_mass
-    except AttributeError:
-        return gases_dict[gas].molar_mass
-
-
-# ++++++ Calculators ++++++
-
-
-def calc_Sc(
-    gas: Gas | str, T: float | PAGOSQuantity, S: float | PAGOSQuantity
-) -> PAGOSQuantity:
-    """Calculates the Schmidt number Sc of given gas in seawater.
-
-    ## Units
-        **default units in** — `T`: °C, `S`: ‰
-        **default units out** — dimensionless
-
-    Args:
-        gas (Gas | str): Gas for which Sc should be calculated
-        T (float | PAGOSQuantity): Temperature
-        S (float | PAGOSQuantity): Salinity
-
-    Returns:
-        PAGOSQuantity: Schmidt number of `gas` in seawater
-    """
-    try:
-        return gas.calc_Sc(T, S)
-    except AttributeError:
-        return gases_dict[gas].calc_Sc(T, S)
-
-
-def calc_Cstar(
-    gas: Gas | str,
-    T: float | PAGOSQuantity,
-    S: float | PAGOSQuantity,
-    ab: str = "default",
-) -> PAGOSQuantity:
-    """Calculate the waterside concentration C* of a given gas at water
-    temperature T, salinity S and 1 atm (moist) air pressure.
-
-    ## Units
-        **default units in** — `T`: °C, `S`: ‰
-        **default units out** — mol_gas/kg
-
-    Args:
-        gas (Gas | str): Gas for which C* should be calculated
-        T (float | PAGOSQuantity): Temperature
-        S (float | PAGOSQuantity): Salinity
-        ab (str): Abundance of gas in atmosphere, defaults to "default"
-
-    Returns:
-        PAGOSQuantity: C* (Waterside eqbm. concentration at 1 atm moist air pressure)
-    """
-
-    try:
-        return gas.calc_Cstar(T, S, ab)
-    except AttributeError:
-        return gases_dict[gas].calc_Cstar(T, S, ab)
-
-
-def calc_Ceq(
-    gas: Gas | str,
-    T: float | PAGOSQuantity,
-    S: float | PAGOSQuantity,
-    p: float | PAGOSQuantity,
-    ab: str = "default",
-) -> PAGOSQuantity:
-    """Calculate the waterside equilibrium concentration Ceq of a given gas at water
-    temperature T, salinity S and airside pressure p.
-
-    ## Units
-        **default units in** — `T`: °C, `S`: ‰, `p`: atm
-        **default units out** — mol_gas/kg
-
-    Args:
-        gas (Gas | str): Gas for which Ceq should be calculated
-        T (float | PAGOSQuantity): Temperature
-        S (float | PAGOSQuantity): Salinity
-        p (float | PAGOSQuantity): Pressure
-        ab (str): Abundance of gas in atmosphere, defaults to "default"
-
-    Returns:
-        PAGOSQuantity: Waterside eqbm. concentration
-    """
-    try:
-        return gas.calc_Ceq(T, S, p, ab)
-    except AttributeError:
-        return gases_dict[gas].calc_Ceq(T, S, p, ab)
-
-
-if __name__ == "__main__":
-    from visast import generate, visualise
-
-    astcode = """
-def add(a, b, c, d):
-    e = d * (a + (b * c) * 10)
-    return e
-    """
-    #### AST TESTING ####
-    _ast = generate.fromString(astcode)
-    visualise.graph(_ast)
