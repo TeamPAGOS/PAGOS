@@ -4,30 +4,36 @@ import inspect
 from collections.abc import Callable
 from numbers import Number, Real
 from textwrap import dedent
+from typing import TypeAlias
 
 import pint
 from pint.util import UnitsContainer
 from visast import visualise
 from pagos import visast_util
+from pagos.new_units import initialise_PAGOS_units
 
 visualise.graph = visast_util.graph
 
-ureg = pint.UnitRegistry()
+
+class PAGOSQuantity(pint.UnitRegistry.Quantity): ...
 
 
-class PAGOSQuantity:
-    def __init__(self, value, units):
-        self.value = value
-        if isinstance(units, str):
-            self.units = ureg._parse_units_as_container(units)
-        elif isinstance(units, pint.util.UnitsContainer):
-            self.units = units
-        else:
-            raise NotImplementedError("Type of units passed in is not implemented")
+# set up UnitRegistry class that will create Quantity objects from PAGOSQuantity type
+class PAGOSRegistry(pint.registry.GenericUnitRegistry[PAGOSQuantity, pint.Unit]):
+    """
+    Default `UnitRegistry` from which all quantities dealt with by PAGOS should be derived.
+    """
+
+    Quantity: TypeAlias = PAGOSQuantity
+    Unit: TypeAlias = pint.UnitRegistry.Unit
+
+
+ureg = PAGOSRegistry()
+initialise_PAGOS_units(ureg)
 
 
 def pQ(value, units):
-    return PAGOSQuantity(value, units)
+    return ureg.Quantity(value, units)
 
 
 # Register of unit aware functions
