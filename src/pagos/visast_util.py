@@ -2,9 +2,9 @@ import ast
 
 import matplotlib.pyplot as plt
 import networkx as nx
-from visast.visualise import __plotGraph
+from pint import Unit, UnitRegistry
 from pint.util import UnitsContainer
-from pint import UnitRegistry
+from visast.visualise import __plotGraph
 
 _ureg = UnitRegistry()
 
@@ -30,7 +30,7 @@ def graph(aST: ast) -> None:
             nodeLabel += " " + str(node.name)
 
         if hasattr(node, "units"):
-            if isinstance(node.units, (str, UnitsContainer)):
+            if isinstance(node.units, (str, Unit)):
                 nodeLabel += f"\n{_ureg.Unit(node.units):~P}"
             elif isinstance(node.units, list):
                 nodeLabel += "\n..."
@@ -56,12 +56,12 @@ def graph(aST: ast) -> None:
                     childLabel += " " + str(child.value)
 
                 if hasattr(child, "units"):
-                    if not isinstance(child.units, (str, UnitsContainer)):
-                        childLabel += "\nU"
+                    if isinstance(child.units, (str, Unit)):
+                        childLabel += f"\n{_ureg.Unit(child.units):~P}"
                     elif isinstance(child.units, list):
                         childLabel += "\n..."
                     else:
-                        childLabel += f"\n{child.units!s}"
+                        childLabel += "\nU"
 
                 labelDictionary[childNodeID] = childLabel
 
@@ -73,12 +73,12 @@ def graph(aST: ast) -> None:
                     if hasattr(node, "id"):
                         nodeLabel = str(node.id)
                         if hasattr(node, "units"):
-                            if not isinstance(node.units, (str, UnitsContainer)):
-                                nodeLabel += "\nU"
+                            if isinstance(node.units, (str, Unit)):
+                                nodeLabel += f"\n{_ureg.Unit(node.units):~P}"
                             elif isinstance(node.units, list):
                                 nodeLabel += "\n..."
                             else:
-                                nodeLabel += f"\n{node.units!s}"
+                                nodeLabel += "\nU"
                         labelDictionary[nodeID] = nodeLabel
 
             GRAPH.add_edge(nodeID, childNodeID)

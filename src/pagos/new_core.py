@@ -98,7 +98,6 @@ def unit_aware(default_units_in: dict | None, units_out: str | None, debug=False
         while True:
             if debug:
                 print("cycle", c)
-            # visualise.graph(_ast)
             _unit_assignment_visitor.convertlock = set()
             _unit_assignment_visitor.did_anything_change = False
             _ast = ast.fix_missing_locations(_unit_assignment_visitor.visit(_ast))
