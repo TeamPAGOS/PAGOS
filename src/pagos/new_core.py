@@ -9,6 +9,7 @@ from typing import TypeAlias
 import pint
 from pint.util import UnitsContainer
 from visast import visualise
+
 from pagos import visast_util
 from pagos.new_units import initialise_PAGOS_units
 
@@ -32,8 +33,8 @@ ureg = PAGOSRegistry()
 initialise_PAGOS_units(ureg)
 
 
-def pQ(value, units):
-    return ureg.Quantity(value, units)
+def pQ(magnitude, units):
+    return ureg.Quantity(magnitude, units)
 
 
 # Register of unit aware functions
@@ -61,12 +62,10 @@ def unit_aware(default_units_in: dict | None, units_out: str | None, debug=False
             input_arguments_units = None
         else:
             input_arguments_units = {
-                k: None if u is None else ureg.parse_units_as_container(u)
+                k: None if u is None else ureg.Unit(u)
                 for k, u in default_units_in.items()
             }
-        output_units = (
-            None if units_out is None else ureg.parse_units_as_container(units_out)
-        )
+        output_units = None if units_out is None else ureg.Unit(units_out)
 
         # add function's details to register of unit aware functions
         register_unit_aware_function(func.__name__, input_arguments_units, output_units)
@@ -206,13 +205,16 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
                 _considered_node = _considered_node.parent
             visualise.graph(_considered_node)
 
-    def convert_node_units(self, node: ast.AST, to_units: UnitsContainer) -> ast.AST:
+    def convert_node_units(self, node: ast.AST, to_units: pint.Unit) -> ast.AST:
         # this takes in a node and returns a node that has been converted to the target units
         # the converted node will normally be a BinOp, multiplying or adding a conversion factor
         if node.units is UNASSIGNED or to_units is UNASSIGNED:
             return node
 
-        cfactor = ureg._get_conversion_factor(node.units, to_units)
+        from_units_container: UnitsContainer = node.units._units
+        to_units_container: UnitsContainer = to_units._units
+
+        cfactor = ureg._get_conversion_factor(from_units_container, to_units_container)
 
         if isinstance(cfactor, pint.DimensionalityError):
             raise cfactor
@@ -321,7 +323,7 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
 
                     _magnitude_node = ast.Attribute(
                         value=_considered_node,
-                        attr="value",
+                        attr="magnitude",
                         ctx=Load_with_units,
                     )
 
@@ -337,7 +339,7 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
                     DummyNameLoad_with_units.ctx.units = UNASSIGNED
 
                     DummyAttribute_with_units = ast.Attribute(
-                        value=DummyNameLoad_with_units, attr="value", ctx=ast.Load()
+                        value=DummyNameLoad_with_units, attr="magnitude", ctx=ast.Load()
                     )
                     DummyAttribute_with_units.units = UNASSIGNED
                     DummyAttribute_with_units.ctx.units = UNASSIGNED
@@ -551,7 +553,7 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
 
                 to_units = node.args[0].value
                 if isinstance(to_units, str):
-                    to_units = ureg.parse_units_as_container(to_units)
+                    to_units = ureg.Unit(to_units)
                 new_node = self.convert_node_units(variable_to_convert_node, to_units)
 
                 node = new_node
@@ -561,7 +563,7 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
     def visit_Constant(self, node: ast.Constant):
         # assign "dimensionless" to all constants
         if isinstance(node.value, Number):
-            node.units = ureg.parse_units_as_container("dimensionless")
+            node.units = ureg.Unit("dimensionless")
         return self.generic_visit(node)
 
     def visit_Tuple(self, node: ast.Tuple):
@@ -598,8 +600,8 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
         ret_node = copy.copy(node)
 
         # operation conversions that require a and b to have units:
-        ua: UnitsContainer = node.left.units
-        ub: UnitsContainer = node.right.units
+        ua: pint.Unit = node.left.units
+        ub: pint.Unit = node.right.units
         if ua is not UNASSIGNED and ub is not UNASSIGNED and node.units is UNASSIGNED:
             if isinstance(node.op, (ast.Add, ast.Sub)):
                 # a +- b:    b to [a] -> [a]
@@ -624,10 +626,10 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
                     if ureg.Unit(ua).dimensionless:
                         # convert to true dimensionless (e.g. from % or permille)
                         new_left_node = self.convert_node_units(
-                            node.left, UnitsContainer({})
+                            node.left, ureg.Unit("dimensionless")
                         )
                         ret_node.left = new_left_node
-                        ret_node.units = UnitsContainer({})
+                        ret_node.units = ureg.Unit("dimensionless")
                     else:
                         # If a is not dimensionless, b must be constant (otherwise the resultant unit could change depending on b)
                         # This means we should be able to evaluate the RHS as an expression involving only constants
@@ -688,7 +690,9 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
         ur = node.value.units
         uo = get_unit_aware_function_info(self.func.__name__)[1]
         if ur != uo and ur is not UNASSIGNED:
-            cfactor = ureg._get_conversion_factor(ur, uo)
+            ur_as_container: UnitsContainer = ur._units
+            uo_as_container: UnitsContainer = uo._units
+            cfactor = ureg._get_conversion_factor(ur_as_container, uo_as_container)
             raise_error_if_invalid(cfactor)
             new_value_node = self.convert_node_units(node.value, uo)
             ret_node = ast.Return(new_value_node)
