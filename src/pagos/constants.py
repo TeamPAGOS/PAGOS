@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from pagos.core import pQ
 
+src_location = Path(__file__).absolute().parent
+gasesjson_location = src_location / "assets/gases.json"
+
 # gases json file
-with open("src/pagos/gases.json", "r") as gases_file:
+with open(gasesjson_location, "r") as gases_file:
     gases_info = json.load(gases_file)["gases"]
 # Atmospheric pressure
 PAT = pQ(101325, "Pa")
