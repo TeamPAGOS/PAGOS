@@ -8,6 +8,7 @@ from pagos.new_water import (
     new_calc_vappres,
     new_calc_vappres_Tderiv,
 )
+from pagos.visast_util import graph
 
 
 def test_calc_dens():
@@ -41,6 +42,7 @@ def test_calc_kinvisc():
 
 
 if __name__ == "__main__":
+    graph(new_calc_dens.ast)
     test_calc_dens()
     test_calc_dens_Sderiv()
     test_calc_dens_Tderiv()

@@ -16,7 +16,27 @@ from pagos.new_units import initialise_PAGOS_units
 visualise.graph = visast_util.graph
 
 
-class PAGOSQuantity(pint.UnitRegistry.Quantity): ...
+class PAGOSQuantity(pint.UnitRegistry.Quantity):
+    @classmethod
+    def change_generic_units_to_specific(cls, units: pint.Unit, gas: str):
+        """Replaces all instances of generic gas suffixes with specific gas"""
+        unit_items = [u for u in units._units.unit_items()]
+        for u in unit_items:
+            if u[0].endswith("_gas"):
+                u[0] = u[0].replace("_gas", f"_{gas}")
+        changed_units = pint.Unit(UnitsContainer(unit_items))
+        return changed_units
+
+    def to(self, other=None, *contexts, gas: str | None = None, **ctx_kwargs):
+        # if gas is provided as a keyword argument, generic gas suffixes are transformed
+        if gas:
+            changed_units = self.change_generic_units_to_specific(self.units, gas)
+            quant_with_changed_units = self._REGISTRY.Quantity(
+                self.magnitude, changed_units
+            )
+            return quant_with_changed_units.to(other, *contexts, **ctx_kwargs)
+
+        return super().to(other, *contexts, **ctx_kwargs)
 
 
 # set up UnitRegistry class that will create Quantity objects from PAGOSQuantity type
@@ -411,36 +431,11 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
 
     def visit_Subscript(self, node: ast.Subscript):
 
-        # Handle case 2: Subscript -> Name     -> Load
-        #                          -> Constant
+        # Handle case 2: Subscript -> <THING BEING SUBSCRIPTED>
+        #                          -> <SLICE>
         #                          -> Load
 
-        # Some of this may have already been parsed by InitialLoadVisitor.visit_Name:
-        # Subscript -> Name with <units> (if iterable is pQ(<iterable>, <units>))
-        #           -> Constant
-        #           -> Load
-        if node.value.units is not UNASSIGNED:
-            # in that case, just pass the units up the tree
-            node.units = node.value.units
-        # or
-        # Subscript -> Name with UNASSIGNED (if iterable is anything else)
-        #           -> Constant
-        #           -> Load
-
-        # TODO NEXT FIXME: This fails when chained subscripts are used (a[b][c]...)
-        elif node.value.id in self.func.__globals__:
-            # if this happens we have to keep going up the tree, compiling what's below it
-            # and seeing if a valid unit assignment occurs. This is because the slice of a
-            # subscript could be dynamically decided further upwards in the tree.
-            self.walk_up_ast_until_valid_units_found(node)
-
-        # The subscripted variable could also be an argument into the function, which would be given units
-        elif node.value.id in get_unit_aware_function_info(self.func.__name__)[0]:
-            ...
-        # Otherwise the final option is that the variable is entirely local to the function.
-        # In this case, it will have been assigned elsewhere.
-        else:
-            ...
+        self.walk_up_ast_until_valid_units_found(node)
         return self.generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute):

@@ -36,6 +36,15 @@ class CcSTPGasConverter(ScaleConverter):
 
 def initialise_PAGOS_units(ureg: UnitRegistry):
 
+    # Generic gas units. These cannot be converted between each other because context about the specific gas is
+    # required for a successful conversion.
+    ureg.define("mole_gas = [amount_gas] = mol_g = mol_gas = mole_g")
+    ureg.define(
+        "cubic_centimeter_STP_gas = [STPvolume_gas] = ccSTP_g = cm3STP_gas = cm3STP_g = cubic_centimeter_STP_g"
+    )
+    ureg.define("gram_gas = [gram_gas] = g_g = g_gas = gram_g")
+
+    # Specific gas units
     for gas in gases_info:
         gasname = gases_info[gas]["name"]
 

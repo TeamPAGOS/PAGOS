@@ -30,8 +30,11 @@ def graph(aST: ast) -> None:
             nodeLabel += " " + str(node.name)
 
         if hasattr(node, "units"):
-            if isinstance(node.units, (str, Unit)):
-                nodeLabel += f"\n{_ureg.Unit(node.units):~P}"
+            if isinstance(node.units, (str, Unit)):  #
+                try:
+                    nodeLabel += f"\n{_ureg.Unit(node.units):~P}"
+                except KeyError:
+                    nodeLabel += f"\n{_ureg.Unit(node.units)}"
             elif isinstance(node.units, list):
                 nodeLabel += "\n..."
             else:
@@ -57,7 +60,10 @@ def graph(aST: ast) -> None:
 
                 if hasattr(child, "units"):
                     if isinstance(child.units, (str, Unit)):
-                        childLabel += f"\n{_ureg.Unit(child.units):~P}"
+                        try:
+                            childLabel += f"\n{_ureg.Unit(child.units):~P}"
+                        except KeyError:
+                            childLabel += f"\n{_ureg.Unit(child.units)}"
                     elif isinstance(child.units, list):
                         childLabel += "\n..."
                     else:
@@ -74,7 +80,10 @@ def graph(aST: ast) -> None:
                         nodeLabel = str(node.id)
                         if hasattr(node, "units"):
                             if isinstance(node.units, (str, Unit)):
-                                nodeLabel += f"\n{_ureg.Unit(node.units):~P}"
+                                try:
+                                    nodeLabel += f"\n{_ureg.Unit(node.units):~P}"
+                                except KeyError:
+                                    nodeLabel += f"\n{_ureg.Unit(node.units)}"
                             elif isinstance(node.units, list):
                                 nodeLabel += "\n..."
                             else:

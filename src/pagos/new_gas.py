@@ -69,10 +69,8 @@ class Gas:
         # initialise Schmidt number calculation
         if self.name in STABLETRANSIENTGASES:
             self.calc_Sc = lambda T, S: self.__calc_Sc_W92(T, S)
-            self.set_default_units(self.calc_Sc, self.__calc_Sc_W92)
         elif self.name in NOBLEGASES + ["N2"]:
             self.calc_Sc = lambda T, S: self.__calc_Sc_HE17(T, S)
-            self.set_default_units(self.calc_Sc, self.__calc_Sc_HE17)
         else:
             self.calc_Sc = NotImplementedError(
                 f"calc_Sc is not defined for {self.name}"
@@ -82,18 +80,14 @@ class Gas:
         # NOTE some of the cases (e.g. noble gases) have an ab argument that does nothing!
         if self.name in NOBLEGASES:
             self.calc_Cstar = lambda T, S, ab="default": self.__calc_Cstar_J19(T, S)
-            self.set_default_units(self.calc_Cstar, self.__calc_Cstar_J19)
         elif self.name in {"CFC11", "CFC12"}:
             self.calc_Cstar = lambda T, S, ab="default": self.__calc_Cstar_WW85(
                 T, S, ab
             )
-            self.set_default_units(self.calc_Cstar, self.__calc_Cstar_WW85)
         elif self.name in {"SF6"}:
             self.calc_Cstar = lambda T, S, ab="default": self.__calc_Cstar_B02(T, S, ab)
-            self.set_default_units(self.calc_Cstar, self.__calc_Cstar_B02)
         elif self.name in {"N2"}:
             self.calc_Cstar = lambda T, S, ab="default": self.__calc_Cstar_HE04(T, S)
-            self.set_default_units(self.calc_Cstar, self.__calc_Cstar_HE04)
         else:
             self.calc_Cstar = NotImplementedError(
                 f"calc_Cstar is not defined for {self.name}"
@@ -102,7 +96,6 @@ class Gas:
         # initialise Ceq calculation
         if self.name in NOBLEGASES + STABLETRANSIENTGASES + ["N2"]:
             self.calc_Ceq = lambda T, S, p, ab="default": self.__calc_Ceq(T, S, p, ab)
-            self.set_default_units(self.calc_Ceq, self.__calc_Ceq)
         else:
             self.calc_Ceq = NotImplementedError(
                 f"calc_Ceq is not defined for {self.name}"
@@ -244,6 +237,33 @@ class Gas:
 
         return pref * Cstar
 
-    def set_default_units(self, func, target_base):
-        func.default_units_in = target_base.default_units_in
-        func.units_out = target_base.units_out
+
+"""
+Creation of Gas objects
+"""
+He = Gas("He")
+Ne = Gas("Ne")
+Ar = Gas("Ar")
+Kr = Gas("Kr")
+Xe = Gas("Xe")
+N2 = Gas("N2")
+CFC11 = Gas("CFC11")
+CFC12 = Gas("CFC12")
+SF6 = Gas("SF6")
+
+gases_dict = {
+    "He": He,
+    "Ne": Ne,
+    "Ar": Ar,
+    "Kr": Kr,
+    "Xe": Xe,
+    "N2": N2,
+    "CFC12": CFC12,
+    "CFC11": CFC11,
+    "SF6": SF6,
+}
+
+if __name__ == "__main__":
+    from pagos.visast_util import graph
+
+    graph(He._Gas__calc_Ceq.ast)
