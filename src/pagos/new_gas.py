@@ -266,4 +266,4 @@ gases_dict = {
 if __name__ == "__main__":
     from pagos.visast_util import graph
 
-    graph(He._Gas__calc_Ceq.ast)
+    graph(He._Gas__calc_Cstar_J19.ast)

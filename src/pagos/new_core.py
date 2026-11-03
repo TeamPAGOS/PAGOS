@@ -116,6 +116,8 @@ def unit_aware(default_units_in: dict | None, units_out: str | None, debug=False
         )
         c = 0
         while True:
+            if func.__name__ == "__calc_Cstar_J19":
+                visualise.graph(_ast)
             if debug:
                 print("cycle", c)
             _unit_assignment_visitor.convertlock = set()
@@ -230,7 +232,12 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
         if node.units is UNASSIGNED or to_units is UNASSIGNED:
             return node
 
-        from_units_container: UnitsContainer = node.units._units
+        node_units = self.resolve_nonmultiplicative_units(node.units)
+        # TODO NEXT: this does not work. need to really think about temperature units
+        # and implement a good system
+        to_units = self.resolve_nonmultiplicative_units(to_units)
+
+        from_units_container: UnitsContainer = node_units._units
         to_units_container: UnitsContainer = to_units._units
 
         cfactor = ureg._get_conversion_factor(from_units_container, to_units_container)
@@ -239,10 +246,11 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
             raise cfactor
 
         if cfactor == 1:
+            node.units = node_units
             return node
 
         factor_node = ast.Constant(cfactor)
-        factor_node.units = to_units / node.units
+        factor_node.units = to_units / node_units
 
         operator_node = ast.Mult()
         operator_node.units = UNASSIGNED
@@ -585,6 +593,16 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
         else:
             node.units = eltunits
         return self.generic_visit(node)
+
+    def resolve_nonmultiplicative_units(self, units: pint.Unit):
+        """Makes nonmultiplicative units into delta-units"""
+        if (
+            units is not UNASSIGNED
+            and ureg.Quantity(0, units)._get_non_multiplicative_units()
+        ):
+            delta_quantity = ureg.Quantity(0, units) - ureg.Quantity(0, units)
+            return delta_quantity.units
+        return units
 
     def visit_BinOp(self, node: ast.BinOp):
         # This will perform all necessary conversions at any binary operation nodes.
