@@ -90,6 +90,12 @@ def unit_aware(default_units_in: dict | None, units_out: str | None, debug=False
         # add function's details to register of unit aware functions
         register_unit_aware_function(func.__name__, input_arguments_units, output_units)
 
+        # If the function is gas-dependent, we set the following property to True
+        func._is_gas_dependent = (
+            func.__qualname__[0:4] == "Gas."
+            or "gas" in inspect.signature(func).parameters
+        )
+
         # get AST of func (dedent used so that functions defined inside other
         # functions do not have invalid whitespace at the beginning)
         _ast = ast.parse(dedent(inspect.getsource(func)))
@@ -232,28 +238,40 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
         if node.units is UNASSIGNED or to_units is UNASSIGNED:
             return node
 
-        node_units = self.resolve_nonmultiplicative_units(node.units)
-        # TODO NEXT: this does not work. need to really think about temperature units
-        # and implement a good system
-        to_units = self.resolve_nonmultiplicative_units(to_units)
+        node_units = node.units
 
         from_units_container: UnitsContainer = node_units._units
         to_units_container: UnitsContainer = to_units._units
 
-        cfactor = ureg._get_conversion_factor(from_units_container, to_units_container)
+        if node_units == ureg.degC and to_units == ureg.K:
+            node.units = ureg.K
+            factor_node = ast.Constant(273.15)
+            factor_node.units = ureg.K
+            operator_node = ast.Add()
+            operator_node.units = UNASSIGNED
+        elif node_units == ureg.K and to_units == ureg.degC:
+            node.units = ureg.degC
+            factor_node = ast.Constant(273.15)
+            factor_node.units = ureg.degC
+            operator_node = ast.Sub()
+            operator_node.units = UNASSIGNED
+        else:
+            cfactor = ureg._get_conversion_factor(
+                from_units_container, to_units_container
+            )
 
-        if isinstance(cfactor, pint.DimensionalityError):
-            raise cfactor
+            if isinstance(cfactor, pint.DimensionalityError):
+                raise cfactor
 
-        if cfactor == 1:
-            node.units = node_units
-            return node
+            if cfactor == 1:
+                node.units = node_units
+                return node
 
-        factor_node = ast.Constant(cfactor)
-        factor_node.units = to_units / node_units
+            factor_node = ast.Constant(cfactor)
+            factor_node.units = to_units / node_units
 
-        operator_node = ast.Mult()
-        operator_node.units = UNASSIGNED
+            operator_node = ast.Mult()
+            operator_node.units = UNASSIGNED
 
         conversion_node = ast.BinOp(left=node, op=operator_node, right=factor_node)
 
@@ -593,16 +611,6 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
         else:
             node.units = eltunits
         return self.generic_visit(node)
-
-    def resolve_nonmultiplicative_units(self, units: pint.Unit):
-        """Makes nonmultiplicative units into delta-units"""
-        if (
-            units is not UNASSIGNED
-            and ureg.Quantity(0, units)._get_non_multiplicative_units()
-        ):
-            delta_quantity = ureg.Quantity(0, units) - ureg.Quantity(0, units)
-            return delta_quantity.units
-        return units
 
     def visit_BinOp(self, node: ast.BinOp):
         # This will perform all necessary conversions at any binary operation nodes.

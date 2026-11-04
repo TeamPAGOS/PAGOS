@@ -34,15 +34,71 @@ class CcSTPGasConverter(ScaleConverter):
         object.__setattr__(self, "scale", 1 / gases_info[gas]["vmol [ccSTP_g/mol_g]"])
 
 
+@dataclass(frozen=True)
+class GenericGramGasConverter(Converter):
+    def __init__(self):
+        gas: str
+
+    @property
+    def is_multiplicative(self):
+        return False
+
+    def to_reference(self, value, inplace=False):
+        def _wrapper():
+            return value / gases_info[self.gas]["mmol [g_g/mol_g]"]
+
+        return _wrapper()
+
+    def from_reference(self, value, inplace=False):
+        def _wrapper():
+            return value * gases_info[self.gas]["mmol [g_g/mol_g]"]
+
+        return _wrapper()
+
+
+@dataclass(frozen=True)
+class GenericCcSTPGasConverter(Converter):
+    def __init__(self):
+        gas: str
+
+    @property
+    def is_multiplicative(self):
+        return False
+
+    def to_reference(self, value, inplace=False):
+        return value / gases_info[self.gas]["vmol [ccSTP_g/mol_g]"]
+
+    def from_reference(self, value, inplace=False):
+        return value * gases_info[self.gas]["vmol [ccSTP_g/mol_g]"]
+
+
 def initialise_PAGOS_units(ureg: UnitRegistry):
 
-    # Generic gas units. These cannot be converted between each other because context about the specific gas is
-    # required for a successful conversion.
+    # Generic gas units. These can only be converted between each other if the gas is specified
     ureg.define("mole_gas = [amount_gas] = mol_g = mol_gas = mole_g")
     ureg.define(
-        "cubic_centimeter_STP_gas = [STPvolume_gas] = ccSTP_g = cm3STP_gas = cm3STP_g = cubic_centimeter_STP_g"
+        UnitDefinition(
+            "gram_gas",  # name
+            "g_g",  # symbol
+            ("g_gas", "gram_g"),  # aliases
+            GenericGramGasConverter(),  # converter
+            UnitsContainer(mole_gas=1),  # reference unit
+        )
     )
-    ureg.define("gram_gas = [gram_gas] = g_g = g_gas = gram_g")
+    ureg.define(
+        UnitDefinition(
+            "cubic_centimeter_STP_gas",  # name
+            "ccSTP_g",  # symbol
+            (
+                "cm3STP_gas",
+                "cm3STP_g",
+                "cubic_centimeter_STP_g",
+                "ccSTP_gas",
+            ),  # aliases
+            GenericCcSTPGasConverter(),  # converter
+            UnitsContainer(mole_gas=1),  # reference unit
+        )
+    )
 
     # Specific gas units
     for gas in gases_info:
@@ -74,7 +130,13 @@ def initialise_PAGOS_units(ureg: UnitRegistry):
                     f"cc_STP_{gasname}",
                     f"cm3_STP_{gasname}",
                 ),  # aliases
-                CcSTPGasConverter(gas="He"),  # converter
+                CcSTPGasConverter(gas=gasname),  # converter
                 UnitsContainer(**{f"mol_{gasname}": 1}),  # reference unit
             )
         )
+
+
+if __name__ == "__main__":
+    ureg = UnitRegistry()
+    initialise_PAGOS_units(ureg)
+    pass
