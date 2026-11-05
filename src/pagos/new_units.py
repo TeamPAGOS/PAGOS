@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import json
 from dataclasses import dataclass
 from functools import reduce
 from operator import add
+import re
+from typing import Any
 
-from pint import Context, UnitRegistry
+from pint import Context, Quantity, UnitRegistry
+import pint
 from pint.converters import Converter
-from pint.facets.plain.definitions import ScaleConverter, UnitDefinition
-from pint.util import UnitsContainer
+from pint.facets.plain.definitions import Magnitude, ScaleConverter, UnitDefinition
+from pint.util import UnitsContainer, find_shortest_path
+
+import wrapt
 
 # gases json file
 with open("src/pagos/gases.json", "r") as gases_file:
@@ -36,8 +42,7 @@ class CcSTPGasConverter(ScaleConverter):
 
 @dataclass(frozen=True)
 class GenericGramGasConverter(Converter):
-    def __init__(self):
-        gas: str
+    gas: str
 
     @property
     def is_multiplicative(self):
@@ -58,8 +63,7 @@ class GenericGramGasConverter(Converter):
 
 @dataclass(frozen=True)
 class GenericCcSTPGasConverter(Converter):
-    def __init__(self):
-        gas: str
+    gas: str
 
     @property
     def is_multiplicative(self):
@@ -76,28 +80,9 @@ def initialise_PAGOS_units(ureg: UnitRegistry):
 
     # Generic gas units. These can only be converted between each other if the gas is specified
     ureg.define("mole_gas = [amount_gas] = mol_g = mol_gas = mole_g")
+    ureg.define("gram_gas = [mass_gas] = g_g = g_gas = gram_g")
     ureg.define(
-        UnitDefinition(
-            "gram_gas",  # name
-            "g_g",  # symbol
-            ("g_gas", "gram_g"),  # aliases
-            GenericGramGasConverter(),  # converter
-            UnitsContainer(mole_gas=1),  # reference unit
-        )
-    )
-    ureg.define(
-        UnitDefinition(
-            "cubic_centimeter_STP_gas",  # name
-            "ccSTP_g",  # symbol
-            (
-                "cm3STP_gas",
-                "cm3STP_g",
-                "cubic_centimeter_STP_g",
-                "ccSTP_gas",
-            ),  # aliases
-            GenericCcSTPGasConverter(),  # converter
-            UnitsContainer(mole_gas=1),  # reference unit
-        )
+        "cubic_centimeter_STP_gas = [STPvolume_gas] = ccSTP_g = ccSTP_gas = cubic_centimeter_STP_g = cm3STP_g = cm3STP_gas"
     )
 
     # Specific gas units
@@ -136,7 +121,66 @@ def initialise_PAGOS_units(ureg: UnitRegistry):
         )
 
 
+@dataclass(frozen=True)
+class GenericGasConversionFunction:
+    func: Callable
+    ureg: UnitRegistry
+
+    def __call__(self, *args, **kwds):
+        return self.func(*args, **kwds)
+
+
+class PAGOSContextRegistry(pint.UnitRegistry):
+    def _convert(
+        self,
+        value: Magnitude,
+        src: UnitsContainer,
+        dst: UnitsContainer,
+        inplace: bool = False,
+        **ctx_kwargs,
+    ) -> Magnitude:
+        """The same as pint.facets.context.GenericContextRegistry.convert, but patched to allow for generic gas transformations."""
+        # If there is an active context, we look for a path connecting source and
+        # destination dimensionality. If it exists, we transform the source value
+        # by applying sequentially each transformation of the path.
+        if self._active_ctx:
+            src_dim = self._get_dimensionality(src)
+            dst_dim = self._get_dimensionality(dst)
+
+            path = find_shortest_path(self._active_ctx.graph, src_dim, dst_dim)
+            if path:
+                src = self.Quantity(value, src)
+                for a, b in zip(path[:-1], path[1:]):
+                    src = self._active_ctx.transform(a, b, self, src, **ctx_kwargs)
+
+                if isinstance(src, GenericGasConversionFunction):
+                    value, src = src, None
+                else:
+                    value, src = src._magnitude, src._units
+
+        # TODO NEXT: problem: super() call passes down to the regular GenericContextRegistry from pint. This could be bad because we
+        # then pass in nonsense values; perhaps do NOT call super()? But is that also bad because it re-passes the values into
+        # GenericContextRegistry?
+        return super()._convert(value, src, dst, inplace, **ctx_kwargs)
+
+
+# monkey patch over GenericContextRegistry method
+# pint.facets.context.registry.GenericContextRegistry = PAGOSContextRegistry
+
+pc = pint.Context("PAGOS")
+# dummy, remove me later
+pc.add_transformation(
+    "[amount_gas]",
+    "[mass_gas]",
+    lambda ureg, x: GenericGasConversionFunction(
+        lambda x, gas: {"He": x, "Ne": 2 * x}[gas], ureg
+    ),
+)
+
 if __name__ == "__main__":
-    ureg = UnitRegistry()
+    ureg = PAGOSContextRegistry()
     initialise_PAGOS_units(ureg)
+    ureg.add_context(pc)
+    ureg.enable_contexts("PAGOS")
+    ureg.Quantity(1, "mol_g").to("g_g")
     pass
