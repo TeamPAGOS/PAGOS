@@ -11,45 +11,16 @@ from pint.util import UnitsContainer
 from visast import visualise
 
 from pagos import visast_util
-from pagos.new_units import initialise_PAGOS_units
+from pagos.new_units import (
+    GenericGasConversionFunction,
+    initialise_PAGOS_units,
+    PAGOSContextRegistry,
+)
 
 visualise.graph = visast_util.graph
 
 
-class PAGOSQuantity(pint.UnitRegistry.Quantity):
-    @classmethod
-    def change_generic_units_to_specific(cls, units: pint.Unit, gas: str):
-        """Replaces all instances of generic gas suffixes with specific gas"""
-        unit_items = [u for u in units._units.unit_items()]
-        for u in unit_items:
-            if u[0].endswith("_gas"):
-                u[0] = u[0].replace("_gas", f"_{gas}")
-        changed_units = pint.Unit(UnitsContainer(unit_items))
-        return changed_units
-
-    def to(self, other=None, *contexts, gas: str | None = None, **ctx_kwargs):
-        # if gas is provided as a keyword argument, generic gas suffixes are transformed
-        if gas:
-            changed_units = self.change_generic_units_to_specific(self.units, gas)
-            quant_with_changed_units = self._REGISTRY.Quantity(
-                self.magnitude, changed_units
-            )
-            return quant_with_changed_units.to(other, *contexts, **ctx_kwargs)
-
-        return super().to(other, *contexts, **ctx_kwargs)
-
-
-# set up UnitRegistry class that will create Quantity objects from PAGOSQuantity type
-class PAGOSRegistry(pint.registry.GenericUnitRegistry[PAGOSQuantity, pint.Unit]):
-    """
-    Default `UnitRegistry` from which all quantities dealt with by PAGOS should be derived.
-    """
-
-    Quantity: TypeAlias = PAGOSQuantity
-    Unit: TypeAlias = pint.UnitRegistry.Unit
-
-
-ureg = PAGOSRegistry()
+ureg = PAGOSContextRegistry()
 initialise_PAGOS_units(ureg)
 
 

@@ -1,20 +1,24 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 import json
+from numbers import Number
+import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import reduce
 from operator import add
-import re
-from typing import Any
+from typing import Any, TypeAlias
 
-from pint import Context, Quantity, UnitRegistry
 import pint
+from pint import Context, Quantity, UnitRegistry
 from pint.converters import Converter
 from pint.facets.plain.definitions import Magnitude, ScaleConverter, UnitDefinition
 from pint.util import UnitsContainer, find_shortest_path
 
-import wrapt
+from pagos._constants import (
+    _MOLAR_MASSES_G_G_PER_MOL_G,
+    _MOLAR_VOLUMES_CCSTP_G_PER_MOL_G,
+)
 
 # gases json file
 with open("src/pagos/gases.json", "r") as gases_file:
@@ -29,7 +33,7 @@ class GramGasConverter(ScaleConverter):
     def __init__(self, gas):
         super().__init__(scale=None)
         object.__setattr__(self, "gas", gas)
-        object.__setattr__(self, "scale", 1 / gases_info[gas]["mmol [g_g/mol_g]"])
+        object.__setattr__(self, "scale", 1 / _MOLAR_MASSES_G_G_PER_MOL_G[gas])
 
 
 @dataclass(frozen=True)
@@ -37,43 +41,43 @@ class CcSTPGasConverter(ScaleConverter):
     def __init__(self, gas):
         super().__init__(scale=None)
         object.__setattr__(self, "gas", gas)
-        object.__setattr__(self, "scale", 1 / gases_info[gas]["vmol [ccSTP_g/mol_g]"])
+        object.__setattr__(self, "scale", 1 / _MOLAR_VOLUMES_CCSTP_G_PER_MOL_G[gas])
 
 
-@dataclass(frozen=True)
-class GenericGramGasConverter(Converter):
-    gas: str
+# @dataclass(frozen=True)
+# class GenericGramGasConverter(Converter):
+#     gas: str
 
-    @property
-    def is_multiplicative(self):
-        return False
+#     @property
+#     def is_multiplicative(self):
+#         return False
 
-    def to_reference(self, value, inplace=False):
-        def _wrapper():
-            return value / gases_info[self.gas]["mmol [g_g/mol_g]"]
+#     def to_reference(self, value, inplace=False):
+#         def _wrapper():
+#             return value / gases_info[self.gas]["mmol [g_g/mol_g]"]
 
-        return _wrapper()
+#         return _wrapper()
 
-    def from_reference(self, value, inplace=False):
-        def _wrapper():
-            return value * gases_info[self.gas]["mmol [g_g/mol_g]"]
+#     def from_reference(self, value, inplace=False):
+#         def _wrapper():
+#             return value * gases_info[self.gas]["mmol [g_g/mol_g]"]
 
-        return _wrapper()
+#         return _wrapper()
 
 
-@dataclass(frozen=True)
-class GenericCcSTPGasConverter(Converter):
-    gas: str
+# @dataclass(frozen=True)
+# class GenericCcSTPGasConverter(Converter):
+#     gas: str
 
-    @property
-    def is_multiplicative(self):
-        return False
+#     @property
+#     def is_multiplicative(self):
+#         return False
 
-    def to_reference(self, value, inplace=False):
-        return value / gases_info[self.gas]["vmol [ccSTP_g/mol_g]"]
+#     def to_reference(self, value, inplace=False):
+#         return value / gases_info[self.gas]["vmol [ccSTP_g/mol_g]"]
 
-    def from_reference(self, value, inplace=False):
-        return value * gases_info[self.gas]["vmol [ccSTP_g/mol_g]"]
+#     def from_reference(self, value, inplace=False):
+#         return value * gases_info[self.gas]["vmol [ccSTP_g/mol_g]"]
 
 
 def initialise_PAGOS_units(ureg: UnitRegistry):
@@ -121,16 +125,58 @@ def initialise_PAGOS_units(ureg: UnitRegistry):
         )
 
 
+class PAGOSQuantity(pint.UnitRegistry.Quantity):
+    @classmethod
+    def change_generic_units_to_specific(cls, units: pint.Unit, gas: str):
+        """Replaces all instances of generic gas suffixes with specific gas"""
+        unit_items = [u for u in units._units.unit_items()]
+        for u in unit_items:
+            if u[0].endswith("_gas"):
+                u[0] = u[0].replace("_gas", f"_{gas}")
+        changed_units = pint.Unit(UnitsContainer(unit_items))
+        return changed_units
+
+    def to(self, other=None, *contexts, gas: str | None = None, **ctx_kwargs):
+        # if gas is provided as a keyword argument, generic gas suffixes are transformed
+        if gas:
+            changed_units = self.change_generic_units_to_specific(self.units, gas)
+            quant_with_changed_units = self._REGISTRY.Quantity(
+                self.magnitude, changed_units
+            )
+            return quant_with_changed_units.to(other, *contexts, **ctx_kwargs)
+
+        return super().to(other, *contexts, **ctx_kwargs)
+
+    def of(self, gas):
+        if isinstance(self.magnitude, GenericGasConversionFunction):
+            return self.magnitude(gas)
+        else:
+            raise AttributeError(f"Quantity {self} has no 'of' method.")
+
+
 @dataclass(frozen=True)
 class GenericGasConversionFunction:
+    value: Number
     func: Callable
     ureg: UnitRegistry
 
-    def __call__(self, *args, **kwds):
-        return self.func(*args, **kwds)
+    def __call__(self, gas):
+        return self.func(self.value, gas)
+
+    def __str__(self):
+        return f"({self.value}) in"
 
 
-class PAGOSContextRegistry(pint.UnitRegistry):
+class PAGOSContextRegistry(
+    pint.registry.GenericUnitRegistry[PAGOSQuantity, pint.UnitRegistry.Unit]
+):
+    """
+    Default `UnitRegistry` from which all quantities dealt with by PAGOS should be derived.
+    """
+
+    Quantity: TypeAlias = PAGOSQuantity
+    Unit: TypeAlias = pint.UnitRegistry.Unit
+
     def _convert(
         self,
         value: Magnitude,
@@ -154,13 +200,10 @@ class PAGOSContextRegistry(pint.UnitRegistry):
                     src = self._active_ctx.transform(a, b, self, src, **ctx_kwargs)
 
                 if isinstance(src, GenericGasConversionFunction):
-                    value, src = src, None
+                    return src
                 else:
                     value, src = src._magnitude, src._units
 
-        # TODO NEXT: problem: super() call passes down to the regular GenericContextRegistry from pint. This could be bad because we
-        # then pass in nonsense values; perhaps do NOT call super()? But is that also bad because it re-passes the values into
-        # GenericContextRegistry?
         return super()._convert(value, src, dst, inplace, **ctx_kwargs)
 
 
@@ -168,13 +211,17 @@ class PAGOSContextRegistry(pint.UnitRegistry):
 # pint.facets.context.registry.GenericContextRegistry = PAGOSContextRegistry
 
 pc = pint.Context("PAGOS")
-# dummy, remove me later
+
+
+def amount_to_mass(x, gas):
+    mm = _MOLAR_MASSES_G_G_PER_MOL_G[gas]
+    return x * mm
+
+
 pc.add_transformation(
     "[amount_gas]",
     "[mass_gas]",
-    lambda ureg, x: GenericGasConversionFunction(
-        lambda x, gas: {"He": x, "Ne": 2 * x}[gas], ureg
-    ),
+    lambda ureg, x: GenericGasConversionFunction(x, amount_to_mass, ureg),
 )
 
 if __name__ == "__main__":
@@ -182,5 +229,7 @@ if __name__ == "__main__":
     initialise_PAGOS_units(ureg)
     ureg.add_context(pc)
     ureg.enable_contexts("PAGOS")
-    ureg.Quantity(1, "mol_g").to("g_g")
-    pass
+    print(ureg.Quantity(1, "mol_g").to("g_g"))
+    print(ureg.Quantity(1, "mol_g").to("g_g").of("He"))
+    # TODO NEXT make it so that the "of" function works on a quantity that has not already passed through a "to" call
+    # TODO NEXT NEXT check that stacked "to" calls can still produce correct outcomes (e.g. x.to(...).to(...))
