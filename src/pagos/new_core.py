@@ -12,7 +12,6 @@ from visast import visualise
 
 from pagos import visast_util
 from pagos.new_units import (
-    GenericGasConversionFunction,
     initialise_PAGOS_units,
     PAGOSContextRegistry,
 )
