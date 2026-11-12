@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from numbers import Number
+from numbers import Number, Real
 from queue import Queue
 import re
 from collections.abc import Callable
@@ -126,14 +126,91 @@ def initialise_PAGOS_units(ureg: UnitRegistry):
         )
 
 
+class GenericGasMagnitude(float):
+    def __init__(self, value):
+        self.value = value
+        self.transform_chain: Queue[Callable] = Queue()
+
+    def unravel_transform_chain(self):
+        ret = self.magnitude
+        chain = self.transform_chain
+        while not chain.empty():
+            func = chain.get()
+            ret = func(ret)
+        return ret
+
+    def wrap_arithmetic_function(func: Callable):
+        def _wrapped_arith_func(self, value, /):
+            return GenericGasMagnitude(func(self, value))
+
+        return _wrapped_arith_func
+
+    @wrap_arithmetic_function
+    def __add__(self, value):
+        return super().__add__(value)
+
+    @wrap_arithmetic_function
+    def __sub__(self, value):
+        return super().__sub__(value)
+
+    @wrap_arithmetic_function
+    def __mul__(self, value):
+        return super().__mul__(value)
+
+    @wrap_arithmetic_function
+    def __truediv__(self, value):
+        return super().__truediv__(value)
+
+    @wrap_arithmetic_function
+    def __floordiv__(self, value):
+        return super().__floordiv__(value)
+
+    @wrap_arithmetic_function
+    def __pow__(self, value):
+        return super().__pow__(value)
+
+    @wrap_arithmetic_function
+    def __mod__(self, value):
+        return super().__mod__(value)
+
+    @wrap_arithmetic_function
+    def __matmul__(self, value):
+        return super().__matmul__(value)
+
+    @wrap_arithmetic_function
+    def __radd__(self, value):
+        return value + self.value
+
+    @wrap_arithmetic_function
+    def __rsub__(self, value):
+        return value - self.value
+
+    @wrap_arithmetic_function
+    def __rmul__(self, value):
+        return value * self.value
+
+    @wrap_arithmetic_function
+    def __rtruediv__(self, value):
+        return value / self.value
+
+    @wrap_arithmetic_function
+    def __rfloordiv__(self, value):
+        return value // self.value
+
+    @wrap_arithmetic_function
+    def __rpow__(self, value):
+        return value**self.value
+
+    @wrap_arithmetic_function
+    def __rmod__(self, value):
+        return value % self.value
+
+    @wrap_arithmetic_function
+    def __rmatmul__(self, value):
+        return value @ self.value
+
+
 class PAGOSQuantity(pint.UnitRegistry.Quantity):
-    _generics_transform_chain: Queue
-
-    def __new__(cls, value, units=None):
-        inst = super().__new__(cls, value, units)
-        inst._generics_transform_chain = Queue()
-        return inst
-
     @classmethod
     def add_generic_transform(
         cls,
@@ -141,9 +218,13 @@ class PAGOSQuantity(pint.UnitRegistry.Quantity):
         func: Callable,
         units_of_transformer: UnitRegistry.Unit,
     ):
-        ret = inst._REGISTRY.Quantity(inst.magnitude, units_of_transformer)
-        ret._generics_transform_chain = inst._generics_transform_chain
-        ret._generics_transform_chain.put(func)
+        if isinstance(inst.magnitude, GenericGasMagnitude):
+            ret = inst
+        else:
+            ret = inst._REGISTRY.Quantity(
+                GenericGasMagnitude(inst.magnitude), units_of_transformer
+            )
+        ret.magnitude.transform_chain.put(func)
         return ret
 
     @classmethod
@@ -175,24 +256,29 @@ class PAGOSQuantity(pint.UnitRegistry.Quantity):
         return super().to(other, *contexts, **ctx_kwargs)
 
     def of(self, gas):
-        if self._generics_transform_chain.empty():
+        if (
+            isinstance(self.magnitude, GenericGasMagnitude)
+            and self.magnitude.transform_chain.empty()
+        ):
             raise TypeError(
                 f"The given quantity does not have any generic gas units and therefore cannot be expressed as an amount of {gas}"
             )
+        elif isinstance(self.magnitude, GenericGasMagnitude):
+            return self._REGISTRY.Quantity(
+                self.magnitude.unravel_transform_chain(), self.units
+            )
         else:
-            result = self
-            while not result._generics_transform_chain.empty():
-                transf = result._generics_transform_chain.get()
-                result = transf(result)
-            return result
+            return self
 
     def __str__(self):
-        if self._generics_transform_chain.empty():
-            return super().__str__()
-        else:
+        if (
+            isinstance(self.magnitude, GenericGasMagnitude)
+            and self.magnitude.transform_chain.empty()
+        ):
             unitstr = super().__str__().split(" ")[1]
             return f"[unknown amount of {unitstr}]"
-            # TODO NEXT this does not seem to work, still prints 1 in example below - generics transform chain variable not properly updated?
+        else:
+            return super().__str__()
 
 
 gas_names = [gas_info["name"] for gas_info in gases_info.values()]
