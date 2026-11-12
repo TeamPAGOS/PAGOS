@@ -127,21 +127,26 @@ def initialise_PAGOS_units(ureg: UnitRegistry):
 
 
 class GenericGasMagnitude(float):
-    def __init__(self, value):
+    def __init__(self, value, *, transform_chain: Queue | None = None):
         self.value = value
-        self.transform_chain: Queue[Callable] = Queue()
+        if not transform_chain:
+            self.transform_chain: Queue[Callable] = Queue()
+        else:
+            self.transform_chain = transform_chain
 
-    def unravel_transform_chain(self):
-        ret = self.magnitude
+    def unravel_transform_chain(self, gas):
+        ret = self.value
         chain = self.transform_chain
         while not chain.empty():
             func = chain.get()
-            ret = func(ret)
+            ret = func(ret, gas)
         return ret
 
     def wrap_arithmetic_function(func: Callable):
         def _wrapped_arith_func(self, value, /):
-            return GenericGasMagnitude(func(self, value))
+            return GenericGasMagnitude(
+                func(self, value), transform_chain=self.transform_chain
+            )
 
         return _wrapped_arith_func
 
@@ -228,6 +233,14 @@ class PAGOSQuantity(pint.UnitRegistry.Quantity):
         return ret
 
     @classmethod
+    def are_units_generic_gas_units(cls, inst: PAGOSQuantity):
+        unit_items = [u for u in inst.units._units.unit_items()]
+        for u in unit_items:
+            if u[0].endswith("_gas"):
+                return True
+        return False
+
+    @classmethod
     def change_generic_units_to_specific(cls, units: pint.Unit, gas: str):
         """Replaces all instances of generic gas suffixes with specific gas"""
         unit_items = [u for u in units._units.unit_items()]
@@ -265,7 +278,8 @@ class PAGOSQuantity(pint.UnitRegistry.Quantity):
             )
         elif isinstance(self.magnitude, GenericGasMagnitude):
             return self._REGISTRY.Quantity(
-                self.magnitude.unravel_transform_chain(), self.units
+                self.magnitude.unravel_transform_chain(gas),
+                self.change_generic_units_to_specific(self.units, gas),
             )
         else:
             return self
@@ -273,7 +287,7 @@ class PAGOSQuantity(pint.UnitRegistry.Quantity):
     def __str__(self):
         if (
             isinstance(self.magnitude, GenericGasMagnitude)
-            and self.magnitude.transform_chain.empty()
+            and not self.magnitude.transform_chain.empty()
         ):
             unitstr = super().__str__().split(" ")[1]
             return f"[unknown amount of {unitstr}]"
