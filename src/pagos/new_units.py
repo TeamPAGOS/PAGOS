@@ -129,9 +129,15 @@ def initialise_PAGOS_units(ureg: UnitRegistry):
 class GenericGasMagnitude(float):
     def __init__(self, value, *, transform_chain: Queue | None = None):
         self.value = value
-        if not transform_chain:
-            self.transform_chain: Queue[Callable] = Queue()
+        if isinstance(value, GenericGasMagnitude):
+            self.value = value.value
+            self.transform_chain = value.transform_chain
         else:
+            self.value = value
+            self.transform_chain: Queue[Callable] = Queue()
+
+        # overwrite with given transform_chain if so desired
+        if transform_chain:
             self.transform_chain = transform_chain
 
     def unravel_transform_chain(self, gas):
@@ -216,6 +222,12 @@ class GenericGasMagnitude(float):
 
 
 class PAGOSQuantity(pint.UnitRegistry.Quantity):
+    def __new__(cls, value, units=None):
+        inst = super().__new__(cls, value, units)
+        if cls.are_units_generic_gas_units(inst):
+            inst = super().__new__(cls, GenericGasMagnitude(value), units)
+        return inst
+
     @classmethod
     def add_generic_transform(
         cls,
@@ -224,7 +236,13 @@ class PAGOSQuantity(pint.UnitRegistry.Quantity):
         units_of_transformer: UnitRegistry.Unit,
     ):
         if isinstance(inst.magnitude, GenericGasMagnitude):
-            ret = inst
+            ret = inst._REGISTRY.Quantity(
+                GenericGasMagnitude(
+                    inst.magnitude.value,
+                    transform_chain=inst.magnitude.transform_chain,
+                ),
+                units_of_transformer,
+            )
         else:
             ret = inst._REGISTRY.Quantity(
                 GenericGasMagnitude(inst.magnitude), units_of_transformer
@@ -269,14 +287,12 @@ class PAGOSQuantity(pint.UnitRegistry.Quantity):
         return super().to(other, *contexts, **ctx_kwargs)
 
     def of(self, gas):
-        if (
-            isinstance(self.magnitude, GenericGasMagnitude)
-            and self.magnitude.transform_chain.empty()
-        ):
+        if not self.are_units_generic_gas_units(self):
             raise TypeError(
                 f"The given quantity does not have any generic gas units and therefore cannot be expressed as an amount of {gas}"
             )
-        elif isinstance(self.magnitude, GenericGasMagnitude):
+
+        if isinstance(self.magnitude, GenericGasMagnitude):
             return self._REGISTRY.Quantity(
                 self.magnitude.unravel_transform_chain(gas),
                 self.change_generic_units_to_specific(self.units, gas),
