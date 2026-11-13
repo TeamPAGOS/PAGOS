@@ -45,49 +45,137 @@ class CcSTPGasConverter(ScaleConverter):
         object.__setattr__(self, "scale", 1 / _MOLAR_VOLUMES_CCSTP_G_PER_MOL_G[gas])
 
 
-# @dataclass(frozen=True)
-# class GenericGramGasConverter(Converter):
-#     gas: str
+@dataclass(frozen=True)
+class GenericGramGasConverter(Converter):
+    @property
+    def is_multiplicative(self):
+        return True
 
-#     @property
-#     def is_multiplicative(self):
-#         return False
+    def to_reference(self, value, inplace=False):
+        def mass_to_amount(x, gas):
+            mm = _MOLAR_MASSES_G_G_PER_MOL_G[gas]
+            return x / mm
 
-#     def to_reference(self, value, inplace=False):
-#         def _wrapper():
-#             return value / gases_info[self.gas]["mmol [g_g/mol_g]"]
+        return value.add_generic_transform(
+            value, mass_to_amount, x.units * x._REGISTRY.Unit("mol_g/g_g")
+        )
 
-#         return _wrapper()
+    def from_reference(self, value, inplace=False):
+        def amount_to_mass(x, gas):
+            mm = _MOLAR_MASSES_G_G_PER_MOL_G[gas]
+            return x * mm
 
-#     def from_reference(self, value, inplace=False):
-#         def _wrapper():
-#             return value * gases_info[self.gas]["mmol [g_g/mol_g]"]
-
-#         return _wrapper()
-
-
-# @dataclass(frozen=True)
-# class GenericCcSTPGasConverter(Converter):
-#     gas: str
-
-#     @property
-#     def is_multiplicative(self):
-#         return False
-
-#     def to_reference(self, value, inplace=False):
-#         return value / gases_info[self.gas]["vmol [ccSTP_g/mol_g]"]
-
-#     def from_reference(self, value, inplace=False):
-#         return value * gases_info[self.gas]["vmol [ccSTP_g/mol_g]"]
+        return value.add_generic_transform(
+            value, amount_to_mass, x.units * x._REGISTRY.Unit("g_g/mol_g")
+        )
 
 
-def initialise_PAGOS_units(ureg: UnitRegistry):
+def initialise_PAGOS_units(ureg: UnitRegistry, ctx: Context):
 
-    # Generic gas units. These can only be converted between each other if the gas is specified
+    # Generic gas units
     ureg.define("mole_gas = [amount_gas] = mol_g = mol_gas = mole_g")
     ureg.define("gram_gas = [mass_gas] = g_g = g_gas = gram_g")
     ureg.define(
         "cubic_centimeter_STP_gas = [STPvolume_gas] = ccSTP_g = ccSTP_gas = cubic_centimeter_STP_g = cm3STP_g = cm3STP_gas"
+    )
+    # Transformations between these three dimensions are defined via a Context. The graph of these relations is as follows:
+    #
+    # [amount]◄──────►[mass]
+    #    ▲              ▲
+    #    └───┐      ┌───┘
+    #        ▼      ▼
+    #      [STP volume]
+    #
+    # Pint Contexts always traverse the whole graph and finds the shortest path, so as long as the graph is strongly connected,
+    # we only need to define N transformations. Here we define 2N, for symmetry and speed.
+
+    # def amount_to_mass(x, gas):
+    #     mm = _MOLAR_MASSES_G_G_PER_MOL_G[gas]
+    #     return x * mm
+
+    # def mass_to_amount(x, gas):
+    #     mm = _MOLAR_MASSES_G_G_PER_MOL_G[gas]
+    #     return x / mm
+
+    # def amount_to_STP_volume(x, gas):
+    #     mv = _MOLAR_VOLUMES_CCSTP_G_PER_MOL_G[gas]
+    #     return x * mv
+
+    # def STP_volume_to_amount(x, gas):
+    #     mv = _MOLAR_VOLUMES_CCSTP_G_PER_MOL_G[gas]
+    #     return x / mv
+
+    # def STP_volume_to_mass(x, gas):
+    #     mm = _MOLAR_MASSES_G_G_PER_MOL_G[gas]
+    #     mv = _MOLAR_VOLUMES_CCSTP_G_PER_MOL_G[gas]
+    #     return x / mv * mm
+
+    # def mass_to_STP_volume(x, gas):
+    #     mm = _MOLAR_MASSES_G_G_PER_MOL_G[gas]
+    #     mv = _MOLAR_VOLUMES_CCSTP_G_PER_MOL_G[gas]
+    #     return x * mv / mm
+
+    # # Each transformation in the Context is actually represented by just returning the original Quantity, with an added
+    # # generic transform; the magnitude of a Quantity with generic gas units is a GenericGasMagnitude instance (see below)
+    # # which has a Queue of transformation functions. This Queue is appended to every time a generic transformation would
+    # # occur (e.g. "gram_gas" to "mmol_gas"). The Queue's functions are executed and the Queue is cleared once a realisation
+    # # of an actual gas is desired (e.g. .to("mol_gas", gas="He") or .of("He")).
+    # ctx.add_transformation(
+    #     "[amount_gas]",
+    #     "[mass_gas]",
+    #     lambda ureg, x: x.add_generic_transform(
+    #         x, amount_to_mass, x.units * ureg.Unit("g_g/mol_g")
+    #     ),
+    # )
+    # ctx.add_transformation(
+    #     "[mass_gas]",
+    #     "[amount_gas]",
+    #     lambda ureg, x: x.add_generic_transform(
+    #         x, mass_to_amount, x.units * ureg.Unit("mol_g/g_g")
+    #     ),
+    # )
+    # ctx.add_transformation(
+    #     "[amount_gas]",
+    #     "[STPvolume_gas]",
+    #     lambda ureg, x: x.add_generic_transform(
+    #         x, amount_to_STP_volume, x.units * ureg.Unit("ccSTP_g/mol_g")
+    #     ),
+    # )
+    # ctx.add_transformation(
+    #     "[STPvolume_gas]",
+    #     "[amount_gas]",
+    #     lambda ureg, x: x.add_generic_transform(
+    #         x, STP_volume_to_amount, x.units * ureg.Unit("mol_g/ccSTP_g")
+    #     ),
+    # )
+    # ctx.add_transformation(
+    #     "[STPvolume_gas]",
+    #     "[mass_gas]",
+    #     lambda ureg, x: x.add_generic_transform(
+    #         x, STP_volume_to_mass, x.units * ureg.Unit("g_g/ccSTP_g")
+    #     ),
+    # )
+    # ctx.add_transformation(
+    #     "[mass_gas]",
+    #     "[STPvolume_gas]",
+    #     lambda ureg, x: x.add_generic_transform(
+    #         x, mass_to_STP_volume, x.units * ureg.Unit("ccSTP_g/g_g")
+    #     ),
+    # )
+
+    # ureg.add_context(ctx)
+    # ureg.enable_contexts(ctx.name)
+
+    # WIP: TRYING TO DEFINE THE UNITS WITHOUT CONTEXTS
+    ureg.define("mole_gas = [amount_gas] = mol_gas = mol_g = mole_g")
+    ureg.define(
+        UnitDefinition(
+            "gram_gas",
+            "g_gas",
+            ("g_g", "gram_g"),
+            GenericGramGasConverter(),  # converter
+            UnitsContainer({"mol_gas": 1}),
+        )
     )
 
     # Specific gas units
@@ -270,7 +358,7 @@ class PAGOSQuantity(pint.UnitRegistry.Quantity):
 
     def to(
         self, other=None, *contexts, gas: str | None = None, block=False, **ctx_kwargs
-    ):
+    ) -> PAGOSQuantity:
         # block argument prevents infinite recursion
         if not block and ((g := gas) or (g := self.units.gas)):
             changed_units = self.change_generic_units_to_specific(self.units, g)
@@ -286,7 +374,7 @@ class PAGOSQuantity(pint.UnitRegistry.Quantity):
 
         return super().to(other, *contexts, **ctx_kwargs)
 
-    def of(self, gas):
+    def of(self, gas) -> PAGOSQuantity:
         if not self.are_units_generic_gas_units(self):
             raise TypeError(
                 f"The given quantity does not have any generic gas units and therefore cannot be expressed as an amount of {gas}"
@@ -345,59 +433,22 @@ class PAGOSContextRegistry(pint.registry.GenericUnitRegistry[PAGOSQuantity, PAGO
     Quantity: TypeAlias = PAGOSQuantity
     Unit: TypeAlias = PAGOSUnit
 
-    # def _convert(
-    #     self,
-    #     value: Magnitude,
-    #     src: UnitsContainer,
-    #     dst: UnitsContainer,
-    #     inplace: bool = False,
-    #     **ctx_kwargs,
-    # ) -> Magnitude:
-    #     """The same as pint.facets.context.GenericContextRegistry.convert, but patched to allow for generic gas transformations."""
-    #     # If there is an active context, we look for a path connecting source and
-    #     # destination dimensionality. If it exists, we transform the source value
-    #     # by applying sequentially each transformation of the path.
-    #     if self._active_ctx:
-    #         src_dim = self._get_dimensionality(src)
-    #         dst_dim = self._get_dimensionality(dst)
 
-    #         path = find_shortest_path(self._active_ctx.graph, src_dim, dst_dim)
-    #         if path:
-    #             src = self.Quantity(value, src)
-    #             for a, b in zip(path[:-1], path[1:]):
-    #                 src = self._active_ctx.transform(a, b, self, src, **ctx_kwargs)
+pc = ...
+ureg = PAGOSContextRegistry()
+initialise_PAGOS_units(ureg, pc)
 
-    #             if isinstance(src, GenericGasConversionFunction):
-    #                 return src
-    #             else:
-    #                 value, src = src._magnitude, src._units
-
-    #     return super()._convert(value, src, dst, inplace, **ctx_kwargs)
-
-
-pc = pint.Context("PAGOS")
-
-
-def amount_to_mass(x, gas):
-    mm = _MOLAR_MASSES_G_G_PER_MOL_G[gas]
-    return x * mm
-
-
-pc.add_transformation(
-    "[amount_gas]",
-    "[mass_gas]",
-    lambda ureg, x: x.add_generic_transform(
-        x, amount_to_mass, x.units * ureg.Unit("g_g/mol_g")
-    ),
-)
 
 if __name__ == "__main__":
-    ureg = PAGOSContextRegistry()
-    initialise_PAGOS_units(ureg)
-    ureg.add_context(pc)
-    ureg.enable_contexts("PAGOS")
-    print(ureg.Quantity(1, "mol_g").to("g_g"))
-    print(ureg.Quantity(1, "mol_g").to("g_g").of("He"))
-    print(ureg.Quantity(1, "mol_g").of("He").to("g_g"))
-    # TODO NEXT make it so that the "of" function works on a quantity that has not already passed through a "to" call
-    # TODO NEXT NEXT check that stacked "to" calls can still produce correct outcomes (e.g. x.to(...).to(...))
+    # print(ureg.Quantity(1, "mol_g").to("g_g"))
+    # print(ureg.Quantity(1, "mol_g").to("g_g").of("He"))
+    # print(ureg.Quantity(1, "mol_g").to("mg_g", gas="Ar"))
+    # print(ureg.Quantity(1, "mol_g").of("He").to("g_g"))
+
+    x = ureg.Quantity(1, "mol_g/kg")
+    # print(x.to("g_g").of("He"))
+    # print(x.to("ccSTP_g").of("He"))
+    # print(x.to("g_g").to("ccSTP_g").of("Ar"))
+
+    print(x.to("g_g/kg"))
+    # TODO NEXT test compound units (g_g/kg, e.g.)

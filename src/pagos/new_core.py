@@ -12,15 +12,12 @@ from visast import visualise
 
 from pagos import visast_util
 from pagos.new_units import (
+    ureg,
     initialise_PAGOS_units,
     PAGOSContextRegistry,
 )
 
 visualise.graph = visast_util.graph
-
-
-ureg = PAGOSContextRegistry()
-initialise_PAGOS_units(ureg)
 
 
 def pQ(magnitude, units):
