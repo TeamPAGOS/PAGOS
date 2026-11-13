@@ -49,7 +49,11 @@ class CcSTPGasConverter(ScaleConverter):
 class GenericGramGasConverter(Converter):
     @property
     def is_multiplicative(self):
-        return True
+        return False
+
+    # TODO NEXT this fails because allowing multiplicative to return True means pint looks for .scale property, not there
+    # Giving a scale property causes the scale to be taken and the to_reference and from_reference values to never be called :(
+    # Setting to False changes the units automatically to delta-units and this fails too.
 
     def to_reference(self, value, inplace=False):
         def mass_to_amount(x, gas):
