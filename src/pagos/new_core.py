@@ -305,6 +305,9 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
         Args:
             _considered_node (ast.AST): starting node
         """
+        # TODO NEXT: this doesn't work for decorating class methods, as the class does not exist upon decoration.
+        # Need to find another solution, for example using the _is_gas_dependent attribute we define higher in this file.
+
         # FunctionDef is going to be the top of the AST in PAGOS's decorated functions, so we stop there
         # if we get to it.
         while not isinstance(_considered_node, ast.FunctionDef):
