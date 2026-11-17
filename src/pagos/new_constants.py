@@ -1,6 +1,6 @@
 import json
 
-from pagos.new_core import pQ
+from pagos.new_units import pQ
 
 # gases json file
 with open("src/pagos/gases.json", "r") as gases_file:

@@ -5,6 +5,8 @@ and only serve to provide gas-specific conversions in units.py without causing c
 
 import json
 
+from sympy import symbols
+
 # gases json file
 with open("src/pagos/gases.json", "r") as gases_file:
     gases_info = json.load(gases_file)["gases"]
@@ -27,3 +29,6 @@ _MOLAR_VOLUMES_CCSTP_G_PER_MOL_G = {
 _MOLAR_MASSES_G_G_PER_MOL_G = {
     gases_info[k]["name"]: gases_info[k]["mmol [g_g/mol_g]"] for k in gases_info
 }
+
+# generic symbolic representations of molar volume and molar mass, sympy objects
+v_mol, m_mol = symbols("vₘ, mₘ")

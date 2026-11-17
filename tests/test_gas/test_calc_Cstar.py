@@ -2,6 +2,7 @@ from pint.testing import assert_allclose, assert_equal
 
 from pagos.core import pQ, set_warn_nonmult
 from pagos.gas import calc_Cstar
+from pagos.visast_util import visualise
 
 
 def test_calc_Cstar_with_float_args():
@@ -21,3 +22,8 @@ def test_calc_Cstar_with_mixed_args():
     assert calc_Cstar("He", T=pQ(15, "degC"), S=20) == pQ(
         1.8580524797612681e-09, "mol_He / kg"
     )
+
+
+if __name__ == "__main__":
+    visualise.graph(calc_Cstar.ast)
+    test_calc_Cstar_with_float_args()

@@ -20,7 +20,8 @@ from pagos.new_constants import (
     WANNINKHOF_92_SALTFACTOR_COEFFS,
     ArNeN2_HAMMEEMERSON_04_COEFFS,
 )
-from pagos.new_core import PAGOSQuantity, pQ, unit_aware
+from pagos.new_units import PAGOSQuantity, pQ
+from pagos.new_core import unit_aware
 from pagos.new_water import new_calc_kinvisc, new_calc_vappres
 
 PREDEFINED_GASES = ["He", "Ne", "Ar", "Kr", "Xe", "N2", "CFC11", "CFC12", "SF6"]
@@ -141,21 +142,21 @@ class Gas:
 
     @unit_aware({"self": None, "T": "degC", "S": "permille"}, "mol_g/kg")
     def __calc_Cstar_J19(self, T: float, S: float) -> float:
-        T_K = T.to("K")
-        T_N = T_K / K100
+        # T_K = T.to("K")
+        # T_N = T_K / K100
         A0, AR, AL, A1, B0, B1, B2, C0 = (
             NG_JENKINS_19_COEFFS[self.name][c]
             for c in ["A0", "AR", "AL", "A1", "B0", "B1", "B2", "C0"]
         )
-        Cstar = np.exp(
-            A0
-            + AR / T_N
-            + AL * np.log(T_N)
-            + A1 * T_N
-            + S * (B0 + B1 * T_N + B2 * T_N**2)
-            + S**2 * C0
-        ) * pQ(1, f"mol_{self.name}/kg")
-        return Cstar
+        # Cstar = np.exp(
+        #     A0
+        #     + AR / T_N
+        #     + AL * np.log(T_N)
+        #     + A1 * T_N
+        #     + S * (B0 + B1 * T_N + B2 * T_N**2)
+        #     + S**2 * C0
+        # ) * pQ(1, f"mol_{self.name}/kg")
+        # return Cstar
 
     @unit_aware({"self": None, "T": "degC", "S": "permille", "ab": None}, "mol_g/kg")
     def __calc_Cstar_WW85(self, T: float, S: float, ab: str = "default") -> float:

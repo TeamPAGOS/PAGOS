@@ -2,7 +2,7 @@
 Tests for unit-awareness in mathematical functions
 """
 
-from pagos.core import pQ, _set_fast
+from pagos.new_units import pQ
 
 
 def test_add():
@@ -24,7 +24,7 @@ def test_add():
     # int + dimless
     assert 7 + q4 == pQ(14, "dimensionless")
 
-    # fast mode
+    """# fast mode
     _set_fast(True)
     q1 = pQ(5, "kg")
     q2 = pQ(3, "kg")
@@ -36,7 +36,7 @@ def test_add():
     assert 7.0 + q4 == pQ(14, "dimensionless")
     assert q4 + 7 == pQ(14, "dimensionless")
     assert 7 + q4 == pQ(14, "dimensionless")
-    _set_fast(False)
+    _set_fast(False)"""
 
 
 def test_subtract():

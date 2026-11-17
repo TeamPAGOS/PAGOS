@@ -2,26 +2,17 @@ import ast
 import copy
 import inspect
 from collections.abc import Callable
-from numbers import Number, Real
+from numbers import Number
 from textwrap import dedent
-from typing import TypeAlias
 
 import pint
 from pint.util import UnitsContainer
 from visast import visualise
 
 from pagos import visast_util
-from pagos.new_units import (
-    ureg,
-    initialise_PAGOS_units,
-    PAGOSContextRegistry,
-)
+from pagos.new_units import ureg
 
 visualise.graph = visast_util.graph
-
-
-def pQ(magnitude, units):
-    return ureg.Quantity(magnitude, units)
 
 
 # Register of unit aware functions

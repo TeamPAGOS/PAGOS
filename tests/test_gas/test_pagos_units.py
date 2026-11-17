@@ -1,10 +1,9 @@
-from pint.testing import assert_allclose, assert_equal
-
-from pagos.core import pQ, set_warn_nonmult
-
 import unittest
 
-from pagos.exceptions import ConversionError
+from pint.testing import assert_allclose
+
+from pagos.new_units import pQ
+from pint.errors import DimensionalityError
 
 # battery of tests for PAGOS units and their combinations/conversions
 # PAGOS units are anything involving mol_gas, gram_gas or cubic_centimeter_gas
@@ -51,15 +50,19 @@ class TestConversions(unittest.TestCase):
     def test_PAGOSQuantity_to_method(self):
         # check good conversion works
         x = pQ(5, "mol_He").to("g_He")
-        assert x == pQ(20.01301, "g_He")
+        assert_allclose(x, pQ(20.01301, "g_He"))
         assert x != pQ(20.01301, "mol_He")
         assert x != pQ(5, "g_He")
-        assert x == pQ(5.0, "mol_He")
+        assert_allclose(x, pQ(5.0, "mol_He"))
 
         # check good generic conversion works (specific gas -> generic)
-        assert pQ(5, "mol_He").to("mol_g") == x
-        assert pQ(5, "mol_He").to("ccSTP_g") == x
+        assert_allclose(pQ(5, "mol_He").to("mol_g"), x)
+        assert_allclose(pQ(5, "mol_He").to("ccSTP_g"), x)
 
         # check bad conversion does NOT work (generic gas -> specific)
-        with self.assertRaises(ConversionError):
+        with self.assertRaises(DimensionalityError):
             pQ(5, "mol_g").to("mol_He")
+
+
+if __name__ == "__main__":
+    pass

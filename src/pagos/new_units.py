@@ -1,24 +1,26 @@
 from __future__ import annotations
 
+import itertools
 import json
-from numbers import Number, Real
-from queue import Queue
 import re
-from collections.abc import Callable
+from collections import defaultdict
 from dataclasses import dataclass
-from functools import reduce
-from operator import add
-from typing import Any, TypeAlias
+from decimal import Decimal
+from math import isnan
+from typing import TypeAlias
 
 import pint
-from pint import Context, Quantity, UnitRegistry
-from pint.converters import Converter
-from pint.facets.plain.definitions import Magnitude, ScaleConverter, UnitDefinition
-from pint.util import UnitsContainer, find_shortest_path
+from pint import UnitRegistry
+from pint._typing import Scalar
+from pint.facets.plain.definitions import ScaleConverter, UnitDefinition
+from pint.util import UnitsContainer, to_units_container
+from sympy import Expr, Symbol, sympify
 
 from pagos._constants import (
     _MOLAR_MASSES_G_G_PER_MOL_G,
     _MOLAR_VOLUMES_CCSTP_G_PER_MOL_G,
+    m_mol,
+    v_mol,
 )
 
 # gases json file
@@ -46,138 +48,36 @@ class CcSTPGasConverter(ScaleConverter):
 
 
 @dataclass(frozen=True)
-class GenericGramGasConverter(Converter):
-    @property
-    def is_multiplicative(self):
-        return False
-
-    # TODO NEXT this fails because allowing multiplicative to return True means pint looks for .scale property, not there
-    # Giving a scale property causes the scale to be taken and the to_reference and from_reference values to never be called :(
-    # Setting to False changes the units automatically to delta-units and this fails too.
-
-    def to_reference(self, value, inplace=False):
-        def mass_to_amount(x, gas):
-            mm = _MOLAR_MASSES_G_G_PER_MOL_G[gas]
-            return x / mm
-
-        return value.add_generic_transform(
-            value, mass_to_amount, x.units * x._REGISTRY.Unit("mol_g/g_g")
-        )
-
-    def from_reference(self, value, inplace=False):
-        def amount_to_mass(x, gas):
-            mm = _MOLAR_MASSES_G_G_PER_MOL_G[gas]
-            return x * mm
-
-        return value.add_generic_transform(
-            value, amount_to_mass, x.units * x._REGISTRY.Unit("g_g/mol_g")
-        )
+class GenericPAGOSConverter(ScaleConverter):
+    scale: Symbol
 
 
-def initialise_PAGOS_units(ureg: UnitRegistry, ctx: Context):
-
-    # Generic gas units
-    ureg.define("mole_gas = [amount_gas] = mol_g = mol_gas = mole_g")
-    ureg.define("gram_gas = [mass_gas] = g_g = g_gas = gram_g")
-    ureg.define(
-        "cubic_centimeter_STP_gas = [STPvolume_gas] = ccSTP_g = ccSTP_gas = cubic_centimeter_STP_g = cm3STP_g = cm3STP_gas"
-    )
-    # Transformations between these three dimensions are defined via a Context. The graph of these relations is as follows:
-    #
-    # [amount]◄──────►[mass]
-    #    ▲              ▲
-    #    └───┐      ┌───┘
-    #        ▼      ▼
-    #      [STP volume]
-    #
-    # Pint Contexts always traverse the whole graph and finds the shortest path, so as long as the graph is strongly connected,
-    # we only need to define N transformations. Here we define 2N, for symmetry and speed.
-
-    # def amount_to_mass(x, gas):
-    #     mm = _MOLAR_MASSES_G_G_PER_MOL_G[gas]
-    #     return x * mm
-
-    # def mass_to_amount(x, gas):
-    #     mm = _MOLAR_MASSES_G_G_PER_MOL_G[gas]
-    #     return x / mm
-
-    # def amount_to_STP_volume(x, gas):
-    #     mv = _MOLAR_VOLUMES_CCSTP_G_PER_MOL_G[gas]
-    #     return x * mv
-
-    # def STP_volume_to_amount(x, gas):
-    #     mv = _MOLAR_VOLUMES_CCSTP_G_PER_MOL_G[gas]
-    #     return x / mv
-
-    # def STP_volume_to_mass(x, gas):
-    #     mm = _MOLAR_MASSES_G_G_PER_MOL_G[gas]
-    #     mv = _MOLAR_VOLUMES_CCSTP_G_PER_MOL_G[gas]
-    #     return x / mv * mm
-
-    # def mass_to_STP_volume(x, gas):
-    #     mm = _MOLAR_MASSES_G_G_PER_MOL_G[gas]
-    #     mv = _MOLAR_VOLUMES_CCSTP_G_PER_MOL_G[gas]
-    #     return x * mv / mm
-
-    # # Each transformation in the Context is actually represented by just returning the original Quantity, with an added
-    # # generic transform; the magnitude of a Quantity with generic gas units is a GenericGasMagnitude instance (see below)
-    # # which has a Queue of transformation functions. This Queue is appended to every time a generic transformation would
-    # # occur (e.g. "gram_gas" to "mmol_gas"). The Queue's functions are executed and the Queue is cleared once a realisation
-    # # of an actual gas is desired (e.g. .to("mol_gas", gas="He") or .of("He")).
-    # ctx.add_transformation(
-    #     "[amount_gas]",
-    #     "[mass_gas]",
-    #     lambda ureg, x: x.add_generic_transform(
-    #         x, amount_to_mass, x.units * ureg.Unit("g_g/mol_g")
-    #     ),
-    # )
-    # ctx.add_transformation(
-    #     "[mass_gas]",
-    #     "[amount_gas]",
-    #     lambda ureg, x: x.add_generic_transform(
-    #         x, mass_to_amount, x.units * ureg.Unit("mol_g/g_g")
-    #     ),
-    # )
-    # ctx.add_transformation(
-    #     "[amount_gas]",
-    #     "[STPvolume_gas]",
-    #     lambda ureg, x: x.add_generic_transform(
-    #         x, amount_to_STP_volume, x.units * ureg.Unit("ccSTP_g/mol_g")
-    #     ),
-    # )
-    # ctx.add_transformation(
-    #     "[STPvolume_gas]",
-    #     "[amount_gas]",
-    #     lambda ureg, x: x.add_generic_transform(
-    #         x, STP_volume_to_amount, x.units * ureg.Unit("mol_g/ccSTP_g")
-    #     ),
-    # )
-    # ctx.add_transformation(
-    #     "[STPvolume_gas]",
-    #     "[mass_gas]",
-    #     lambda ureg, x: x.add_generic_transform(
-    #         x, STP_volume_to_mass, x.units * ureg.Unit("g_g/ccSTP_g")
-    #     ),
-    # )
-    # ctx.add_transformation(
-    #     "[mass_gas]",
-    #     "[STPvolume_gas]",
-    #     lambda ureg, x: x.add_generic_transform(
-    #         x, mass_to_STP_volume, x.units * ureg.Unit("ccSTP_g/g_g")
-    #     ),
-    # )
-
-    # ureg.add_context(ctx)
-    # ureg.enable_contexts(ctx.name)
-
-    # WIP: TRYING TO DEFINE THE UNITS WITHOUT CONTEXTS
+def initialise_PAGOS_units(ureg: UnitRegistry):
     ureg.define("mole_gas = [amount_gas] = mol_gas = mol_g = mole_g")
     ureg.define(
         UnitDefinition(
             "gram_gas",
             "g_gas",
             ("g_g", "gram_g"),
-            GenericGramGasConverter(),  # converter
+            GenericPAGOSConverter(scale=1 / m_mol),
+            UnitsContainer({"mol_gas": 1}),
+        )
+    )
+    ureg.define(
+        UnitDefinition(
+            "cubic_centimeter_STP_gas",
+            "ccSTP_gas",
+            (
+                "ccSTP_g",
+                "cubic_centimeter_STP_g",
+                "cc_STP_gas",
+                "cc_STP_g",
+                "cm3STP_gas",
+                "cm3STP_g",
+                "cm3_STP_gas",
+                "cm3_STP_g",
+            ),
+            GenericPAGOSConverter(scale=1 / v_mol),
             UnitsContainer({"mol_gas": 1}),
         )
     )
@@ -198,7 +98,9 @@ def initialise_PAGOS_units(ureg: UnitRegistry, ctx: Context):
                 f"gram_{gasname}",  # name
                 f"g_{gasname}",  # symbol
                 (),  # aliases
-                GramGasConverter(gas=gasname),  # converter
+                GenericPAGOSConverter(
+                    scale=1 / _MOLAR_MASSES_G_G_PER_MOL_G[gasname]
+                ),  # converter
                 UnitsContainer(**{f"mol_{gasname}": 1}),  # reference unit
             )
         )
@@ -212,135 +114,27 @@ def initialise_PAGOS_units(ureg: UnitRegistry, ctx: Context):
                     f"cc_STP_{gasname}",
                     f"cm3_STP_{gasname}",
                 ),  # aliases
-                CcSTPGasConverter(gas=gasname),  # converter
+                GenericPAGOSConverter(
+                    scale=1 / _MOLAR_VOLUMES_CCSTP_G_PER_MOL_G[gasname]
+                ),  # converter
                 UnitsContainer(**{f"mol_{gasname}": 1}),  # reference unit
             )
         )
 
 
-class GenericGasMagnitude(float):
-    def __init__(self, value, *, transform_chain: Queue | None = None):
-        self.value = value
-        if isinstance(value, GenericGasMagnitude):
-            self.value = value.value
-            self.transform_chain = value.transform_chain
-        else:
-            self.value = value
-            self.transform_chain: Queue[Callable] = Queue()
-
-        # overwrite with given transform_chain if so desired
-        if transform_chain:
-            self.transform_chain = transform_chain
-
-    def unravel_transform_chain(self, gas):
-        ret = self.value
-        chain = self.transform_chain
-        while not chain.empty():
-            func = chain.get()
-            ret = func(ret, gas)
-        return ret
-
-    def wrap_arithmetic_function(func: Callable):
-        def _wrapped_arith_func(self, value, /):
-            return GenericGasMagnitude(
-                func(self, value), transform_chain=self.transform_chain
-            )
-
-        return _wrapped_arith_func
-
-    @wrap_arithmetic_function
-    def __add__(self, value):
-        return super().__add__(value)
-
-    @wrap_arithmetic_function
-    def __sub__(self, value):
-        return super().__sub__(value)
-
-    @wrap_arithmetic_function
-    def __mul__(self, value):
-        return super().__mul__(value)
-
-    @wrap_arithmetic_function
-    def __truediv__(self, value):
-        return super().__truediv__(value)
-
-    @wrap_arithmetic_function
-    def __floordiv__(self, value):
-        return super().__floordiv__(value)
-
-    @wrap_arithmetic_function
-    def __pow__(self, value):
-        return super().__pow__(value)
-
-    @wrap_arithmetic_function
-    def __mod__(self, value):
-        return super().__mod__(value)
-
-    @wrap_arithmetic_function
-    def __matmul__(self, value):
-        return super().__matmul__(value)
-
-    @wrap_arithmetic_function
-    def __radd__(self, value):
-        return value + self.value
-
-    @wrap_arithmetic_function
-    def __rsub__(self, value):
-        return value - self.value
-
-    @wrap_arithmetic_function
-    def __rmul__(self, value):
-        return value * self.value
-
-    @wrap_arithmetic_function
-    def __rtruediv__(self, value):
-        return value / self.value
-
-    @wrap_arithmetic_function
-    def __rfloordiv__(self, value):
-        return value // self.value
-
-    @wrap_arithmetic_function
-    def __rpow__(self, value):
-        return value**self.value
-
-    @wrap_arithmetic_function
-    def __rmod__(self, value):
-        return value % self.value
-
-    @wrap_arithmetic_function
-    def __rmatmul__(self, value):
-        return value @ self.value
-
-
-class PAGOSQuantity(pint.UnitRegistry.Quantity):
-    def __new__(cls, value, units=None):
+class PAGOSQuantity(UnitRegistry.Quantity):
+    def __new__(cls, value, units=None, gas: str = None):
+        if isinstance(units, PAGOSUnit):
+            units = str(units)
         inst = super().__new__(cls, value, units)
         if cls.are_units_generic_gas_units(inst):
-            inst = super().__new__(cls, GenericGasMagnitude(value), units)
+            if gas:
+                units = cls.change_generic_units_to_specific(inst.units, gas)
+                expr = value
+            else:
+                expr = sympify(value)
+            inst = super().__new__(cls, expr, units)
         return inst
-
-    @classmethod
-    def add_generic_transform(
-        cls,
-        inst: PAGOSQuantity,
-        func: Callable,
-        units_of_transformer: UnitRegistry.Unit,
-    ):
-        if isinstance(inst.magnitude, GenericGasMagnitude):
-            ret = inst._REGISTRY.Quantity(
-                GenericGasMagnitude(
-                    inst.magnitude.value,
-                    transform_chain=inst.magnitude.transform_chain,
-                ),
-                units_of_transformer,
-            )
-        else:
-            ret = inst._REGISTRY.Quantity(
-                GenericGasMagnitude(inst.magnitude), units_of_transformer
-            )
-        ret.magnitude.transform_chain.put(func)
-        return ret
 
     @classmethod
     def are_units_generic_gas_units(cls, inst: PAGOSQuantity):
@@ -363,6 +157,7 @@ class PAGOSQuantity(pint.UnitRegistry.Quantity):
     def to(
         self, other=None, *contexts, gas: str | None = None, block=False, **ctx_kwargs
     ) -> PAGOSQuantity:
+        other = to_units_container(other, self._REGISTRY)
         # block argument prevents infinite recursion
         if not block and ((g := gas) or (g := self.units.gas)):
             changed_units = self.change_generic_units_to_specific(self.units, g)
@@ -378,29 +173,32 @@ class PAGOSQuantity(pint.UnitRegistry.Quantity):
 
         return super().to(other, *contexts, **ctx_kwargs)
 
-    def of(self, gas) -> PAGOSQuantity:
-        if not self.are_units_generic_gas_units(self):
-            raise TypeError(
-                f"The given quantity does not have any generic gas units and therefore cannot be expressed as an amount of {gas}"
-            )
+    def of(self, gas: str) -> PAGOSQuantity:
+        """Calculates a specific quantity of gas, given a generic form.
+        For example:
+        ```python
+        >>> x = pQ(4, "g_gas")
+        >>> x.of("He")
+        4 gram_He
+        >>> y = x.to("mol_gas")
+        >>> y
+        4/mₘ mole_gas
+        >>> y.of("He")
+        0.999349922875170 mole_He
+        ```
 
-        if isinstance(self.magnitude, GenericGasMagnitude):
-            return self._REGISTRY.Quantity(
-                self.magnitude.unravel_transform_chain(gas),
-                self.change_generic_units_to_specific(self.units, gas),
-            )
-        else:
-            return self
+        Args:
+            gas (str): Gas for which to evaluate the quantity.
 
-    def __str__(self):
-        if (
-            isinstance(self.magnitude, GenericGasMagnitude)
-            and not self.magnitude.transform_chain.empty()
-        ):
-            unitstr = super().__str__().split(" ")[1]
-            return f"[unknown amount of {unitstr}]"
-        else:
-            return super().__str__()
+        Returns:
+            PAGOSQuantity: Result of substitution.
+        """
+        specific_mmol = _MOLAR_MASSES_G_G_PER_MOL_G[gas]
+        specific_vmol = _MOLAR_VOLUMES_CCSTP_G_PER_MOL_G[gas]
+
+        submag = self.magnitude.subs(((v_mol, specific_vmol), (m_mol, specific_mmol)))
+        specific_units = self.change_generic_units_to_specific(self.units, gas)
+        return self._REGISTRY.Quantity(submag, specific_units)
 
 
 gas_names = [gas_info["name"] for gas_info in gases_info.values()]
@@ -408,6 +206,8 @@ gasregex = r"(?:" + "|".join(re.escape(name) for name in gas_names) + r")"
 
 
 class PAGOSUnit(pint.UnitRegistry.Unit):
+    """Same as regular Pint unit, but includes a gas property."""
+
     def __init__(self, units):
         super().__init__(units)
         self.gas = None
@@ -437,22 +237,123 @@ class PAGOSContextRegistry(pint.registry.GenericUnitRegistry[PAGOSQuantity, PAGO
     Quantity: TypeAlias = PAGOSQuantity
     Unit: TypeAlias = PAGOSUnit
 
+    # This is a patch over the regular _get_root_units function provided by pint, to allow for symbolic magnitudes.
+    # Only one line is patched
+    def _get_root_units(
+        self, input_units: UnitsContainer, check_nonmult: bool = True
+    ) -> tuple[Scalar, UnitsContainer]:
+        """Convert unit or dict of units to the root units.
 
-pc = ...
-ureg = PAGOSContextRegistry()
-initialise_PAGOS_units(ureg, pc)
+        If any unit is non multiplicative and check_converter is True,
+        then None is returned as the multiplicative factor.
+
+        Parameters
+        ----------
+        input_units : UnitsContainer or dict
+            units
+        check_nonmult : bool
+            if True, None will be returned as the
+            multiplicative factor if a non-multiplicative
+            units is found in the final Units. (Default value = True)
+
+        Returns
+        -------
+        number, Unit
+            multiplicative factor, plain units
+
+        """
+        if not input_units:
+            return 1, self.UnitsContainer()
+
+        cache = self._cache.root_units
+        try:
+            return cache[input_units]
+        except KeyError:
+            pass
+
+        accumulators: dict[str | None, int] = defaultdict(int)
+        fraction: dict[str, dict[Decimal | float, Decimal | int]] = dict(
+            numerator=dict(), denominator=dict()
+        )
+        self._get_root_units_recurse(input_units, 1, accumulators, fraction)
+
+        ### PATCH OCCURS HERE: not isinstance(k, Expr) ADDED TO PREVENT ERROR THROWN ON isnan(k) CALL ###
+        if any(
+            (not isinstance(k, Expr) and isnan(k))
+            for k in itertools.chain(fraction["numerator"], fraction["denominator"])
+        ):
+            # If there is a nan factor, the result is nan
+            return float("nan"), self.UnitsContainer()
+
+        # Identify if terms appear in both numerator and denominator
+        def terms_are_unique(fraction):
+            for n_factor, n_exp in fraction["numerator"].items():
+                if n_factor in fraction["denominator"]:
+                    return False
+            return True
+
+        # Cancel out terms where factor matches
+        while not terms_are_unique(fraction):
+            for n_factor, n_exponent in fraction["numerator"].items():
+                if n_factor in fraction["denominator"]:
+                    if n_exponent >= fraction["denominator"][n_factor]:
+                        fraction["numerator"][n_factor] -= fraction["denominator"][
+                            n_factor
+                        ]
+                        del fraction["denominator"][n_factor]
+                        continue
+            for d_factor, d_exponent in fraction["denominator"].items():
+                if d_factor in fraction["numerator"]:
+                    if d_exponent >= fraction["numerator"][d_factor]:
+                        fraction["denominator"][d_factor] -= fraction["numerator"][
+                            d_factor
+                        ]
+                        del fraction["numerator"][d_factor]
+                        continue
+
+        factor = 1
+        for n_factor, n_exponent in fraction["numerator"].copy().items():
+            if n_exponent == 0:
+                del fraction["numerator"][n_factor]
+            else:
+                factor *= n_factor**n_exponent
+        for d_factor, d_exponent in fraction["denominator"].copy().items():
+            if d_exponent == 0:
+                del fraction["denominator"][d_factor]
+            else:
+                factor *= d_factor**-d_exponent
+
+        units = self.UnitsContainer(
+            {k: v for k, v in accumulators.items() if k is not None and v != 0}
+        )
+
+        # Check if any of the final units is non multiplicative and return None instead.
+        if check_nonmult:
+            if any(not self._units[unit].converter.is_multiplicative for unit in units):
+                factor = None
+
+        cache[input_units] = factor, units
+        return factor, units
+
+
+ureg = PAGOSContextRegistry(default_as_delta=False)
+initialise_PAGOS_units(ureg)
+
+
+def pQ(value, units, gas: str = None) -> PAGOSQuantity:
+    return ureg.Quantity(value, units, gas=gas)
 
 
 if __name__ == "__main__":
-    # print(ureg.Quantity(1, "mol_g").to("g_g"))
-    # print(ureg.Quantity(1, "mol_g").to("g_g").of("He"))
-    # print(ureg.Quantity(1, "mol_g").to("mg_g", gas="Ar"))
-    # print(ureg.Quantity(1, "mol_g").of("He").to("g_g"))
+    print(pQ(1, "mol_g").to("g_g"))
+    print(pQ(1, "mol_g").to("g_g").of("He"))
+    print(pQ(1, "mol_g").to("mg_g", gas="Ar"))
+    print(pQ(1, "mol_g").of("He").to("g_g"))
 
-    x = ureg.Quantity(1, "mol_g/kg")
-    # print(x.to("g_g").of("He"))
-    # print(x.to("ccSTP_g").of("He"))
-    # print(x.to("g_g").to("ccSTP_g").of("Ar"))
+    x = pQ(1, "mol_g/m")
+    print(x.to("g_g/cm").of("He"))
+    print(x.to("ccSTP_g/mm").of("He"))
+    print(x.to("g_g/m").to("ccSTP_g/m").of("Ar"))
 
-    print(x.to("g_g/kg"))
-    # TODO NEXT test compound units (g_g/kg, e.g.)
+    print(x.to("g_g/m"))
+    print(pQ(4, "g_g").to("mol_g").of("He"))
