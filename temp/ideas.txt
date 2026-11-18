@@ -40,8 +40,8 @@ obvious to the user though!
        we can implement an error-catching system which tries fast, then tries without fast, and finally throws
        an error if both failed.
 
-
 - TODO NEXT (ONGOING): Gas function implementation and pQ-objects instead of floats in new unit handling
+- TODO NEXT: numpy functions do not compile properly in AST analysis.
 - TODO NEXT NEXT: Write documentation and release
 - TODO NEXT NEXT NEXT: gui, perhaps from scratch
 

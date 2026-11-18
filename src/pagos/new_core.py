@@ -6,6 +6,7 @@ from numbers import Number
 from textwrap import dedent
 
 import pint
+import wrapt
 from pint.util import UnitsContainer
 from visast import visualise
 
@@ -33,8 +34,25 @@ def get_unit_aware_function_info(func_name: str) -> tuple[dict | None, str | Non
     return REGISTERED_UNIT_AWARE_FUNCTIONS[func_name]
 
 
+# sentinel object for "units" of gas argument
+_GAS_ARG = object()
+
+
+def get_units(obj, ureg: pint.UnitRegistry, none_when_not_found: bool = False):
+    if hasattr(obj, "units"):
+        return obj.units
+    if none_when_not_found or not isinstance(obj, Number):
+        return None
+    return ureg.Unit("dimensionless")
+
+
 def unit_aware(default_units_in: dict | None, units_out: str | None, debug=False):
     def _unit_aware(func: Callable):
+        # If the function is gas-dependent, we set the following property to True
+        func._is_gas_dependent = (
+            func.__qualname__[0:4] == "Gas."
+            or "gas" in inspect.signature(func).parameters
+        )
 
         if default_units_in is None:
             input_arguments_units = None
@@ -43,16 +61,16 @@ def unit_aware(default_units_in: dict | None, units_out: str | None, debug=False
                 k: None if u is None else ureg.Unit(u)
                 for k, u in default_units_in.items()
             }
+        # this deals with the gas argument or self argument of unit-aware Gas methods
+        if ((s := "self") in input_arguments_units and func._is_gas_dependent) or (
+            (s := "gas") in input_arguments_units
+        ):
+            input_arguments_units[s] = _GAS_ARG
+
         output_units = None if units_out is None else ureg.Unit(units_out)
 
         # add function's details to register of unit aware functions
         register_unit_aware_function(func.__name__, input_arguments_units, output_units)
-
-        # If the function is gas-dependent, we set the following property to True
-        func._is_gas_dependent = (
-            func.__qualname__[0:4] == "Gas."
-            or "gas" in inspect.signature(func).parameters
-        )
 
         # get AST of func (dedent used so that functions defined inside other
         # functions do not have invalid whitespace at the beginning)
@@ -80,8 +98,6 @@ def unit_aware(default_units_in: dict | None, units_out: str | None, debug=False
         )
         c = 0
         while True:
-            if func.__name__ == "__calc_Cstar_J19":
-                visualise.graph(_ast)
             if debug:
                 print("cycle", c)
             _unit_assignment_visitor.convertlock = set()
@@ -305,8 +321,6 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
         Args:
             _considered_node (ast.AST): starting node
         """
-        # TODO NEXT: this doesn't work for decorating class methods, as the class does not exist upon decoration.
-        # Need to find another solution, for example using the _is_gas_dependent attribute we define higher in this file.
 
         # FunctionDef is going to be the top of the AST in PAGOS's decorated functions, so we stop there
         # if we get to it.
@@ -335,7 +349,7 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
 
                 # It is also okay if we get a list or tuple of objects with units. This case is dealt with here
                 except AttributeError:
-                    _evaluated_units = [_ev.units for _ev in _evaluated]
+                    _evaluated_units = [get_units(_ev, ureg) for _ev in _evaluated]
 
                     DummyNameStore_with_units = ast.Name(id="x", ctx=ast.Store())
                     DummyNameStore_with_units.units = UNASSIGNED
@@ -396,9 +410,12 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
                 node.units = get_unit_aware_function_info(self.func.__name__)[0][
                     node.id
                 ]
+                # 1.b special case: argument is Gas.self or gas
+                if node.units is _GAS_ARG:
+                    node = self.handle_generic_gas_variable(node)
 
             # 1.c: a variable that only exists in local scope
-            if node.id in self.local_variables:
+            elif node.id in self.local_variables:
                 # This finds Load nodes corresponding to previous Store nodes which
                 # stored unit information
                 if node.units is UNASSIGNED:
@@ -415,6 +432,13 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
                         node.units = self.local_variables[node.id]
 
         return self.generic_visit(node)
+
+    def handle_generic_gas_variable(self, node: ast.Name):
+        node = ast.Constant("He")
+        node.units = UNASSIGNED
+
+        # TODO  NEXT replace He with something more robust
+        return node
 
     def visit_Subscript(self, node: ast.Subscript):
 
