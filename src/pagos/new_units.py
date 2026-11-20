@@ -154,6 +154,17 @@ class PAGOSQuantity(UnitRegistry.Quantity):
         changed_units = units._REGISTRY.Unit(UnitsContainer(unit_items))
         return changed_units
 
+    @classmethod
+    def change_specific_units_to_generic(cls, units: pint.Unit):
+        """Replaces all instances of specific gas suffixs with generic marker '_gas'"""
+        unit_items = [u for u in units._units.unit_items()]
+        for i, u in enumerate(unit_items):
+            if u[0].endswith(tuple(f"_{g}" for g in gas_names)):
+                gas = u[0].split("_")[-1]
+                unit_items[i] = (u[0].replace(f"_{gas}", "_gas"), u[1])
+        changed_units = units._REGISTRY.Unit(UnitsContainer(unit_items))
+        return changed_units
+
     def to(
         self, other=None, *contexts, gas: str | None = None, block=False, **ctx_kwargs
     ) -> PAGOSQuantity:

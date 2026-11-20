@@ -5,8 +5,20 @@ from collections.abc import Callable
 from numbers import Number
 from textwrap import dedent
 
+from numpy import ufunc
 import pint
 import wrapt
+from pint.facets.numpy.numpy_func import (
+    HANDLED_UFUNCS,
+    copy_units_output_ufuncs,
+    matching_input_bare_output_ufuncs,
+    matching_input_copy_units_output_ufuncs,
+    matching_input_set_units_output_ufuncs,
+    op_units_output_ufuncs,
+    set_units_ufuncs,
+    strip_unit_input_output_ufuncs,
+    get_op_output_unit,
+)
 from pint.util import UnitsContainer
 from visast import visualise
 
@@ -201,10 +213,7 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
         self.did_anything_change = True
 
         if display is not None:
-            _considered_node = display
-            while hasattr(_considered_node, "parent"):
-                _considered_node = _considered_node.parent
-            visualise.graph(_considered_node)
+            self._graph_whole_tree(display)
 
     def convert_node_units(self, node: ast.AST, to_units: pint.Unit) -> ast.AST:
         # this takes in a node and returns a node that has been converted to the target units
@@ -437,7 +446,7 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
         node = ast.Constant("He")
         node.units = UNASSIGNED
 
-        # TODO  NEXT replace He with something more robust
+        # TODO NEXT replace He with something more robust
         return node
 
     def visit_Subscript(self, node: ast.Subscript):
@@ -564,6 +573,52 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
                 new_node = self.convert_node_units(variable_to_convert_node, to_units)
 
                 node = new_node
+
+            # otherwise it could also be a numpy function
+            try:
+                f = eval(ast.unparse(node.func), self.func.__globals__)
+                fname = f.__name__
+                if isinstance(f, ufunc) and fname in HANDLED_UFUNCS:
+                    args = node.args
+                    if fname in strip_unit_input_output_ufuncs:
+                        out_unit = UNASSIGNED
+                    elif fname in matching_input_bare_output_ufuncs:
+                        args[1] = self.convert_node_units(args[1], args[0].units)
+                        node.args = args
+                        out_unit = UNASSIGNED
+                    elif fname in matching_input_set_units_output_ufuncs:
+                        args[1] = self.convert_node_units(args[1], args[0].units)
+                        node.args = args
+                        out_unit = ureg.Unit(
+                            matching_input_set_units_output_ufuncs[fname]
+                        )
+                    elif fname in set_units_ufuncs:
+                        in_unit = ureg.Unit(set_units_ufuncs[fname][0])
+                        args[0] = self.convert_node_units(args[0], in_unit)
+                        node.args = args
+                        out_unit = ureg.Unit(set_units_ufuncs[fname][1])
+                    elif fname in matching_input_copy_units_output_ufuncs:
+                        if len(args) > 1:
+                            args[1] = self.convert_node_units(args[1], args[0].units)
+                        node.args = args
+                        out_unit = args[0].units
+                    elif fname in copy_units_output_ufuncs:
+                        out_unit = args[0].units
+                    elif fname in op_units_output_ufuncs:
+                        opstr = op_units_output_ufuncs[fname]
+                        in_units = [a.units for a in args]
+                        dummy_quants = [
+                            ureg.Quantity(1, in_units[0]),
+                            ureg.Quantity(1, in_units[1]),
+                        ]
+                        out_unit = ureg.Unit(
+                            get_op_output_unit(opstr, in_units[0], dummy_quants)
+                        )
+                    else:
+                        out_unit = node.units
+                    node.units = out_unit
+            except:
+                pass
 
         return self.generic_visit(node)
 
@@ -692,11 +747,13 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
         return self.generic_visit(ret_node)
 
     def visit_Return(self, node: ast.Return):
+
         # this performs conversion according to units_out
         ret_node = copy.copy(node)
         ur = node.value.units
         uo = get_unit_aware_function_info(self.func.__name__)[1]
         if ur != uo and ur is not UNASSIGNED:
+            uo = ureg.Quantity.change_generic_units_to_specific(uo, "He")
             ur_as_container: UnitsContainer = ur._units
             uo_as_container: UnitsContainer = uo._units
             cfactor = ureg._get_conversion_factor(ur_as_container, uo_as_container)
@@ -710,4 +767,12 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
         if isinstance(node.value, ast.Name) and node.value.id in self.convertlock:
             return self.generic_visit(node)
 
+        if self.func.__name__ == "__calc_Cstar_WW85":
+            self._graph_whole_tree(node)
         return self.generic_visit(ret_node)
+
+    def _graph_whole_tree(self, node: ast.AST):
+        _considered_node = node
+        while hasattr(_considered_node, "parent"):
+            _considered_node = _considered_node.parent
+        visualise.graph(_considered_node)

@@ -89,7 +89,7 @@ def __calc_Cstar_J19(gas, T: float, S: float) -> float:
     return Cstar
 
 
-@unit_aware({"gas": None, "T": "degC", "S": "permille", "ab": None}, "mol_g/kg")
+@unit_aware({"gas": None, "T": "degC", "S": "permille", "ab": "mol_g/kg"}, "mol_g/kg")
 def __calc_Cstar_WW85(gas, T: float, S: float, ab: str = "default") -> float:
     T_K = T.to("K")
     T_N = T_K / K100
@@ -110,11 +110,11 @@ def __calc_Cstar_WW85(gas, T: float, S: float, ab: str = "default") -> float:
             + S * (b1 + b2 * T_N + b3 * T_N**2)
         )
         * ab
-    ) * pQ(1, f"mol_{gas}/kg")
+    )
     return Cstar
 
 
-@unit_aware({"gas": None, "T": "degC", "S": "permille", "ab": None}, "mol_g/kg")
+@unit_aware({"gas": None, "T": "degC", "S": "permille", "ab": "mol_g/kg"}, "mol_g/kg")
 def __calc_Cstar_B02(gas, T: float, S: float, ab: str = "default") -> float:
     T_K = T.to("K")
     T_N = T_K / K100
@@ -125,10 +125,7 @@ def __calc_Cstar_B02(gas, T: float, S: float, ab: str = "default") -> float:
     if ab == "default":
         ab = ABUNDANCES[gas]
     # C* = F*abundance, concentration calculated from Bullister et al. 2002
-    Cstar = (
-        np.exp(a1 + a2 / T_N + a3 * np.log(T_N) + S * (b1 + b2 * T_N + b3 * T_N**2))
-        * ab
-    ) * pQ(1, f"mol_{gas}/kg")
+    Cstar = np.exp(a1 + a2 / T_N + a3 * np.log(T_N) + S * (b1 + b2 * T_N + b3 * T_N**2))
     return Cstar
 
 
