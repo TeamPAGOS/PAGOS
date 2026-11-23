@@ -358,6 +358,9 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
 
                 # It is also okay if we get a list or tuple of objects with units. This case is dealt with here
                 except AttributeError:
+                    # problem: generic recursive sets like:
+                    #                        !   !      !
+                    # [NG_JENKINS_19_COEFFS[gas][c] for c in ["A0", "AR", "AL", "A1", "B0", "B1", "B2", "C0"]]
                     _evaluated_units = [get_units(_ev, ureg) for _ev in _evaluated]
 
                     DummyNameStore_with_units = ast.Name(id="x", ctx=ast.Store())
@@ -767,8 +770,6 @@ class UnitAssignmentVisitor(ast.NodeTransformer):
         if isinstance(node.value, ast.Name) and node.value.id in self.convertlock:
             return self.generic_visit(node)
 
-        if self.func.__name__ == "__calc_Cstar_WW85":
-            self._graph_whole_tree(node)
         return self.generic_visit(ret_node)
 
     def _graph_whole_tree(self, node: ast.AST):

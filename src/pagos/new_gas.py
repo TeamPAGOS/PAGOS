@@ -125,7 +125,10 @@ def __calc_Cstar_B02(gas, T: float, S: float, ab: str = "default") -> float:
     if ab == "default":
         ab = ABUNDANCES[gas]
     # C* = F*abundance, concentration calculated from Bullister et al. 2002
-    Cstar = np.exp(a1 + a2 / T_N + a3 * np.log(T_N) + S * (b1 + b2 * T_N + b3 * T_N**2))
+    Cstar = (
+        np.exp(a1 + a2 / T_N + a3 * np.log(T_N) + S * (b1 + b2 * T_N + b3 * T_N**2))
+        * ab
+    )
     return Cstar
 
 
@@ -174,3 +177,6 @@ if __name__ == "__main__":
     from pagos.visast_util import graph
 
     graph(__calc_Cstar_J19.ast)
+    print(ast.unparse(__calc_Cstar_J19.ast))
+
+    print(__calc_Cstar_J19("He", 1, 2))

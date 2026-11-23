@@ -87,10 +87,10 @@ K100 = pQ(100, "K")
 # coefficients from Jenkins et al. 2019 solubility formula for noble gases
 NG_JENKINS_19_COEFFS = {
     "He": {
-        "A0": -178.1424,
-        "AR": 217.5991,
-        "AL": 140.7506,
-        "A1": -23.01954,
+        "A0": pQ(-178.1424, "dimensionless"),
+        "AR": pQ(217.5991, "dimensionless"),
+        "AL": pQ(140.7506, "dimensionless"),
+        "A1": pQ(-23.01954, "dimensionless"),
         "B0": pQ(-0.038129, "permille^-1"),
         "B1": pQ(0.01919, "permille^-1"),
         "B2": pQ(-0.0026898, "permille^-1"),
